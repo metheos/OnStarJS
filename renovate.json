@@ -1,0 +1,41 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:base"
+  ],
+  "prHourlyLimit": 0,
+  "prConcurrentLimit": 0,
+  "labels": [
+    "Renovate",
+    "dependencies"
+  ],
+  "npm": {
+    "minimumReleaseAge": "3 days"
+  },
+  "packageRules": [
+    { 
+     "matchManagers": ["npm"],
+     "addLabels": ["javascript"]
+    },
+    {
+     "matchLanguages":["js"],
+     "addLabels": ["javascript"]
+    },
+    {
+     "matchManagers": ["github-actions"],
+     "addLabels": ["github_actions"]
+    },
+    {
+     "matchManagers": ["dockerfile"],
+     "addLabels": ["dockerfile"]
+    },
+    {
+     "matchPackagePatterns": ["dockerfile"],
+     "addLabels": ["dockerfile"]
+    },
+    {
+     "matchManagers": ["nvm"],
+     "addLabels": ["nvm"] 
+    }  
+  ]
+}
