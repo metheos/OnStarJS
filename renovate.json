@@ -10,7 +10,8 @@
     "dependencies"
   ],
   "npm": {
-    "minimumReleaseAge": "3 days"
+    "minimumReleaseAge": "3 days",
+    "rangeStrategy": "replace"
   },
   "packageRules": [
     { 
