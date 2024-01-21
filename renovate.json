@@ -5,14 +5,14 @@
   ],
   "prHourlyLimit": 0,
   "prConcurrentLimit": 0,
-  "labels": [
-    "Renovate",
-    "dependencies"
-  ],
   "npm": {
     "minimumReleaseAge": "3 days",
     "rangeStrategy": "replace"
   },
+  "labels": [
+    "Renovate",
+    "dependencies"
+  ],
   "packageRules": [
     { 
      "matchManagers": ["npm"],
