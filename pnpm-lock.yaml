@@ -47,7 +47,7 @@ devDependencies:
     specifier: 3.2.4
     version: 3.2.4
   rollup:
-    specifier: ^4.0.0
+    specifier: ^4.9.5
     version: 4.9.5
   standard-version:
     specifier: ^9.5.0
