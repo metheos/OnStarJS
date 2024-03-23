@@ -13,6 +13,7 @@ import {
   DiagnosticRequestItem,
   DiagnosticsRequestOptions,
   DoorRequestOptions,
+  TrunkRequestOptions,
   HttpClient,
   OAuthToken,
   OnStarConfig,
@@ -133,6 +134,30 @@ class RequestService {
     return this.sendRequest(request);
   }
 
+  async lockTrunk(options: TrunkRequestOptions = {}): Promise<Result> {
+    const request = this.getCommandRequest(OnStarApiCommand.LockTrunk).setBody({
+      lockTrunkRequest: {
+        delay: 0,
+        ...options,
+      },
+    });
+
+    return this.sendRequest(request);
+  }
+
+  async unlockTrunk(options: DoorRequestOptions = {}): Promise<Result> {
+    const request = this.getCommandRequest(
+      OnStarApiCommand.UnlockTrunk,
+    ).setBody({
+      unlockTrunkRequest: {
+        delay: 0,
+        ...options,
+      },
+    });
+
+    return this.sendRequest(request);
+  }
+
   async alert(options: AlertRequestOptions = {}): Promise<Result> {
     const request = this.getCommandRequest(OnStarApiCommand.Alert).setBody({
       alertRequest: {
@@ -223,16 +248,6 @@ class RequestService {
 
   async location(): Promise<Result> {
     return this.sendRequest(this.getCommandRequest(OnStarApiCommand.Location));
-  }
-
-  async lockTrunk(): Promise<Result> {
-    return this.sendRequest(this.getCommandRequest(OnStarApiCommand.LockTrunk));
-  }
-
-  async unlockTrunk(): Promise<Result> {
-    return this.sendRequest(
-      this.getCommandRequest(OnStarApiCommand.UnlockTrunk),
-    );
   }
 
   private getCommandRequest(command: OnStarApiCommand): Request {

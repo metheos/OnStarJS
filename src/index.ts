@@ -10,6 +10,7 @@ import {
   DiagnosticsRequestOptions,
   SetChargingProfileRequestOptions,
   DoorRequestOptions,
+  TrunkRequestOptions,
   ChargeOverrideOptions,
 } from "./types";
 
@@ -46,6 +47,14 @@ class OnStar {
     return this.requestService.unlockDoor(options);
   }
 
+  async lockTrunk(options?: TrunkRequestOptions): Promise<Result> {
+    return this.requestService.lockTrunk(options);
+  }
+
+  async unlockTrunk(options?: TrunkRequestOptions): Promise<Result> {
+    return this.requestService.unlockTrunk(options);
+  }
+
   async alert(options?: AlertRequestOptions): Promise<Result> {
     return this.requestService.alert(options);
   }
@@ -74,14 +83,6 @@ class OnStar {
 
   async location(): Promise<Result> {
     return this.requestService.location();
-  }
-
-  async lockTrunk(): Promise<Result> {
-    return this.requestService.lockTrunk();
-  }
-
-  async unlockTrunk(): Promise<Result> {
-    return this.requestService.unlockTrunk();
   }
 
   setCheckRequestStatus(checkStatus: boolean) {
