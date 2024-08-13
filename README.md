@@ -143,10 +143,10 @@ For commands that return data like diagnostics or location, the data returned by
 Locks the trunk but doesn't automatically close it.
 
     onStar.lockTrunk([options]);
-    
+
 | Option | Default | Valid Values          |
 | ------ | ------- | --------------------- |
-| delay  | 0       | Any integer (minutes) |    
+| delay  | 0       | Any integer (minutes) |
 
 </details>
 
