@@ -12,11 +12,14 @@ An unofficial NodeJS library to make OnStar requests.
 
 Use the Get Account Vehicles request to see which requests your vehicle supports if you don't already know.
 
-# New Requirement as of 2024-11-09
+# New Requirement as of 2024-11-19
 
 Updated to use TOTP to fulfill new authentication process from GM.
+
 You will need to change your OnStar account's MFA method to "Third-Party Authenticator App" and use an authenticator app such as [Stratum](https://stratumauth.com/) that allows you to view your TOTP keys so you can provide it in .env or initialization config.
+
 You may also be able to obtain your TOTP key by inspecting/hovering over the link under the QR code when you are setting it up.
+
 If you cannot find the option to configured a "Third-Party Authenticator App" on your GM account page, try contacting OnStar to see if there is another way to enable it.
 
 ## Sample
