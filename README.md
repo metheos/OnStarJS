@@ -20,7 +20,7 @@ You will need to change your OnStar account's MFA method to "Third-Party Authent
 
 You may also be able to obtain your TOTP key by inspecting/hovering over the link under the QR code when you are setting it up.
 
-If you cannot find the option to configured a "Third-Party Authenticator App" on your GM account page, try contacting OnStar to see if there is another way to enable it.
+If you cannot find the option to configure a "Third-Party Authenticator App" on your GM account page, try contacting OnStar to see if there is another way to enable it.
 
 ## Sample
 
