@@ -80,11 +80,11 @@ export class GMAuth {
     try {
       let loadedTokenSet = await this.loadAccessToken();
       if (loadedTokenSet !== false) {
-        console.log("Using existing MS tokens");
+        // console.log("Using existing MS tokens");
         return await this.getGMAPIToken(loadedTokenSet);
       }
 
-      console.log("Performing full authentication");
+      // console.log("Performing full authentication");
       await this.doFullAuthSequence();
       loadedTokenSet = await this.loadAccessToken();
       if (!loadedTokenSet) throw new Error("Failed to load MS token set");
@@ -125,14 +125,14 @@ export class GMAuth {
   }
 
   private async saveTokens(tokenSet: TokenSet): Promise<void> {
-    console.log("Saving MS tokens to ", this.MSTokenPath);
+    // console.log("Saving MS tokens to ", this.MSTokenPath);
     fs.writeFileSync(this.MSTokenPath, JSON.stringify(tokenSet));
 
     // Save the GM API token as well
     if (this.currentGMAPIToken) {
       const tokenFilePath = this.GMTokenPath; // Define the path for the token file
       fs.writeFileSync(tokenFilePath, JSON.stringify(this.currentGMAPIToken));
-      console.log("Saved current GM API token to ", tokenFilePath);
+      // console.log("Saved current GM API token to ", tokenFilePath);
     }
   }
 
@@ -143,7 +143,7 @@ export class GMAuth {
   }
 
   private async handleMFA(): Promise<void> {
-    console.log("Loading MFA Page");
+    // console.log("Loading MFA Page");
     const mfaRequestURL = `https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/B2C_1A_SEAMLESS_MOBILE_SignUpOrSignIn/api/CombinedSigninAndSignup/confirmed?rememberMe=true&csrf_token=${this.csrfToken}&tx=${this.transId}&p=B2C_1A_SEAMLESS_MOBILE_SignUpOrSignIn`;
 
     const authResponse = await this.getRequest(mfaRequestURL);
@@ -166,7 +166,7 @@ export class GMAuth {
       period: 30,
     });
 
-    console.log("Submitting OTP Code:", otp);
+    // console.log("Submitting OTP Code:", otp);
     const postMFACodeRespURL = `https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/B2C_1A_SEAMLESS_MOBILE_SignUpOrSignIn/SelfAsserted?tx=${this.transId}&p=B2C_1A_SEAMLESS_MOBILE_SignUpOrSignIn`;
 
     const MFACodeDataResp = {
@@ -178,7 +178,7 @@ export class GMAuth {
   }
 
   private async submitCredentials(): Promise<void> {
-    console.log("Sending GM login credentials");
+    // console.log("Sending GM login credentials");
     const cpe1Url = `https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/B2C_1A_SEAMLESS_MOBILE_SignUpOrSignIn/SelfAsserted?tx=${this.transId}&p=B2C_1A_SEAMLESS_MOBILE_SignUpOrSignIn`;
 
     const cpe1Data = {
@@ -195,7 +195,7 @@ export class GMAuth {
   }
 
   private async loadCurrentGMAPIToken(): Promise<void> {
-    console.log("Loading existing GM API token, if it exists.");
+    // console.log("Loading existing GM API token, if it exists.");
     const tokenFilePath = this.GMTokenPath; // Define the path for the token file
 
     if (fs.existsSync(tokenFilePath)) {
@@ -207,16 +207,16 @@ export class GMAuth {
 
         // Check if the token is still valid
         if (storedToken.expires_at && storedToken.expires_at > now) {
-          console.log("Loaded existing GM API token");
+          // console.log("Loaded existing GM API token");
           this.currentGMAPIToken = storedToken;
         } else {
-          console.log("Existing GM API token has expired");
+          // console.log("Existing GM API token has expired");
         }
       } catch (err) {
         console.error("Error loading stored GM API token:", err);
       }
     } else {
-      console.log("No existing GM API token, we'll get a new one.");
+      // console.log("No existing GM API token, we'll get a new one.");
     }
   }
 
@@ -227,11 +227,11 @@ export class GMAuth {
       this.currentGMAPIToken &&
       this.currentGMAPIToken.expires_at > now + 60
     ) {
-      console.log("Returning existing GM API token");
+      // console.log("Returning existing GM API token");
       return this.currentGMAPIToken;
     }
 
-    console.log("Requesting GM API Token using MS Access Token");
+    // console.log("Requesting GM API Token using MS Access Token");
     const url = "https://na-mobile-api.gm.com/sec/authz/v3/oauth/token";
 
     try {
@@ -258,7 +258,7 @@ export class GMAuth {
         parseInt(response.data.expires_in.toString());
       response.data.expires_in = parseInt(response.data.expires_in.toString());
       response.data.expires_at = expires_at;
-      console.log("Set GM Token expiration to ", expires_at);
+      // console.log("Set GM Token expiration to ", expires_at);
 
       // Store the new token
       this.currentGMAPIToken = response.data;
@@ -292,7 +292,7 @@ export class GMAuth {
         withCredentials: true,
         maxRedirects: 0,
       });
-      console.log("Response Status:", response.status);
+      // console.log("Response Status:", response.status);
       return response;
     } catch (error: any) {
       this.handleRequestError(error);
@@ -315,7 +315,7 @@ export class GMAuth {
           "x-csrf-token": csrfToken,
         },
       });
-      console.log("Response Status:", response.status);
+      // console.log("Response Status:", response.status);
       return response;
     } catch (error: any) {
       this.handleRequestError(error);
@@ -347,7 +347,7 @@ export class GMAuth {
   }
 
   private async captureRedirectLocation(url: string): Promise<string> {
-    console.log("Requesting PKCE code");
+    // console.log("Requesting PKCE code");
     try {
       const response = await this.axiosClient.get(url, {
         maxRedirects: 0,
@@ -369,7 +369,7 @@ export class GMAuth {
   }
 
   private async setupClient(): Promise<openidClient.Client> {
-    console.log("Doing auth discovery");
+    // console.log("Doing auth discovery");
     const issuer = await this.oidc.Issuer.discover(
       "https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/b2c_1a_seamless_mobile_signuporsignin/v2.0/.well-known/openid-configuration",
     );
@@ -386,7 +386,7 @@ export class GMAuth {
     authorizationUrl: string;
     code_verifier: string;
   }> {
-    console.log("Starting PKCE auth");
+    // console.log("Starting PKCE auth");
     const client = await this.setupClient();
     const code_verifier = this.oidc.generators.codeVerifier();
     const code_challenge = this.oidc.generators.codeChallenge(code_verifier);
@@ -437,8 +437,8 @@ export class GMAuth {
         }),
       };
 
-      console.log("Access Token:", tokenSet.access_token);
-      console.log("ID Token:", tokenSet.id_token);
+      // console.log("Access Token:", tokenSet.access_token);
+      // console.log("ID Token:", tokenSet.id_token);
 
       return tokenSet;
     } catch (err) {
@@ -448,7 +448,7 @@ export class GMAuth {
   }
 
   private async loadAccessToken(): Promise<TokenSet | false> {
-    console.log("Loading existing MS tokens, if they exist.");
+    // console.log("Loading existing MS tokens, if they exist.");
     let tokenSet: TokenSet;
 
     if (fs.existsSync(this.MSTokenPath)) {
@@ -464,10 +464,10 @@ export class GMAuth {
       const now = Math.floor(Date.now() / 1000);
 
       if (storedTokens.expires_at && storedTokens.expires_at > now) {
-        console.log("MS Access token is still valid");
+        // console.log("MS Access token is still valid");
         tokenSet = storedTokens;
       } else if (storedTokens.refresh_token) {
-        console.log("Refreshing MS access token");
+        // console.log("Refreshing MS access token");
         const client = await this.setupClient();
         const refreshedTokens = await client.refresh(
           storedTokens.refresh_token,
@@ -487,7 +487,7 @@ export class GMAuth {
           expires_at: refreshedTokens.expires_at,
         };
 
-        console.log("Saving current MS tokens to ", this.MSTokenPath);
+        // console.log("Saving current MS tokens to ", this.MSTokenPath);
         fs.writeFileSync(this.MSTokenPath, JSON.stringify(tokenSet));
       } else {
         throw new Error("Token expired and no refresh token available.");
