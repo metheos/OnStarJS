@@ -35,7 +35,7 @@ const onStar = OnStar.create({
   username: "foo@bar.com",
   password: "p@ssw0rd",
   onStarPin: "1234",
-  ONSTAR_TOTPKEY="XXXXXXXXXXXXXXXX"
+  onStarTOTP: "XXXXXXXXXXXXXXXX"
 });
 
 try {
