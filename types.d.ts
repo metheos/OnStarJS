@@ -15,9 +15,16 @@ export interface OnStarConfig {
   username: string;
   password: string;
   onStarPin: string;
+  onStarTOTP: string;
   checkRequestStatus?: boolean;
   requestPollingIntervalSeconds?: number;
   requestPollingTimeoutSeconds?: number;
+}
+export interface GMAuthConfig {
+  deviceId: string;
+  username: string;
+  password: string;
+  totpKey: string;
 }
 export interface OAuthToken {
   access_token: string;

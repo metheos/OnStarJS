@@ -21,9 +21,9 @@ describe("GM Authentication", () => {
     expect(token).toBeDefined();
     expect(token.access_token).toBeDefined();
     expect(token.token_type).toBe("bearer");
-    expect(parseInt(token.expires_in)).toBeGreaterThan(0);
+    expect(token.expires_in).toBeGreaterThan(0);
     expect(token.expires_at).toBeDefined();
     expect(auth).toBeDefined();
-    // console.log(token.access_token);
+    console.log(token.access_token);
   }, 30000); // Increased timeout for authentication
 });

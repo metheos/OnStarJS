@@ -23,11 +23,25 @@ interface TokenSet {
 
 interface GMAPITokenResponse {
   access_token: string;
-  expires_in: string;
+  expires_in: number;
   expires_at: number;
   token_type: string;
+  scope: string;
+  onstar_account_info: OnStarAccountInfo;
+  user_info: UserInfo;
+  id_token: string;
+  expiration: number;
+  upgraded: boolean;
 }
 
+interface OnStarAccountInfo {
+  country_code: string;
+  account_no: string;
+}
+interface UserInfo {
+  RemoteUserId: string;
+  country: string;
+}
 export class GMAuth {
   private config: GMAuthConfig;
   private MSTokenPath: string;
@@ -176,6 +190,10 @@ export class GMAuth {
     await this.postRequest(cpe1Url, cpe1Data, this.csrfToken);
   }
 
+  static authTokenIsValid(authToken: GMAPITokenResponse): boolean {
+    return authToken.expires_at > Date.now() + 5 * 60 * 1000;
+  }
+
   private async loadCurrentGMAPIToken(): Promise<void> {
     console.log("Loading existing GM API token, if it exists.");
     const tokenFilePath = this.GMTokenPath; // Define the path for the token file
@@ -238,6 +256,7 @@ export class GMAuth {
       const expires_at =
         Math.floor(Date.now() / 1000) +
         parseInt(response.data.expires_in.toString());
+      response.data.expires_in = parseInt(response.data.expires_in.toString());
       response.data.expires_at = expires_at;
       console.log("Set GM Token expiration to ", expires_at);
 

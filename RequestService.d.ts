@@ -1,4 +1,3 @@
-import TokenHandler from "./TokenHandler";
 import {
   AlertRequestOptions,
   ChargeOverrideOptions,
@@ -12,20 +11,16 @@ import {
   SetChargingProfileRequestOptions,
 } from "./types";
 declare class RequestService {
-  private tokenHandler;
   private client;
   private config;
+  private gmAuthConfig;
   private authToken?;
   private checkRequestStatus;
   private requestPollingTimeoutSeconds;
   private requestPollingIntervalSeconds;
   private tokenRefreshPromise?;
   private tokenUpgradePromise?;
-  constructor(
-    config: OnStarConfig,
-    tokenHandler: TokenHandler,
-    client: HttpClient,
-  );
+  constructor(config: OnStarConfig, client: HttpClient);
   setClient(client: HttpClient): this;
   setAuthToken(authToken: OAuthToken): this;
   setRequestPollingTimeoutSeconds(seconds: number): this;
