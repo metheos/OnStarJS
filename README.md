@@ -12,6 +12,13 @@ An unofficial NodeJS library to make OnStar requests.
 
 Use the Get Account Vehicles request to see which requests your vehicle supports if you don't already know.
 
+# New Requirement as of 2024-11-09
+
+Updated to use TOTP to fulfill new authentication process from GM.
+You will need to change your OnStar account's MFA method to "Third-Party Authenticator App" and use an authenticator app such as [Stratum](https://stratumauth.com/) that allows you to view your TOTP keys so you can provide it in .env or initialization config.
+You may also be able to obtain your TOTP key by inspecting/hovering over the link under the QR code when you are setting it up.
+If you cannot find the option to configured a "Third-Party Authenticator App" on your GM account page, try contacting OnStar to see if there is another way to enable it.
+
 ## Sample
 
 Use a random version 4 uuid as a deviceId. Generator available [here](https://www.uuidgenerator.net/version4).
@@ -25,6 +32,7 @@ const onStar = OnStar.create({
   username: "foo@bar.com",
   password: "p@ssw0rd",
   onStarPin: "1234",
+  onStarTOTP: ONSTAR_TOTPKEY,
 });
 
 try {
@@ -55,15 +63,15 @@ This is useful because, with the usual request polling to wait for a "Complete" 
 
 Default Value: 6
 
-When `checkRequestStatus` is true, this is how often status check requests will be made
+When `checkRequestStatus` is true, this is how often status check requests will be made (in seconds)
 
 </details>
 <details>
 <summary>requestPollingTimeoutSeconds</summary>
 
-Default Value: 60
+Default Value: 90
 
-When `checkRequestStatus` is true, this is how long a request will make subsequent status check requests before timing out.
+When `checkRequestStatus` is true, this is how long a request will make subsequent status check requests before timing out (in seconds)
 
 </details>
 
@@ -236,9 +244,13 @@ Run both unit and functional tests
 
     pnpm test:unit
 
+### Auth
+
+    pnpm test:auth
+
 ### Functional
 
-These tests will execute actual requests to the OnStar API. They will perform a Get Account Vehicles request followed by a Cancel Alert request.
+These tests will execute actual requests to the OnStar API. They will perform a Get Account Vehicles request followed by a Cancel Alert request and then a Diagnostics request.
 
 Because of this, the test will require actual OnStar credentials to run. To provide them, copy `.env.example` to `.env` and replace the placeholder values inside.
 
@@ -247,3 +259,5 @@ Because of this, the test will require actual OnStar credentials to run. To prov
 # Credits
 
 Made possible by [mikenemat](https://github.com/mikenemat/)'s work in [gm-onstar-probe](https://github.com/mikenemat/gm-onstar-probe). Their work describing the process for remote start enabled the rest of the methods implemented here.
+
+New GMAuth functionality implemented by [metheos](https://github.com/metheos/)
