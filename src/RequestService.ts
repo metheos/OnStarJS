@@ -72,7 +72,7 @@ class RequestService {
 
     this.checkRequestStatus = this.config.checkRequestStatus ?? true;
     this.requestPollingTimeoutSeconds =
-      config.requestPollingTimeoutSeconds ?? 60;
+      config.requestPollingTimeoutSeconds ?? 90;
     this.requestPollingIntervalSeconds =
       config.requestPollingIntervalSeconds ?? 6;
   }
