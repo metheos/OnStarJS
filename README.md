@@ -16,11 +16,17 @@ Use the Get Account Vehicles request to see which requests your vehicle supports
 
 Updated to use TOTP to fulfill new authentication process from GM.
 
-You will need to change your OnStar account's MFA method to "Third-Party Authenticator App" and use an authenticator app such as [Stratum](https://stratumauth.com/) that allows you to view your TOTP keys so you can provide it in .env or initialization config.
+You will need to change your OnStar account's MFA method to "Third-Party Authenticator App"
 
-You may also be able to obtain your TOTP key by inspecting/hovering over the link under the QR code when you are setting it up.
+_The "Third-Party Authenticator App" option doesn't seem to show up on mobile, so please try from a desktop browser._
 
-If you cannot find the option to configure a "Third-Party Authenticator App" on your GM account page, try contacting OnStar to see if there is another way to enable it.
+**You will need to capture your TOTP key from the "Third-Party Authenticator App" setup so that you can provide it in your .env or initialization config.**
+
+You may be able to obtain your TOTP key by inspecting/hovering over the link under the QR code **when you are setting it up.**
+
+If you use an authenticator app such as [Stratum](https://stratumauth.com/) that allows you to view your TOTP key, you can view it at any time.
+
+_If you cannot find the option to configure a "Third-Party Authenticator App" on your GM account page, try contacting OnStar to see if there is another way to enable it._
 
 ## Sample
 
