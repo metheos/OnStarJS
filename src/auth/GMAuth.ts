@@ -30,7 +30,8 @@ interface GMAPITokenResponse {
 
 export class GMAuth {
   private config: GMAuthConfig;
-  private tokenPath: string;
+  private MSTokenPath: string;
+  private GMTokenPath: string;
   private oidc: {
     Issuer: typeof openidClient.Issuer;
     generators: typeof openidClient.generators;
@@ -40,9 +41,12 @@ export class GMAuth {
   private csrfToken: string | null;
   private transId: string | null;
 
+  private currentGMAPIToken: GMAPITokenResponse | null = null;
+
   constructor(config: GMAuthConfig) {
     this.config = config;
-    this.tokenPath = "./tokens.json";
+    this.MSTokenPath = "./microsoft_tokens.json";
+    this.GMTokenPath = "./gm_tokens.json";
     this.oidc = {
       Issuer: openidClient.Issuer,
       generators: openidClient.generators,
@@ -54,20 +58,22 @@ export class GMAuth {
     });
     this.csrfToken = null;
     this.transId = null;
+    // Load the current GM API token
+    this.loadCurrentGMAPIToken();
   }
 
   async authenticate(): Promise<GMAPITokenResponse> {
     try {
       let loadedTokenSet = await this.loadAccessToken();
       if (loadedTokenSet !== false) {
-        console.log("Using existing tokens");
+        console.log("Using existing MS tokens");
         return await this.getGMAPIToken(loadedTokenSet);
       }
 
       console.log("Performing full authentication");
       await this.doFullAuthSequence();
       loadedTokenSet = await this.loadAccessToken();
-      if (!loadedTokenSet) throw new Error("Failed to load token set");
+      if (!loadedTokenSet) throw new Error("Failed to load MS token set");
       return await this.getGMAPIToken(loadedTokenSet);
     } catch (error) {
       console.error("Authentication failed:", error);
@@ -105,8 +111,15 @@ export class GMAuth {
   }
 
   private async saveTokens(tokenSet: TokenSet): Promise<void> {
-    console.log("Saving MS tokens to ", this.tokenPath);
-    fs.writeFileSync(this.tokenPath, JSON.stringify(tokenSet));
+    console.log("Saving MS tokens to ", this.MSTokenPath);
+    fs.writeFileSync(this.MSTokenPath, JSON.stringify(tokenSet));
+
+    // Save the GM API token as well
+    if (this.currentGMAPIToken) {
+      const tokenFilePath = this.GMTokenPath; // Define the path for the token file
+      fs.writeFileSync(tokenFilePath, JSON.stringify(this.currentGMAPIToken));
+      console.log("Saved current GM API token to ", tokenFilePath);
+    }
   }
 
   private async getAuthorizationCode(): Promise<string | null> {
@@ -163,7 +176,43 @@ export class GMAuth {
     await this.postRequest(cpe1Url, cpe1Data, this.csrfToken);
   }
 
+  private async loadCurrentGMAPIToken(): Promise<void> {
+    console.log("Loading existing GM API token, if it exists.");
+    const tokenFilePath = this.GMTokenPath; // Define the path for the token file
+
+    if (fs.existsSync(tokenFilePath)) {
+      try {
+        const storedToken = JSON.parse(
+          fs.readFileSync(tokenFilePath, "utf-8"),
+        ) as GMAPITokenResponse;
+        const now = Math.floor(Date.now() / 1000);
+
+        // Check if the token is still valid
+        if (storedToken.expires_at && storedToken.expires_at > now) {
+          console.log("Loaded existing GM API token");
+          this.currentGMAPIToken = storedToken;
+        } else {
+          console.log("Existing GM API token has expired");
+        }
+      } catch (err) {
+        console.error("Error loading stored GM API token:", err);
+      }
+    } else {
+      console.log("No existing GM API token, we'll get a new one.");
+    }
+  }
+
   private async getGMAPIToken(tokenSet: TokenSet): Promise<GMAPITokenResponse> {
+    // Check if we already have a valid token
+    const now = Math.floor(Date.now() / 1000);
+    if (
+      this.currentGMAPIToken &&
+      this.currentGMAPIToken.expires_at > now + 60
+    ) {
+      console.log("Returning existing GM API token");
+      return this.currentGMAPIToken;
+    }
+
     console.log("Requesting GM API Token using MS Access Token");
     const url = "https://na-mobile-api.gm.com/sec/authz/v3/oauth/token";
 
@@ -191,6 +240,11 @@ export class GMAuth {
         parseInt(response.data.expires_in.toString());
       response.data.expires_at = expires_at;
       console.log("Set GM Token expiration to ", expires_at);
+
+      // Store the new token
+      this.currentGMAPIToken = response.data;
+      this.saveTokens(tokenSet);
+
       return response.data;
     } catch (error: any) {
       if (error.response) {
@@ -378,10 +432,16 @@ export class GMAuth {
     console.log("Loading existing MS tokens, if they exist.");
     let tokenSet: TokenSet;
 
-    if (fs.existsSync(this.tokenPath)) {
-      const storedTokens = JSON.parse(
-        fs.readFileSync(this.tokenPath, "utf-8"),
-      ) as TokenSet;
+    if (fs.existsSync(this.MSTokenPath)) {
+      let storedTokens = null;
+      try {
+        storedTokens = JSON.parse(
+          fs.readFileSync(this.MSTokenPath, "utf-8"),
+        ) as TokenSet;
+      } catch (err) {
+        console.error("Error parsing stored tokens:", err);
+        throw err;
+      }
       const now = Math.floor(Date.now() / 1000);
 
       if (storedTokens.expires_at && storedTokens.expires_at > now) {
@@ -407,12 +467,12 @@ export class GMAuth {
           expires_in: refreshedTokens.expires_in,
           expires_at: refreshedTokens.expires_at,
         };
+
+        console.log("Saving current MS tokens to ", this.MSTokenPath);
+        fs.writeFileSync(this.MSTokenPath, JSON.stringify(tokenSet));
       } else {
         throw new Error("Token expired and no refresh token available.");
       }
-
-      console.log("Saving current MS tokens to ", this.tokenPath);
-      fs.writeFileSync(this.tokenPath, JSON.stringify(tokenSet));
       return tokenSet;
     }
 

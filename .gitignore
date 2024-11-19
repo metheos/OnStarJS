@@ -6,4 +6,5 @@ coverage
 testCredentials.json
 .env
 tokens.json
+*_tokens.json
 .vscode
