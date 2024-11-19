@@ -42,7 +42,7 @@ describe("OnStarJs", () => {
   test("Unupgraded Command Successful", async () => {
     const result = await onStar.getAccountVehicles();
     if (result.response) {
-      console.log(result.response.data);
+      console.log(JSON.stringify(result.response.data, null, 2));
     }
 
     expect(result.status).toEqual("success");
@@ -64,7 +64,7 @@ describe("OnStarJs", () => {
     if (!result.response?.data || typeof result.response?.data === "string") {
       throw new Error("Invalid response returned");
     }
-    console.log(result.response.data);
+    console.log(JSON.stringify(result.response.data, null, 2));
 
     expect(result.status).toEqual("success");
     expect(result.response?.data.commandResponse?.status).toEqual("success");
