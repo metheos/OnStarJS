@@ -1,5 +1,4 @@
 import { mock, instance, when, anything } from "ts-mockito";
-import TokenHandler from "../../src/TokenHandler";
 import { HttpClient, CommandResponseStatus } from "../../src/types";
 import RequestService from "../../src/RequestService";
 import { testConfig, authToken, expiredAuthToken } from "./testData";
@@ -12,11 +11,6 @@ describe("RequestService", () => {
   const commandResponseUrl = "requestCheckUrl";
 
   beforeEach(() => {
-    const tokenHandler = mock(TokenHandler);
-    when(tokenHandler.decodeAuthRequestResponse(anything())).thenReturn(
-      authToken,
-    );
-
     const requestTime = Date.now() + 1000;
 
     httpClient = {
@@ -51,11 +45,7 @@ describe("RequestService", () => {
       }),
     };
 
-    requestService = new RequestService(
-      testConfig,
-      instance(tokenHandler),
-      httpClient,
-    )
+    requestService = new RequestService(testConfig, httpClient)
       .setAuthToken(authToken)
       .setRequestPollingIntervalSeconds(0)
       .setRequestPollingTimeoutSeconds(0);

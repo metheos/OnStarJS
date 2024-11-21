@@ -6,6 +6,7 @@ const testConfig = {
   username: "foo@bar.com",
   password: "p@ssw0rd",
   onStarPin: "1234",
+  onStarTOTP: "XXXXXXXXXXXXXXXX",
 };
 
 const authToken: OAuthToken = {
