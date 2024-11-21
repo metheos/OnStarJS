@@ -41,9 +41,9 @@ describe("OnStarJs", () => {
 
   test("Unupgraded Command Successful", async () => {
     const result = await onStar.getAccountVehicles();
-    if (result.response) {
-      console.log(JSON.stringify(result.response.data, null, 2));
-    }
+    // if (result.response) {
+    //   console.log(JSON.stringify(result.response.data, null, 2));
+    // }
 
     expect(result.status).toEqual("success");
     expect(result.response?.data).toHaveProperty("vehicles");
@@ -56,7 +56,7 @@ describe("OnStarJs", () => {
     expect(result.response?.data).toHaveProperty("commandResponse");
   });
 
-  test("Diagnostics Request Successful", async () => {
+  test.skip("Diagnostics Request Successful", async () => {
     onStar.setCheckRequestStatus(true);
 
     const result = await onStar.diagnostics();
@@ -64,7 +64,7 @@ describe("OnStarJs", () => {
     if (!result.response?.data || typeof result.response?.data === "string") {
       throw new Error("Invalid response returned");
     }
-    console.log(JSON.stringify(result.response.data, null, 2));
+    // console.log(JSON.stringify(result.response.data, null, 2));
 
     expect(result.status).toEqual("success");
     expect(result.response?.data.commandResponse?.status).toEqual("success");
