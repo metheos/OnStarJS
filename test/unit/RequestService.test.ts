@@ -158,23 +158,24 @@ describe("RequestService", () => {
     expect(result.status).toEqual(CommandResponseStatus.success);
   });
 
-  test("requestWithExpiredAuthTokenAndFailedTokenFetch", async () => {
-    httpClient.post = jest.fn().mockResolvedValue({
-      data: {
-        commandResponse: {
-          requestTime: Date.now() + 1000,
-          status: CommandResponseStatus.success,
-          url: commandResponseUrl,
-        },
-      },
-    });
+  // We're handling token renewals in GMAuth, so this function shouldn't ever get an expired token
+  // test("requestWithExpiredAuthTokenAndFailedTokenFetch", async () => {
+  //   httpClient.post = jest.fn().mockResolvedValue({
+  //     data: {
+  //       commandResponse: {
+  //         requestTime: Date.now() + 1000,
+  //         status: CommandResponseStatus.success,
+  //         url: commandResponseUrl,
+  //       },
+  //     },
+  //   });
 
-    requestService.setAuthToken(expiredAuthToken);
+  //   requestService.setAuthToken(expiredAuthToken);
 
-    expect(async () => {
-      await requestService.setClient(httpClient).start();
-    }).rejects.toThrowError(/^Failed to fetch token$/);
-  });
+  //   expect(async () => {
+  //     await requestService.setClient(httpClient).start();
+  //   }).rejects.toThrowError(/^Failed to fetch token$/);
+  // });
 
   test("requestCheckExceedsTimeoutError", async () => {
     httpClient.post = jest.fn().mockResolvedValue({
