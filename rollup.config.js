@@ -8,19 +8,17 @@ export default {
   input: "src/index.ts",
   plugins: [
     json(),
-    typescript({ tsconfig: "./tsconfig.json" }),
     resolve(),
-    commonJS({
-      include: "node_modules/**",
-    }),
+    commonJS(),
+    typescript({ tsconfig: "./tsconfig.json" }),
   ],
   output: [
     { file: pkg.main, format: "cjs", exports: "default" },
     { file: pkg.module, format: "esm", exports: "default" },
   ],
-  external: [
-    ...Object.keys(pkg.dependencies || {}),
-    ...Object.keys(pkg.peerDependencies || {}),
-    "crypto",
-  ],
+  // external: [
+  //   ...Object.keys(pkg.dependencies || {}),
+  //   ...Object.keys(pkg.peerDependencies || {}),
+  //   "crypto",
+  // ],
 };
