@@ -3,6 +3,7 @@ interface GMAuthConfig {
     password: string;
     deviceId: string;
     totpKey: string;
+    tokenLocation?: string;
 }
 interface TokenSet {
     access_token: string;
@@ -66,6 +67,7 @@ interface AuthConfig {
     password: string | undefined;
     deviceId: string | undefined;
     totpKey: string | undefined;
+    tokenLocation?: string | undefined;
 }
 export declare function getGMAPIJWT(config: AuthConfig): Promise<{
     token: GMAPITokenResponse;

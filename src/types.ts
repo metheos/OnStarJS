@@ -18,6 +18,7 @@ export interface OnStarConfig {
   password: string;
   onStarPin: string;
   onStarTOTP: string;
+  tokenLocation?: string;
   checkRequestStatus?: boolean;
   requestPollingIntervalSeconds?: number;
   requestPollingTimeoutSeconds?: number;
@@ -27,6 +28,7 @@ export interface GMAuthConfig {
   username: string;
   password: string;
   totpKey: string;
+  tokenLocation?: string;
 }
 
 export interface OAuthToken {

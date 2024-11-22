@@ -2,7 +2,7 @@
 
 var require$$1 = require('util');
 var stream = require('stream');
-var require$$1$1 = require('path');
+var path = require('path');
 var require$$0$2 = require('http');
 var require$$2 = require('https');
 var require$$5 = require('url');
@@ -12,12 +12,12 @@ var require$$0$4 = require('tty');
 var require$$0$3 = require('os');
 var zlib$1 = require('zlib');
 var require$$2$1 = require('events');
-var require$$1$2 = require('node:url');
+var require$$1$1 = require('node:url');
 var require$$0$6 = require('node:http');
 var require$$0$7 = require('node:https');
 var require$$0$8 = require('net');
 var require$$0$9 = require('crypto');
-var require$$1$3 = require('querystring');
+var require$$1$2 = require('querystring');
 var require$$0$a = require('buffer');
 
 /******************************************************************************
@@ -11986,7 +11986,7 @@ function requireMimeTypes () {
 		 */
 
 		var db = requireMimeDb();
-		var extname = require$$1$1.extname;
+		var extname = path.extname;
 
 		/**
 		 * Module variables.
@@ -12652,7 +12652,7 @@ function requireForm_data () {
 	hasRequiredForm_data = 1;
 	var CombinedStream = requireCombined_stream();
 	var util = require$$1;
-	var path = require$$1$1;
+	var path$1 = path;
 	var http = require$$0$2;
 	var https = require$$2;
 	var parseUrl = require$$5.parse;
@@ -12875,15 +12875,15 @@ function requireForm_data () {
 
 	  if (typeof options.filepath === 'string') {
 	    // custom filepath for relative paths
-	    filename = path.normalize(options.filepath).replace(/\\/g, '/');
+	    filename = path$1.normalize(options.filepath).replace(/\\/g, '/');
 	  } else if (options.filename || value.name || value.path) {
 	    // custom filename take precedence
 	    // formidable and the browser add a name property
 	    // fs- and request- streams have path property
-	    filename = path.basename(options.filename || value.name || value.path);
+	    filename = path$1.basename(options.filename || value.name || value.path);
 	  } else if (value.readable && value.hasOwnProperty('httpVersion')) {
 	    // or try http response
-	    filename = path.basename(value.client._httpMessage.path || '');
+	    filename = path$1.basename(value.client._httpMessage.path || '');
 	  }
 
 	  if (filename) {
@@ -20639,7 +20639,7 @@ function requireCanonicalDomain () {
 	Object.defineProperty(canonicalDomain, "__esModule", { value: true });
 	canonicalDomain.canonicalDomain = canonicalDomain$1;
 	const constants_1 = requireConstants();
-	const node_url_1 = require$$1$2;
+	const node_url_1 = require$$1$1;
 	/**
 	 * Transforms a domain name into a canonical domain name. The canonical domain name is a domain name
 	 * that has been trimmed, lowercased, stripped of leading dot, and optionally punycode-encoded
@@ -23356,7 +23356,7 @@ function requireCreate_cookie_agent () {
 	  value: true
 	});
 	create_cookie_agent.createCookieAgent = createCookieAgent;
-	var _nodeUrl = _interopRequireDefault(require$$1$2);
+	var _nodeUrl = _interopRequireDefault(require$$1$1);
 	var _create_cookie_header_value = requireCreate_cookie_header_value();
 	var _save_cookies_from_header = requireSave_cookies_from_header();
 	var _validate_cookie_options = requireValidate_cookie_options();
@@ -30396,7 +30396,7 @@ function requireRequest () {
 	if (hasRequiredRequest) return request.exports;
 	hasRequiredRequest = 1;
 	const assert = require$$0$5;
-	const querystring = require$$1$3;
+	const querystring = require$$1$2;
 	const http = require$$0$2;
 	const https = require$$2;
 	const { once } = require$$2$1;
@@ -31901,7 +31901,7 @@ function requireClient () {
 	const stdhttp = require$$0$2;
 	const crypto = require$$0$9;
 	const { strict: assert } = require$$0$5;
-	const querystring = require$$1$3;
+	const querystring = require$$1$2;
 	const url = require$$5;
 	const { URL, URLSearchParams } = require$$5;
 
@@ -34388,10 +34388,12 @@ class TOTP {
 
 class GMAuth {
     constructor(config) {
+        var _a;
         this.currentGMAPIToken = null;
         this.config = config;
-        this.MSTokenPath = "./microsoft_tokens.json";
-        this.GMTokenPath = "./gm_tokens.json";
+        this.config.tokenLocation = (_a = this.config.tokenLocation) !== null && _a !== void 0 ? _a : "./";
+        this.MSTokenPath = path.join(this.config.tokenLocation, "microsoft_tokens.json");
+        this.GMTokenPath = path.join(this.config.tokenLocation, "gm_tokens.json");
         this.oidc = {
             Issuer: Issuer,
             generators: generators,
@@ -34422,7 +34424,12 @@ class GMAuth {
                 return yield this.getGMAPIToken(loadedTokenSet);
             }
             catch (error) {
-                console.error("Authentication failed:", error);
+                if (axios$1.isAxiosError(error)) {
+                    this.handleRequestError(error);
+                }
+                else {
+                    console.error("Authentication failed:", error);
+                }
                 throw error;
             }
         });
@@ -34453,6 +34460,7 @@ class GMAuth {
             // Save the GM API token as well
             if (this.currentGMAPIToken) {
                 const tokenFilePath = this.GMTokenPath; // Define the path for the token file
+                // console.log("Saving GM tokens to ", this.GMTokenPath);
                 fs.writeFileSync(tokenFilePath, JSON.stringify(this.currentGMAPIToken));
                 // console.log("Saved current GM API token to ", tokenFilePath);
             }
@@ -34595,8 +34603,13 @@ class GMAuth {
                 return response;
             }
             catch (error) {
-                this.handleRequestError(error);
-                throw error;
+                if (axios$1.isAxiosError(error)) {
+                    this.handleRequestError(error);
+                }
+                else {
+                    console.error("GET Request failed:", error);
+                }
+                return error.response;
             }
         });
     }
@@ -34616,22 +34629,28 @@ class GMAuth {
                 return response;
             }
             catch (error) {
-                this.handleRequestError(error);
-                throw error;
+                if (axios$1.isAxiosError(error)) {
+                    this.handleRequestError(error);
+                }
+                else {
+                    console.error("POST Request failed:", error);
+                }
+                return error.response;
             }
         });
     }
     handleRequestError(error) {
+        console.log("reqer");
         if (error.response) {
             console.error(`HTTP Error ${error.response.status}: ${error.response.statusText}`);
-            console.error("Response data:", error.response.data);
+            console.debug("Response data:", error.response.data);
             if (error.response.status === 401) {
                 console.error("Authentication failed. Please check your credentials.");
             }
         }
         else if (error.request) {
             console.error("No response received from server");
-            console.error(error.request);
+            console.debug(error.request);
         }
         else {
             console.error("Request Error:", error.message);
@@ -34769,12 +34788,14 @@ class GMAuth {
 }
 function getGMAPIJWT(config) {
     return __awaiter(this, void 0, void 0, function* () {
+        var _a;
         if (!config.username ||
             !config.password ||
             !config.deviceId ||
             !config.totpKey) {
             throw new Error("Missing required configuration parameters");
         }
+        config.tokenLocation = (_a = config.tokenLocation) !== null && _a !== void 0 ? _a : "./";
         const auth = new GMAuth(config);
         const token = yield auth.authenticate();
         return {
@@ -34803,7 +34824,7 @@ var OnStarApiCommand;
 })(OnStarApiCommand || (OnStarApiCommand = {}));
 class RequestService {
     constructor(config, client) {
-        var _a, _b, _c;
+        var _a, _b, _c, _d;
         this.client = client;
         this.config = Object.assign(Object.assign({}, config), { vin: config.vin.toUpperCase() });
         this.gmAuthConfig = {
@@ -34811,12 +34832,13 @@ class RequestService {
             password: this.config.password,
             deviceId: this.config.deviceId,
             totpKey: this.config.onStarTOTP,
+            tokenLocation: (_a = this.config.tokenLocation) !== null && _a !== void 0 ? _a : "./",
         };
-        this.checkRequestStatus = (_a = this.config.checkRequestStatus) !== null && _a !== void 0 ? _a : true;
+        this.checkRequestStatus = (_b = this.config.checkRequestStatus) !== null && _b !== void 0 ? _b : true;
         this.requestPollingTimeoutSeconds =
-            (_b = config.requestPollingTimeoutSeconds) !== null && _b !== void 0 ? _b : 90;
+            (_c = config.requestPollingTimeoutSeconds) !== null && _c !== void 0 ? _c : 90;
         this.requestPollingIntervalSeconds =
-            (_c = config.requestPollingIntervalSeconds) !== null && _c !== void 0 ? _c : 6;
+            (_d = config.requestPollingIntervalSeconds) !== null && _d !== void 0 ? _d : 6;
     }
     setClient(client) {
         this.client = client;

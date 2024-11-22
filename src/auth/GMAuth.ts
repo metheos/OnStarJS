@@ -7,12 +7,14 @@ import { custom } from "openid-client";
 import fs from "fs";
 import { TOTP } from "totp-generator";
 import { stringify } from "uuid";
+import path from "path";
 
 interface GMAuthConfig {
   username: string;
   password: string;
   deviceId: string;
   totpKey: string;
+  tokenLocation?: string;
 }
 
 interface TokenSet {
@@ -61,8 +63,12 @@ export class GMAuth {
 
   constructor(config: GMAuthConfig) {
     this.config = config;
-    this.MSTokenPath = "./microsoft_tokens.json";
-    this.GMTokenPath = "./gm_tokens.json";
+    this.config.tokenLocation = this.config.tokenLocation ?? "./";
+    this.MSTokenPath = path.join(
+      this.config.tokenLocation,
+      "microsoft_tokens.json",
+    );
+    this.GMTokenPath = path.join(this.config.tokenLocation, "gm_tokens.json");
     this.oidc = {
       Issuer: openidClient.Issuer,
       generators: openidClient.generators,
@@ -527,6 +533,7 @@ interface AuthConfig {
   password: string | undefined;
   deviceId: string | undefined;
   totpKey: string | undefined;
+  tokenLocation?: string | undefined;
 }
 
 export async function getGMAPIJWT(config: AuthConfig) {
@@ -538,6 +545,8 @@ export async function getGMAPIJWT(config: AuthConfig) {
   ) {
     throw new Error("Missing required configuration parameters");
   }
+
+  config.tokenLocation = config.tokenLocation ?? "./";
 
   const auth = new GMAuth(config as GMAuthConfig);
   const token = await auth.authenticate();

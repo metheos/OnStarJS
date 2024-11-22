@@ -36,7 +36,7 @@ declare class RequestService {
     private connectRequest;
     private upgradeRequest;
     private authTokenRequest;
-    private getAuthToken;
+    getAuthToken(): Promise<OAuthToken>;
     private refreshAuthToken;
     private createNewAuthToken;
     private connectAndUpgradeAuthToken;
