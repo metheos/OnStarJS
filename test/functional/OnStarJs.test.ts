@@ -56,7 +56,7 @@ describe("OnStarJs", () => {
     expect(result.response?.data).toHaveProperty("commandResponse");
   });
 
-  test.skip("Diagnostics Request Successful", async () => {
+  test("Diagnostics Request Successful", async () => {
     onStar.setCheckRequestStatus(true);
 
     const result = await onStar.diagnostics();

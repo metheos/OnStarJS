@@ -3,6 +3,7 @@ import axios, { AxiosInstance, AxiosResponse } from "axios";
 import { CookieJar } from "tough-cookie";
 import { HttpCookieAgent, HttpsCookieAgent } from "http-cookie-agent/http";
 import * as openidClient from "openid-client";
+import { custom } from "openid-client";
 import fs from "fs";
 import { TOTP } from "totp-generator";
 
@@ -374,12 +375,15 @@ export class GMAuth {
       "https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/b2c_1a_seamless_mobile_signuporsignin/v2.0/.well-known/openid-configuration",
     );
 
-    return new issuer.Client({
+    const client = new issuer.Client({
       client_id: "3ff30506-d242-4bed-835b-422bf992622e",
       redirect_uris: ["msauth.com.gm.myChevrolet://auth"],
       response_types: ["code"],
       token_endpoint_auth_method: "none",
     });
+    client[custom.clock_tolerance] = 5; // to allow a 5 second skew
+
+    return client;
   }
 
   private async startAuthorizationFlow(): Promise<{

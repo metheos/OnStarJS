@@ -34671,6 +34671,7 @@ class GMAuth {
                 redirect_uris: ["msauth.com.gm.myChevrolet://auth"],
                 response_types: ["code"],
                 token_endpoint_auth_method: "none",
+                clockTolerance: 60
             });
         });
     }
