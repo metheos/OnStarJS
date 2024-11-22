@@ -49,6 +49,11 @@ describe("RequestService", () => {
       .setAuthToken(authToken)
       .setRequestPollingIntervalSeconds(0)
       .setRequestPollingTimeoutSeconds(0);
+
+    // Mock getAuthToken to return a Promise that resolves to the mocked token
+    jest
+      .spyOn(requestService, "getAuthToken")
+      .mockReturnValue(authToken as any);
   });
 
   test("start", async () => {

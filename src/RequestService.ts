@@ -322,7 +322,7 @@ class RequestService {
     return this.sendRequest(request);
   }
 
-  private async getAuthToken(): Promise<OAuthToken> {
+  async getAuthToken(): Promise<OAuthToken> {
     const { token, auth } = await getGMAPIJWT(this.gmAuthConfig);
     this.authToken = token;
 
