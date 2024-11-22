@@ -118,6 +118,9 @@ export class GMAuth {
     const authCode = await this.getAuthorizationCode();
     if (!authCode) throw new Error("Failed to get authorization code");
 
+    //Wait a few seconds because the JWT is issued into the future for some reason
+    await new Promise((r) => setTimeout(r, 5000));
+
     const tokenSet = await this.getAccessToken(authCode, code_verifier);
     await this.saveTokens(tokenSet);
 
