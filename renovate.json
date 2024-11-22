@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:base"],
+  "extends": ["config:recommended"],
   "prHourlyLimit": 0,
   "prConcurrentLimit": 0,
   "npm": {
@@ -14,7 +14,7 @@
       "addLabels": ["javascript"]
     },
     {
-      "matchLanguages": ["js"],
+      "matchCategories": ["js"],
       "addLabels": ["javascript"]
     },
     {
@@ -26,8 +26,8 @@
       "addLabels": ["dockerfile"]
     },
     {
-      "matchPackagePatterns": ["dockerfile"],
-      "addLabels": ["dockerfile"]
+      "addLabels": ["dockerfile"],
+      "matchPackageNames": ["/dockerfile/"]
     },
     {
       "matchManagers": ["nvm"],
