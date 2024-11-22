@@ -34513,7 +34513,8 @@ class GMAuth {
                     const storedToken = JSON.parse(fs.readFileSync(tokenFilePath, "utf-8"));
                     const now = Math.floor(Date.now() / 1000);
                     // Check if the token is still valid
-                    if (storedToken.expires_at && storedToken.expires_at > now) {
+                    if (storedToken.expires_at && storedToken.expires_at > now + 5 * 60) {
+                        // console.log("GM expires at: ", storedToken.expires_at, " now: ", now);
                         // console.log("Loaded existing GM API token");
                         this.currentGMAPIToken = storedToken;
                     }
@@ -34532,7 +34533,7 @@ class GMAuth {
             // Check if we already have a valid token
             const now = Math.floor(Date.now() / 1000);
             if (this.currentGMAPIToken &&
-                this.currentGMAPIToken.expires_at > now + 60) {
+                this.currentGMAPIToken.expires_at > now + 5 * 60) {
                 // console.log("Returning existing GM API token");
                 return this.currentGMAPIToken;
             }
@@ -34556,6 +34557,8 @@ class GMAuth {
                     parseInt(response.data.expires_in.toString());
                 response.data.expires_in = parseInt(response.data.expires_in.toString());
                 response.data.expires_at = expires_at;
+                // console.log(JSON.stringify(response.data));
+                // console.log("GM Says we expire in ", response.data.expires_in);
                 // console.log("Set GM Token expiration to ", expires_at);
                 // Store the new token
                 this.currentGMAPIToken = response.data;
@@ -34731,8 +34734,9 @@ class GMAuth {
                     throw err;
                 }
                 const now = Math.floor(Date.now() / 1000);
-                if (storedTokens.expires_at && storedTokens.expires_at > now) {
+                if (storedTokens.expires_at && storedTokens.expires_at > now + 120) {
                     // console.log("MS Access token is still valid");
+                    // console.log("MS expires at: ", storedTokens.expires_at, " now: ", now);
                     tokenSet = storedTokens;
                 }
                 else if (storedTokens.refresh_token) {
