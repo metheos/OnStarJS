@@ -6,6 +6,7 @@ import * as openidClient from "openid-client";
 import { custom } from "openid-client";
 import fs from "fs";
 import { TOTP } from "totp-generator";
+import { stringify } from "uuid";
 
 interface GMAuthConfig {
   username: string;
@@ -207,7 +208,8 @@ export class GMAuth {
         const now = Math.floor(Date.now() / 1000);
 
         // Check if the token is still valid
-        if (storedToken.expires_at && storedToken.expires_at > now) {
+        if (storedToken.expires_at && storedToken.expires_at > now + 5 * 60) {
+          // console.log("GM expires at: ", storedToken.expires_at, " now: ", now);
           // console.log("Loaded existing GM API token");
           this.currentGMAPIToken = storedToken;
         } else {
@@ -226,7 +228,7 @@ export class GMAuth {
     const now = Math.floor(Date.now() / 1000);
     if (
       this.currentGMAPIToken &&
-      this.currentGMAPIToken.expires_at > now + 60
+      this.currentGMAPIToken.expires_at > now + 5 * 60
     ) {
       // console.log("Returning existing GM API token");
       return this.currentGMAPIToken;
@@ -259,6 +261,8 @@ export class GMAuth {
         parseInt(response.data.expires_in.toString());
       response.data.expires_in = parseInt(response.data.expires_in.toString());
       response.data.expires_at = expires_at;
+      // console.log(JSON.stringify(response.data));
+      // console.log("GM Says we expire in ", response.data.expires_in);
       // console.log("Set GM Token expiration to ", expires_at);
 
       // Store the new token
@@ -467,8 +471,9 @@ export class GMAuth {
       }
       const now = Math.floor(Date.now() / 1000);
 
-      if (storedTokens.expires_at && storedTokens.expires_at > now) {
+      if (storedTokens.expires_at && storedTokens.expires_at > now + 120) {
         // console.log("MS Access token is still valid");
+        // console.log("MS expires at: ", storedTokens.expires_at, " now: ", now);
         tokenSet = storedTokens;
       } else if (storedTokens.refresh_token) {
         // console.log("Refreshing MS access token");
