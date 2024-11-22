@@ -26,6 +26,8 @@ You may be able to obtain your TOTP key by inspecting/hovering over the link und
 
 If you use an authenticator app such as [Stratum](https://stratumauth.com/), [Bitwarden](https://bitwarden.com/), or [Vaultwarden](https://github.com/dani-garcia/vaultwarden) that allows you to view your TOTP key, you can view it at any time.
 
+In the IOS Passwords app you can tap "Copy Setup URL" and obtain the secret from the copied data.
+
 _If you cannot find the option to configure a "Third-Party Authenticator App" on your GM account page, try contacting OnStar to see if there is another way to enable it._
 
 ## Sample
