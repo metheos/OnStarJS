@@ -5,3 +5,5 @@ coverage
 .rpt2_cache
 testCredentials.json
 .env
+tokens.json
+*_tokens.json

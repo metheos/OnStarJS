@@ -1,4 +1,4 @@
-import TokenHandler from "./TokenHandler";
+// import TokenHandler from "./TokenHandler";
 import Request, { RequestMethod } from "./Request";
 import RequestResult from "./RequestResult";
 import RequestError from "./RequestError";
@@ -21,9 +21,11 @@ import {
   Result,
   SetChargingProfileRequestOptions,
   CommandResponseStatus,
+  GMAuthConfig,
 } from "./types";
 import onStarAppConfig from "./onStarAppConfig.json";
 import axios from "axios";
+import { getGMAPIJWT } from "./auth/GMAuth";
 
 enum OnStarApiCommand {
   Alert = "alert",
@@ -44,6 +46,7 @@ enum OnStarApiCommand {
 
 class RequestService {
   private config: OnStarConfig;
+  private gmAuthConfig: GMAuthConfig;
   private authToken?: OAuthToken;
   private checkRequestStatus: boolean;
   private requestPollingTimeoutSeconds: number;
@@ -53,7 +56,6 @@ class RequestService {
 
   constructor(
     config: OnStarConfig,
-    private tokenHandler: TokenHandler,
     private client: HttpClient,
   ) {
     this.config = {
@@ -61,9 +63,16 @@ class RequestService {
       vin: config.vin.toUpperCase(),
     };
 
+    this.gmAuthConfig = {
+      username: this.config.username,
+      password: this.config.password,
+      deviceId: this.config.deviceId,
+      totpKey: this.config.onStarTOTP,
+    };
+
     this.checkRequestStatus = this.config.checkRequestStatus ?? true;
     this.requestPollingTimeoutSeconds =
-      config.requestPollingTimeoutSeconds ?? 60;
+      config.requestPollingTimeoutSeconds ?? 90;
     this.requestPollingIntervalSeconds =
       config.requestPollingIntervalSeconds ?? 6;
   }
@@ -297,14 +306,7 @@ class RequestService {
   }
 
   private async upgradeRequest(): Promise<Result> {
-    const jwt = this.tokenHandler.createUpgradeJWT();
-
-    const request = new Request(this.getApiUrlForPath("/oauth/token/upgrade"))
-      .setContentType("text/plain")
-      .setUpgradeRequired(false)
-      .setBody(jwt);
-
-    return this.sendRequest(request);
+    throw new Error("Not Implemented");
   }
 
   private async authTokenRequest(jwt: string): Promise<Result> {
@@ -320,10 +322,9 @@ class RequestService {
     return this.sendRequest(request);
   }
 
-  private async getAuthToken(): Promise<OAuthToken> {
-    if (!this.authToken || !TokenHandler.authTokenIsValid(this.authToken)) {
-      this.authToken = await this.refreshAuthToken();
-    }
+  async getAuthToken(): Promise<OAuthToken> {
+    const { token, auth } = await getGMAPIJWT(this.gmAuthConfig);
+    this.authToken = token;
 
     return this.authToken;
   }
@@ -347,15 +348,10 @@ class RequestService {
   }
 
   private async createNewAuthToken(): Promise<OAuthToken> {
-    const jwt = this.tokenHandler.createAuthJWT();
+    const { token, auth } = await getGMAPIJWT(this.gmAuthConfig);
+    this.authToken = token;
 
-    const { response } = await this.authTokenRequest(jwt);
-
-    if (typeof response?.data !== "string") {
-      throw new Error("Failed to fetch token");
-    }
-
-    return this.tokenHandler.decodeAuthRequestResponse(response.data);
+    return this.authToken;
   }
 
   private async connectAndUpgradeAuthToken(): Promise<void> {

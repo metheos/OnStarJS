@@ -1,5 +1,4 @@
 import { mock, instance, when, anything } from "ts-mockito";
-import TokenHandler from "../../src/TokenHandler";
 import { HttpClient, CommandResponseStatus } from "../../src/types";
 import RequestService from "../../src/RequestService";
 import { testConfig, authToken, expiredAuthToken } from "./testData";
@@ -12,11 +11,6 @@ describe("RequestService", () => {
   const commandResponseUrl = "requestCheckUrl";
 
   beforeEach(() => {
-    const tokenHandler = mock(TokenHandler);
-    when(tokenHandler.decodeAuthRequestResponse(anything())).thenReturn(
-      authToken,
-    );
-
     const requestTime = Date.now() + 1000;
 
     httpClient = {
@@ -51,14 +45,15 @@ describe("RequestService", () => {
       }),
     };
 
-    requestService = new RequestService(
-      testConfig,
-      instance(tokenHandler),
-      httpClient,
-    )
+    requestService = new RequestService(testConfig, httpClient)
       .setAuthToken(authToken)
       .setRequestPollingIntervalSeconds(0)
       .setRequestPollingTimeoutSeconds(0);
+
+    // Mock getAuthToken to return a Promise that resolves to the mocked token
+    jest
+      .spyOn(requestService, "getAuthToken")
+      .mockReturnValue(authToken as any);
   });
 
   test("start", async () => {
@@ -166,24 +161,6 @@ describe("RequestService", () => {
     const result = await requestService.setClient(httpClient).start();
 
     expect(result.status).toEqual(CommandResponseStatus.success);
-  });
-
-  test("requestWithExpiredAuthTokenAndFailedTokenFetch", async () => {
-    httpClient.post = jest.fn().mockResolvedValue({
-      data: {
-        commandResponse: {
-          requestTime: Date.now() + 1000,
-          status: CommandResponseStatus.success,
-          url: commandResponseUrl,
-        },
-      },
-    });
-
-    requestService.setAuthToken(expiredAuthToken);
-
-    expect(async () => {
-      await requestService.setClient(httpClient).start();
-    }).rejects.toThrowError(/^Failed to fetch token$/);
   });
 
   test("requestCheckExceedsTimeoutError", async () => {
