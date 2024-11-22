@@ -2,6 +2,46 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [2.5.3](https://github.com/samrum/OnStarJS/compare/v2.5.2...v2.5.3) (2024-07-27)
+
+
+### Bug Fixes
+
+* new secrets ([#256](https://github.com/samrum/OnStarJS/issues/256)) ([e4459ba](https://github.com/samrum/OnStarJS/commit/e4459ba7e82b8db21e021a25cde1c43d17299b7c))
+
+### [2.5.2](https://github.com/samrum/OnStarJS/compare/v2.5.1...v2.5.2) (2024-06-05)
+
+
+### Bug Fixes
+
+* update secrets ([#253](https://github.com/samrum/OnStarJS/issues/253)) ([cb24704](https://github.com/samrum/OnStarJS/commit/cb247045ba25eecae1983b729ec4df4585f7f244))
+
+### [2.5.1](https://github.com/samrum/OnStarJS/compare/v2.5.0...v2.5.1) (2024-04-17)
+
+
+### Bug Fixes
+
+* update secrets ([#252](https://github.com/samrum/OnStarJS/issues/252)) ([abd5e8b](https://github.com/samrum/OnStarJS/commit/abd5e8bbcc81fe367badfa53033aff7bc41d9ffa))
+
+## [2.5.0](https://github.com/samrum/OnStarJS/compare/v2.4.0...v2.5.0) (2024-03-26)
+
+
+### Features
+
+* lock/unlock trunk ([#250](https://github.com/samrum/OnStarJS/issues/250)) ([b35d305](https://github.com/samrum/OnStarJS/commit/b35d305666ce90bce6818fe46072ef602c09fec5))
+
+## [2.4.0](https://github.com/samrum/OnStarJS/compare/v2.3.30...v2.4.0) (2024-03-24)
+
+
+### Features
+
+* include shared vehicles with getAccountVehicles ([#241](https://github.com/samrum/OnStarJS/issues/241)) ([09a173c](https://github.com/samrum/OnStarJS/commit/09a173c544ff7f97c472c903da0146047c11d6ab))
+
+
+### Bug Fixes
+
+* update secrets ([#249](https://github.com/samrum/OnStarJS/issues/249)) ([0b8a1c9](https://github.com/samrum/OnStarJS/commit/0b8a1c95446ccc6c83c65f8f2bf5d79bb84676a8))
+
 ### [2.3.30](https://github.com/samrum/OnStarJS/compare/v2.3.29...v2.3.30) (2024-01-18)
 
 

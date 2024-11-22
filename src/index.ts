@@ -1,6 +1,6 @@
 import axios from "axios";
 
-import TokenHandler from "./TokenHandler";
+// import TokenHandler from "./TokenHandler";
 import RequestService from "./RequestService";
 
 import {
@@ -18,11 +18,7 @@ class OnStar {
   constructor(private requestService: RequestService) {}
 
   static create(config: OnStarConfig): OnStar {
-    const requestService = new RequestService(
-      config,
-      new TokenHandler(config),
-      axios,
-    );
+    const requestService = new RequestService(config, axios);
 
     return new OnStar(requestService);
   }
