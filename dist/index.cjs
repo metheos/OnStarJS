@@ -34326,7 +34326,7 @@ const Issuer = mod.Issuer;
 mod.Strategy;
 mod.TokenSet;
 mod.errors;
-mod.custom;
+const custom = mod.custom;
 const generators = mod.generators;
 
 /**
@@ -34666,13 +34666,14 @@ class GMAuth {
         return __awaiter(this, void 0, void 0, function* () {
             // console.log("Doing auth discovery");
             const issuer = yield this.oidc.Issuer.discover("https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/b2c_1a_seamless_mobile_signuporsignin/v2.0/.well-known/openid-configuration");
-            return new issuer.Client({
+            const client = new issuer.Client({
                 client_id: "3ff30506-d242-4bed-835b-422bf992622e",
                 redirect_uris: ["msauth.com.gm.myChevrolet://auth"],
                 response_types: ["code"],
                 token_endpoint_auth_method: "none",
-                clockTolerance: 60
             });
+            client[custom.clock_tolerance] = 5; // to allow a 5 second skew
+            return client;
         });
     }
     startAuthorizationFlow() {
