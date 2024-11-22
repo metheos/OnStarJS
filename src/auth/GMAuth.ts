@@ -92,7 +92,11 @@ export class GMAuth {
       if (!loadedTokenSet) throw new Error("Failed to load MS token set");
       return await this.getGMAPIToken(loadedTokenSet);
     } catch (error) {
-      console.error("Authentication failed:", error);
+      if (axios.isAxiosError(error)) {
+        this.handleRequestError(error);
+      } else {
+        console.error("Authentication failed:", error);
+      }
       throw error;
     }
   }
@@ -133,6 +137,7 @@ export class GMAuth {
     // Save the GM API token as well
     if (this.currentGMAPIToken) {
       const tokenFilePath = this.GMTokenPath; // Define the path for the token file
+      // console.log("Saving GM tokens to ", this.GMTokenPath);
       fs.writeFileSync(tokenFilePath, JSON.stringify(this.currentGMAPIToken));
       // console.log("Saved current GM API token to ", tokenFilePath);
     }
@@ -300,8 +305,12 @@ export class GMAuth {
       // console.log("Response Status:", response.status);
       return response;
     } catch (error: any) {
-      this.handleRequestError(error);
-      throw error;
+      if (axios.isAxiosError(error)) {
+        this.handleRequestError(error);
+      } else {
+        console.error("GET Request failed:", error);
+      }
+      return error.response;
     }
   }
 
@@ -323,23 +332,28 @@ export class GMAuth {
       // console.log("Response Status:", response.status);
       return response;
     } catch (error: any) {
-      this.handleRequestError(error);
-      throw error;
+      if (axios.isAxiosError(error)) {
+        this.handleRequestError(error);
+      } else {
+        console.error("POST Request failed:", error);
+      }
+      return error.response;
     }
   }
 
   private handleRequestError(error: any): void {
+    console.log("reqer");
     if (error.response) {
       console.error(
         `HTTP Error ${error.response.status}: ${error.response.statusText}`,
       );
-      console.error("Response data:", error.response.data);
+      console.debug("Response data:", error.response.data);
       if (error.response.status === 401) {
         console.error("Authentication failed. Please check your credentials.");
       }
     } else if (error.request) {
       console.error("No response received from server");
-      console.error(error.request);
+      console.debug(error.request);
     } else {
       console.error("Request Error:", error.message);
     }

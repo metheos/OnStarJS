@@ -43,7 +43,7 @@ importers:
         specifier: ^11.1.0
         version: 11.1.6(rollup@3.29.4)(tslib@2.6.3)(typescript@5.5.4)
       '@types/jest':
-        specifier: ^29.5.1
+        specifier: ^29.5.12
         version: 29.5.12
       '@types/jsonwebtoken':
         specifier: ^9.0.1
