@@ -34734,7 +34734,7 @@ class GMAuth {
                     throw err;
                 }
                 const now = Math.floor(Date.now() / 1000);
-                if (storedTokens.expires_at && storedTokens.expires_at > now + 120) {
+                if (storedTokens.expires_at && storedTokens.expires_at > now + 5 * 60) {
                     // console.log("MS Access token is still valid");
                     // console.log("MS expires at: ", storedTokens.expires_at, " now: ", now);
                     tokenSet = storedTokens;
