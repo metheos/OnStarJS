@@ -4,7 +4,7 @@
 [![Build Status](https://github.com/BigThunderSR/OnStarJS/workflows/build/badge.svg)](https://github.com/BigThunderSR/OnStarJS/actions?query=workflow%3Abuild)
 [![Coverage Status](https://coveralls.io/repos/github/BigThunderSR/OnStarJS/badge.svg?branch=master)](https://coveralls.io/github/BigThunderSR/OnStarJS?branch=master)
 
-An unofficial NodeJS library to make OnStar requests.
+An unofficial NodeJS library to make OnStar requests. This version has been forked from [samrum/OnStarJS](https://github.com/samrum/OnStarJS) and includes the new TOTP login mechanism developed by [metheos](https://github.com/metheos/).
 
 **Use at your own risk. This is an unofficial library.**
 
@@ -270,5 +270,7 @@ Because of this, the test will require actual OnStar credentials to run. To prov
 # Credits
 
 Made possible by [mikenemat](https://github.com/mikenemat/)'s work in [gm-onstar-probe](https://github.com/mikenemat/gm-onstar-probe). Their work describing the process for remote start enabled the rest of the methods implemented here.
+
+[samrum/OnStarJS](https://github.com/samrum/OnStarJS) for the original OnStarJS
 
 New GMAuth functionality implemented by [metheos](https://github.com/metheos/)
