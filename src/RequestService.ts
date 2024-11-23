@@ -68,6 +68,7 @@ class RequestService {
       password: this.config.password,
       deviceId: this.config.deviceId,
       totpKey: this.config.onStarTOTP,
+      tokenLocation: this.config.tokenLocation ?? "./",
     };
 
     this.checkRequestStatus = this.config.checkRequestStatus ?? true;
