@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [2.6.0](https://github.com/BigThunderSR/OnStarJS/compare/v2.3.30...v2.6.0) (2024-11-23)
+
+
+### Features
+
+* include shared vehicles with getAccountVehicles ([#241](https://github.com/BigThunderSR/OnStarJS/issues/241)) ([09a173c](https://github.com/BigThunderSR/OnStarJS/commit/09a173c544ff7f97c472c903da0146047c11d6ab))
+
+
+### Bug Fixes
+
+* **deps:** update dependency axios to ^1.6.5 ([5e79a41](https://github.com/BigThunderSR/OnStarJS/commit/5e79a41ff32f1af0dee5cc86fb9a5f7a947520bc))
+* **deps:** update dependency jsonwebtoken to ^9.0.2 ([f0450a9](https://github.com/BigThunderSR/OnStarJS/commit/f0450a966af9b9663f38bc52bb4b51c4eb05ed7a))
+* **deps:** update dependency uuid to ^9.0.1 ([7b342f9](https://github.com/BigThunderSR/OnStarJS/commit/7b342f9502751e71fd2aca9c3e6065f84f197445))
+
 ### [2.5.3](https://github.com/samrum/OnStarJS/compare/v2.5.2...v2.5.3) (2024-07-27)
 
 
