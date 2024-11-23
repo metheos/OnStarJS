@@ -12,6 +12,7 @@ describe("GM Authentication", () => {
       password: process.env.ONSTAR_PASSWORD,
       deviceId: process.env.DEVICEID,
       totpKey: process.env.ONSTAR_TOTPKEY,
+      tokenLocation: process.env.TOKEN_LOCATION,
     };
 
     // Create authenticated client

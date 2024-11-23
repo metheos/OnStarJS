@@ -11,6 +11,7 @@ const {
   ONSTAR_PASSWORD,
   ONSTAR_PIN,
   ONSTAR_TOTPKEY,
+  TOKEN_LOCATION,
 } = process.env;
 
 if (
@@ -35,6 +36,7 @@ describe("OnStarJs", () => {
       password: ONSTAR_PASSWORD,
       onStarPin: ONSTAR_PIN,
       onStarTOTP: ONSTAR_TOTPKEY,
+      tokenLocation: TOKEN_LOCATION,
       checkRequestStatus: false,
     });
   });

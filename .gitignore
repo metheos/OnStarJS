@@ -6,4 +6,5 @@ testCredentials.json
 .env
 tokens.json
 *_tokens.json
+token-location-test-folder
 .vscode
