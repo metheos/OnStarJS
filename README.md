@@ -1,8 +1,8 @@
 # OnStarJS
 
-[![npm version](https://badge.fury.io/js/onstarjs.svg)](https://badge.fury.io/js/onstarjs)
-[![Build Status](https://github.com/samrum/OnStarJS/workflows/build/badge.svg)](https://github.com/samrum/OnStarJS/actions?query=workflow%3Abuild)
-[![Coverage Status](https://coveralls.io/repos/github/samrum/OnStarJS/badge.svg?branch=master)](https://coveralls.io/github/samrum/OnStarJS?branch=master)
+[![npm version](https://badge.fury.io/js/onstarjs2.svg)](https://badge.fury.io/js/onstarjs2)
+[![Build Status](https://github.com/BigThunderSR/OnStarJS/workflows/build/badge.svg)](https://github.com/BigThunderSR/OnStarJS/actions?query=workflow%3Abuild)
+[![Coverage Status](https://coveralls.io/repos/github/BigThunderSR/OnStarJS/badge.svg?branch=master)](https://coveralls.io/github/BigThunderSR/OnStarJS?branch=master)
 
 An unofficial NodeJS library to make OnStar requests.
 
