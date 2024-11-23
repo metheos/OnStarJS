@@ -1,5 +1,5 @@
 {
-  "name": "onstarjs",
+  "name": "onstarjs2",
   "version": "2.5.3",
   "description": "Unofficial package for making OnStar API requests",
   "main": "dist/index.cjs",
@@ -47,7 +47,7 @@
   "sideEffects": false,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/samrum/OnStarJS.git"
+    "url": "git+https://github.com/BigThunderSR/OnStarJS.git"
   },
   "keywords": [
     "onstar",
@@ -58,12 +58,12 @@
     "buick",
     "cadillac"
   ],
-  "author": "Ruben Medina <dev@rubenmedina.com> (https://rubenmedina.com)",
+  "author": "Ruben Medina <dev@rubenmedina.com> (https://rubenmedina.com), updated by @BigThunderSR and others.",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/samrum/OnStarJS/issues"
+    "url": "https://github.com/BigThunderSR/OnStarJS/issues"
   },
-  "homepage": "https://github.com/samrum/OnStarJS#readme",
+  "homepage": "https://github.com/BigThunderSR/OnStarJS#readme",
   "dependencies": {
     "@rollup/plugin-commonjs": "^28.0.1",
     "@rollup/plugin-node-resolve": "^15.3.0",
