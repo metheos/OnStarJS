@@ -1,10 +1,14 @@
-# OnStarJS
+# OnStarJS (OnStarJS2)
 
 [![npm version](https://badge.fury.io/js/onstarjs2.svg)](https://badge.fury.io/js/onstarjs2)
-[![Build Status](https://github.com/BigThunderSR/OnStarJS/workflows/build/badge.svg)](https://github.com/BigThunderSR/OnStarJS/actions?query=workflow%3Abuild)
+[![Create Github Release](https://github.com/BigThunderSR/OnStarJS/actions/workflows/release.yml/badge.svg)](https://github.com/BigThunderSR/OnStarJS/actions/workflows/release.yml)
+[![Publish Package](https://github.com/BigThunderSR/OnStarJS/actions/workflows/publish.yml/badge.svg)](https://github.com/BigThunderSR/OnStarJS/actions/workflows/publish.yml)
 [![Coverage Status](https://coveralls.io/repos/github/BigThunderSR/OnStarJS/badge.svg?branch=master)](https://coveralls.io/github/BigThunderSR/OnStarJS?branch=master)
+<!-- [![Build Status](https://github.com/BigThunderSR/OnStarJS/workflows/build/badge.svg)](https://github.com/BigThunderSR/OnStarJS/actions?query=workflow%3Abuild) -->
 
-An unofficial NodeJS library to make OnStar requests. This version has been forked from [samrum/OnStarJS](https://github.com/samrum/OnStarJS) and includes the new TOTP login mechanism developed by [metheos](https://github.com/metheos/).
+An unofficial NodeJS library to make OnStar requests. This version has been forked from [samrum/OnStarJS](https://github.com/samrum/OnStarJS) and includes the new TOTP login mechanism implemented by [metheos](https://github.com/metheos/).
+
+Published as OnStarJS2 at https://www.npmjs.com/package/onstarjs2
 
 **Use at your own risk. This is an unofficial library.**
 
