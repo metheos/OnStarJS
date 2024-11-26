@@ -1,8 +1,7 @@
-import { mock, instance, when, anything } from "ts-mockito";
-import { HttpClient, CommandResponseStatus } from "../../src/types";
 import RequestService from "../../src/RequestService";
 import { testConfig, authToken, expiredAuthToken } from "./testData";
-import { AxiosError } from "axios";
+import { HttpClient, CommandResponseStatus } from "../../src/types";
+import Request from "../../src/Request";
 
 describe("RequestService", () => {
   let requestService: RequestService;
@@ -174,9 +173,9 @@ describe("RequestService", () => {
       },
     });
 
-    expect(async () => {
-      await requestService.setClient(httpClient).start();
-    }).rejects.toThrowError(/^Command Timeout$/);
+    await expect(
+      requestService.setClient(httpClient).start(),
+    ).rejects.toThrowError(/^Command Timeout$/);
   });
 
   test("requestStatusFailureError", async () => {
@@ -189,9 +188,9 @@ describe("RequestService", () => {
       },
     });
 
-    expect(async () => {
-      await requestService.setClient(httpClient).start();
-    }).rejects.toThrowError(/^Command Failure$/);
+    await expect(
+      requestService.setClient(httpClient).start(),
+    ).rejects.toThrowError(/^Command Failure$/);
   });
 
   test("axiosRequestResponseError", async () => {
@@ -207,11 +206,9 @@ describe("RequestService", () => {
       },
     });
 
-    expect(async () => {
-      await requestService.setClient(httpClient).start();
-    }).rejects.toThrowError(
-      /^Request Failed with status 400 - invalid_client$/,
-    );
+    await expect(
+      requestService.setClient(httpClient).start(),
+    ).rejects.toThrowError(/^Request Failed with status 400 - invalid_client$/);
   });
 
   test("axiosRequestNoResponseError", async () => {
@@ -222,9 +219,9 @@ describe("RequestService", () => {
       },
     });
 
-    expect(async () => {
-      await requestService.setClient(httpClient).start();
-    }).rejects.toThrowError(/^No response$/);
+    await expect(
+      requestService.setClient(httpClient).start(),
+    ).rejects.toThrowError(/^No response$/);
   });
 
   test("axiosRequestError", async () => {
@@ -233,16 +230,97 @@ describe("RequestService", () => {
       message: "Test error",
     });
 
-    expect(async () => {
-      await requestService.setClient(httpClient).start();
-    }).rejects.toThrowError(/^Test error$/);
+    await expect(
+      requestService.setClient(httpClient).start(),
+    ).rejects.toThrowError(/^Test error$/);
   });
 
   test("requestError", async () => {
     httpClient.post = jest.fn().mockRejectedValue(new Error("errorMessage"));
 
-    expect(async () => {
-      await requestService.setClient(httpClient).start();
-    }).rejects.toThrowError(/^errorMessage$/);
+    await expect(
+      requestService.setClient(httpClient).start(),
+    ).rejects.toThrowError(/^errorMessage$/);
+  });
+
+  test("setClient", () => {
+    const newHttpClient: HttpClient = {
+      post: jest.fn(),
+      get: jest.fn(),
+    };
+
+    requestService.setClient(newHttpClient);
+    expect(requestService["client"]).toEqual(newHttpClient);
+  });
+
+  test("setAuthToken", () => {
+    requestService.setAuthToken(expiredAuthToken);
+    expect(requestService["authToken"]).toEqual(expiredAuthToken);
+  });
+
+  test("setRequestPollingTimeoutSeconds", () => {
+    requestService.setRequestPollingTimeoutSeconds(120);
+    expect(requestService["requestPollingTimeoutSeconds"]).toEqual(120);
+  });
+
+  test("setRequestPollingIntervalSeconds", () => {
+    requestService.setRequestPollingIntervalSeconds(10);
+    expect(requestService["requestPollingIntervalSeconds"]).toEqual(10);
+  });
+
+  test("setCheckRequestStatus", () => {
+    requestService.setCheckRequestStatus(true);
+    expect(requestService["checkRequestStatus"]).toEqual(true);
+  });
+
+  test("getAuthToken", async () => {
+    const token = await requestService.getAuthToken();
+    expect(token).toEqual(authToken);
+  });
+
+  test("sendRequest", async () => {
+    const request = new Request("https://foo.bar");
+    const result = await requestService["sendRequest"](request);
+    expect(result.status).toEqual(CommandResponseStatus.success);
+  });
+
+  test("getHeaders", async () => {
+    const request = new Request("https://foo.bar");
+    const headers = await requestService["getHeaders"](request);
+    expect(headers).toHaveProperty("Authorization");
+  });
+
+  test("checkRequestPause", async () => {
+    jest.useFakeTimers();
+    const pausePromise = requestService["checkRequestPause"]();
+    jest.advanceTimersByTime(1000);
+    await expect(pausePromise).resolves.toBeUndefined();
+    jest.useRealTimers();
+  });
+
+  // Additional tests for increased coverage
+  test("refreshAuthToken", async () => {
+    jest
+      .spyOn(requestService as any, "createNewAuthToken")
+      .mockResolvedValue("newToken");
+    const token = await requestService["refreshAuthToken"]();
+    expect(token).toEqual("newToken");
+  });
+
+  test("createNewAuthToken", async () => {
+    httpClient.post = jest.fn().mockResolvedValue({
+      data: {
+        access_token: "newAccessToken",
+      },
+    });
+
+    const token = await requestService["createNewAuthToken"]();
+    //console.log(token);
+    let response = JSON.parse(JSON.stringify(token));
+    expect(token.token_type).toBe("bearer");
+    expect(Math.floor(response.expires_at)).toBeGreaterThanOrEqual(
+      Math.floor(Date.now() / 1000),
+    );
+    expect(response.expires_at).toBeGreaterThanOrEqual(1798);
   });
 });
