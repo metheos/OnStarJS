@@ -8,6 +8,17 @@ import fs from "fs";
 import { TOTP } from "totp-generator";
 import { stringify } from "uuid";
 import path from "path";
+import jwt from "jsonwebtoken";
+
+// Define an interface for the vehicle structure and the payload containing them
+interface Vehicle {
+  vin: string;
+  per: string;
+}
+
+interface DecodedPayload {
+  vehs: Vehicle[];
+}
 
 interface GMAuthConfig {
   username: string;
@@ -184,14 +195,14 @@ export class GMAuth {
     if (authResponse.data.includes("strongAuthenticationPhoneNumber")) {
       mfaType = "SMS";
     }
-    
+
     // console.log("MFA Type:", mfaType);
     if (mfaType != "TOTP") {
       throw new Error(
         `Only TOTP via "Third-Party Authenticator" is currently supported by this implementation. Please update your OnStar account to use this method, if possible.`,
       );
     }
-    
+
     const { otp } = TOTP.generate(this.config.totpKey, {
       digits: 6,
       algorithm: "SHA-1",
@@ -569,8 +580,11 @@ export async function getGMAPIJWT(config: AuthConfig) {
 
   const auth = new GMAuth(config as GMAuthConfig);
   const token = await auth.authenticate();
+  // Decode the JWT payload
+  const decodedPayload = jwt.decode(token.access_token) as DecodedPayload;
   return {
     token,
     auth,
+    decodedPayload,
   };
 }
