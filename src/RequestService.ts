@@ -310,19 +310,6 @@ class RequestService {
     throw new Error("Not Implemented");
   }
 
-  private async authTokenRequest(jwt: string): Promise<Result> {
-    const request = new Request(this.getApiUrlForPath("/oauth/token"))
-      .setContentType("text/plain")
-      .setAuthRequired(false)
-      .setBody(jwt)
-      .setHeaders({
-        "Accept-Language": "en",
-        "User-Agent": onStarAppConfig.userAgent,
-      });
-
-    return this.sendRequest(request);
-  }
-
   async getAuthToken(): Promise<OAuthToken> {
     const { token, auth, decodedPayload } = await getGMAPIJWT(
       this.gmAuthConfig,
