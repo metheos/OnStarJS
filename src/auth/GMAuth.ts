@@ -173,6 +173,25 @@ export class GMAuth {
       throw new Error("Failed to extract csrf token or transId during MFA");
     }
 
+    //DETERMINE MFA TYPE
+    var mfaType = null;
+    if (authResponse.data.includes("otpCode")) {
+      mfaType = "TOTP";
+    }
+    if (authResponse.data.includes("emailMfa")) {
+      mfaType = "EMAIL";
+    }
+    if (authResponse.data.includes("strongAuthenticationPhoneNumber")) {
+      mfaType = "SMS";
+    }
+    
+    // console.log("MFA Type:", mfaType);
+    if (mfaType != "TOTP") {
+      throw new Error(
+        `Only TOTP via "Third-Party Authenticator" is currently supported by this implementation. Please update your OnStar account to use this method, if possible.`,
+      );
+    }
+    
     const { otp } = TOTP.generate(this.config.totpKey, {
       digits: 6,
       algorithm: "SHA-1",
