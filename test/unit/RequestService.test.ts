@@ -1,7 +1,7 @@
 import RequestService from "../../src/RequestService";
 import { testConfig, authToken, expiredAuthToken } from "./testData";
 import { HttpClient, CommandResponseStatus } from "../../src/types";
-import Request from "../../src/Request";
+import Request, { RequestMethod } from "../../src/Request";
 
 describe("RequestService", () => {
   let requestService: RequestService;
@@ -79,6 +79,18 @@ describe("RequestService", () => {
     expect(result.status).toEqual(CommandResponseStatus.success);
   });
 
+  test("lockTrunk", async () => {
+    const result = await requestService.lockTrunk();
+
+    expect(result.status).toEqual(CommandResponseStatus.success);
+  });
+
+  test("unlockTrunk", async () => {
+    const result = await requestService.unlockTrunk();
+
+    expect(result.status).toEqual(CommandResponseStatus.success);
+  });
+
   test("alert", async () => {
     const result = await requestService.alert();
 
@@ -123,18 +135,6 @@ describe("RequestService", () => {
 
   test("location", async () => {
     const result = await requestService.location();
-
-    expect(result.status).toEqual(CommandResponseStatus.success);
-  });
-
-  test("lockTrunk", async () => {
-    const result = await requestService.lockTrunk();
-
-    expect(result.status).toEqual(CommandResponseStatus.success);
-  });
-
-  test("unlockTrunk", async () => {
-    const result = await requestService.unlockTrunk();
 
     expect(result.status).toEqual(CommandResponseStatus.success);
   });
@@ -284,10 +284,80 @@ describe("RequestService", () => {
     expect(result.status).toEqual(CommandResponseStatus.success);
   });
 
-  test("getHeaders", async () => {
+  test("sendRequest without commandResponse", async () => {
+    httpClient.post = jest.fn().mockResolvedValue({
+      data: {},
+    });
+
     const request = new Request("https://foo.bar");
+    const result = await requestService
+      .setClient(httpClient)
+      ["sendRequest"](request);
+    expect(result.status).toEqual(CommandResponseStatus.success);
+  });
+
+  test("sendRequest with inProgress status and connect type", async () => {
+    httpClient.post = jest.fn().mockResolvedValue({
+      data: {
+        commandResponse: {
+          requestTime: Date.now() + 1000,
+          status: CommandResponseStatus.inProgress,
+          url: commandResponseUrl,
+          type: "connect",
+        },
+      },
+    });
+
+    const request = new Request("https://foo.bar");
+    const result = await requestService
+      .setClient(httpClient)
+      ["sendRequest"](request);
+    expect(result.status).toEqual(CommandResponseStatus.inProgress);
+  });
+
+  test("getHeaders without auth required", async () => {
+    const request = new Request("https://foo.bar").setAuthRequired(false);
     const headers = await requestService["getHeaders"](request);
-    expect(headers).toHaveProperty("Authorization");
+    expect(headers).not.toHaveProperty("Authorization");
+  });
+
+  test("upgradeRequest throws Not Implemented error", async () => {
+    await expect(requestService["upgradeRequest"]()).rejects.toThrowError(
+      "Not Implemented",
+    );
+  });
+
+  test("makeClientRequest with GET method", async () => {
+    const request = new Request("https://foo.bar").setMethod(RequestMethod.Get);
+    const response = await requestService["makeClientRequest"](request);
+    expect(response).toHaveProperty("data");
+  });
+
+  test("makeClientRequest with POST method", async () => {
+    const request = new Request("https://foo.bar").setMethod(
+      RequestMethod.Post,
+    );
+    const response = await requestService["makeClientRequest"](request);
+    expect(response).toHaveProperty("data");
+  });
+
+  test("connectRequest", async () => {
+    const result = await requestService["connectRequest"]();
+    expect(result.status).toEqual(CommandResponseStatus.success);
+  });
+
+  test("upgradeRequest", async () => {
+    await expect(requestService["upgradeRequest"]()).rejects.toThrowError(
+      "Not Implemented",
+    );
+  });
+
+  test("connectAndUpgradeAuthToken", async () => {
+    jest.spyOn(requestService as any, "connectRequest").mockResolvedValue({});
+    jest.spyOn(requestService as any, "upgradeRequest").mockResolvedValue({});
+
+    await requestService["connectAndUpgradeAuthToken"]();
+    expect(requestService["authToken"]?.upgraded).toBeTruthy();
   });
 
   test("checkRequestPause", async () => {
@@ -297,32 +367,4 @@ describe("RequestService", () => {
     await expect(pausePromise).resolves.toBeUndefined();
     jest.useRealTimers();
   });
-
-  // Additional tests for increased coverage
-
-  /*
-  test("refreshAuthToken", async () => {
-    jest
-      .spyOn(requestService as any, "createNewAuthToken")
-      .mockResolvedValue("newToken");
-    const token = await requestService["refreshAuthToken"]();
-    expect(token).toEqual("newToken");
-  });
-  test("createNewAuthToken", async () => {
-    httpClient.post = jest.fn().mockResolvedValue({
-      data: {
-        access_token: "newAccessToken",
-      },
-    });
-
-    const token = await requestService["createNewAuthToken"]();
-    //console.log(token);
-    let response = JSON.parse(JSON.stringify(token));
-    expect(token.token_type).toBe("bearer");
-    expect(Math.floor(response.expires_at)).toBeGreaterThanOrEqual(
-      Math.floor(Date.now() / 1000),
-    );
-    expect(response.expires_at).toBeGreaterThanOrEqual(1798);
-  });
-*/
 });
