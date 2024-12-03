@@ -16,7 +16,7 @@ describe("GM Authentication", () => {
     };
 
     // Create authenticated client
-    const { token, auth } = await getGMAPIJWT(config);
+    const { token, auth, decodedPayload } = await getGMAPIJWT(config);
 
     // Assertions
     expect(token).toBeDefined();
@@ -25,6 +25,7 @@ describe("GM Authentication", () => {
     expect(token.expires_in).toBeGreaterThan(0);
     expect(token.expires_at).toBeDefined();
     expect(auth).toBeDefined();
+    expect(decodedPayload.vehs[0]).toBeDefined();
     console.log(token.access_token);
   }, 30000); // Increased timeout for authentication
 });

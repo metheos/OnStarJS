@@ -310,47 +310,21 @@ class RequestService {
     throw new Error("Not Implemented");
   }
 
-  private async authTokenRequest(jwt: string): Promise<Result> {
-    const request = new Request(this.getApiUrlForPath("/oauth/token"))
-      .setContentType("text/plain")
-      .setAuthRequired(false)
-      .setBody(jwt)
-      .setHeaders({
-        "Accept-Language": "en",
-        "User-Agent": onStarAppConfig.userAgent,
-      });
-
-    return this.sendRequest(request);
-  }
-
   async getAuthToken(): Promise<OAuthToken> {
-    const { token, auth } = await getGMAPIJWT(this.gmAuthConfig);
+    const { token, auth, decodedPayload } = await getGMAPIJWT(
+      this.gmAuthConfig,
+    );
     this.authToken = token;
 
-    return this.authToken;
-  }
-
-  private async refreshAuthToken(): Promise<OAuthToken> {
-    if (!this.tokenRefreshPromise) {
-      this.tokenRefreshPromise = new Promise(async (resolve, reject) => {
-        try {
-          const token = await this.createNewAuthToken();
-
-          resolve(token);
-        } catch (e) {
-          reject(e);
-        }
-
-        this.tokenRefreshPromise = undefined;
-      });
+    const authorizedVins: string[] = [];
+    decodedPayload.vehs.forEach((veh: { vin: string }) => {
+      authorizedVins.push(veh.vin);
+    });
+    if (!authorizedVins.includes(this.config.vin)) {
+      throw new Error(
+        `Provided VIN does not appear to be an authorized VIN for this OnStar account. ${this.config.vin} not in ${authorizedVins}`,
+      );
     }
-
-    return this.tokenRefreshPromise;
-  }
-
-  private async createNewAuthToken(): Promise<OAuthToken> {
-    const { token, auth } = await getGMAPIJWT(this.gmAuthConfig);
-    this.authToken = token;
 
     return this.authToken;
   }

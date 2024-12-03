@@ -8,6 +8,17 @@ import fs from "fs";
 import { TOTP } from "totp-generator";
 import { stringify } from "uuid";
 import path from "path";
+import jwt from "jsonwebtoken";
+
+// Define an interface for the vehicle structure and the payload containing them
+interface Vehicle {
+  vin: string;
+  per: string;
+}
+
+interface DecodedPayload {
+  vehs: Vehicle[];
+}
 
 interface GMAuthConfig {
   username: string;
@@ -86,7 +97,7 @@ export class GMAuth {
 
   async authenticate(): Promise<GMAPITokenResponse> {
     try {
-      let loadedTokenSet = await this.loadAccessToken();
+      let loadedTokenSet = await this.loadMSToken();
       if (loadedTokenSet !== false) {
         // console.log("Using existing MS tokens");
         return await this.getGMAPIToken(loadedTokenSet);
@@ -94,8 +105,11 @@ export class GMAuth {
 
       // console.log("Performing full authentication");
       await this.doFullAuthSequence();
-      loadedTokenSet = await this.loadAccessToken();
-      if (!loadedTokenSet) throw new Error("Failed to load MS token set");
+      loadedTokenSet = await this.loadMSToken();
+      if (!loadedTokenSet)
+        throw new Error(
+          "Failed to load MS token set and could not generate a new one",
+        );
       return await this.getGMAPIToken(loadedTokenSet);
     } catch (error) {
       if (axios.isAxiosError(error)) {
@@ -109,7 +123,7 @@ export class GMAuth {
 
   async doFullAuthSequence(): Promise<TokenSet> {
     const { authorizationUrl, code_verifier } =
-      await this.startAuthorizationFlow();
+      await this.startMSAuthorizationFlow();
 
     const authResponse = await this.getRequest(authorizationUrl);
     this.csrfToken = this.getRegexMatch(
@@ -128,9 +142,10 @@ export class GMAuth {
     await this.submitCredentials();
     await this.handleMFA();
     const authCode = await this.getAuthorizationCode();
-    if (!authCode) throw new Error("Failed to get authorization code");
+    if (!authCode)
+      throw new Error("Failed to get authorization code. Bad TOTP Key?");
 
-    const tokenSet = await this.getAccessToken(authCode, code_verifier);
+    const tokenSet = await this.getMSToken(authCode, code_verifier);
     await this.saveTokens(tokenSet);
 
     return tokenSet;
@@ -184,15 +199,31 @@ export class GMAuth {
     if (authResponse.data.includes("strongAuthenticationPhoneNumber")) {
       mfaType = "SMS";
     }
-    
+
+    if (mfaType == null) {
+      throw new Error("Could not determine MFA Type. Bad email or password?");
+    }
+
     // console.log("MFA Type:", mfaType);
     if (mfaType != "TOTP") {
       throw new Error(
         `Only TOTP via "Third-Party Authenticator" is currently supported by this implementation. Please update your OnStar account to use this method, if possible.`,
       );
     }
-    
-    const { otp } = TOTP.generate(this.config.totpKey, {
+
+    var totp_secret = this.config.totpKey.trim();
+    // Handle instances where users blindly copy the TOTP link. We can just extract the key.
+    if (totp_secret.includes("secret=")) {
+      const match = this.getRegexMatch(totp_secret, "secret=(.*?)&");
+      totp_secret = match ?? totp_secret;
+    }
+    if (totp_secret.length != 16) {
+      throw new Error(
+        "Provided TOTP Key does not meet expected key length. Key should be 16 alphanumeric characters.",
+      );
+    }
+
+    const { otp } = TOTP.generate(totp_secret, {
       digits: 6,
       algorithm: "SHA-1",
       period: 30,
@@ -222,7 +253,7 @@ export class GMAuth {
     await this.postRequest(cpe1Url, cpe1Data, this.csrfToken);
   }
 
-  static authTokenIsValid(authToken: GMAPITokenResponse): boolean {
+  static GMAuthTokenIsValid(authToken: GMAPITokenResponse): boolean {
     return authToken.expires_at > Date.now() + 5 * 60 * 1000;
   }
 
@@ -235,18 +266,33 @@ export class GMAuth {
         const storedToken = JSON.parse(
           fs.readFileSync(tokenFilePath, "utf-8"),
         ) as GMAPITokenResponse;
-        const now = Math.floor(Date.now() / 1000);
 
-        // Check if the token is still valid
-        if (storedToken.expires_at && storedToken.expires_at > now + 5 * 60) {
-          // console.log("GM expires at: ", storedToken.expires_at, " now: ", now);
-          // console.log("Loaded existing GM API token");
-          this.currentGMAPIToken = storedToken;
+        // Decode the JWT payload
+        const decodedPayload = jwt.decode(storedToken.access_token);
+
+        // Check if the stored token is for this user's account
+        if (
+          !decodedPayload ||
+          (decodedPayload as any).uid.toUpperCase() !==
+            this.config.username.toUpperCase()
+        ) {
+          console.log(
+            "Stored GM API token was for different user, getting new token",
+          );
         } else {
-          // console.log("Existing GM API token has expired");
+          const now = Math.floor(Date.now() / 1000);
+
+          // Check if the token is still valid
+          if (storedToken.expires_at && storedToken.expires_at > now + 5 * 60) {
+            // console.log("GM expires at: ", storedToken.expires_at, " now: ", now);
+            // console.log("Loaded existing GM API token");
+            this.currentGMAPIToken = storedToken;
+          } else {
+            // console.log("Existing GM API token has expired");
+          }
         }
       } catch (err) {
-        console.error("Error loading stored GM API token:", err);
+        console.log("Stored GM API token was not parseable, getting new token");
       }
     } else {
       // console.log("No existing GM API token, we'll get a new one.");
@@ -285,6 +331,26 @@ export class GMAuth {
           },
         },
       );
+
+      // Decode the JWT payload
+      const decodedPayload = jwt.decode(
+        response.data.access_token,
+      ) as DecodedPayload;
+      if (!decodedPayload?.vehs) {
+        // Delete the tokens and start over
+        console.log(
+          "Returned GM API token was missing vehicle information. Deleting existing tokens for reauth.",
+        );
+        if (fs.existsSync(this.MSTokenPath)) {
+          fs.renameSync(this.MSTokenPath, `${this.MSTokenPath}.old`);
+        }
+        if (fs.existsSync(this.GMTokenPath)) {
+          fs.renameSync(this.GMTokenPath, `${this.GMTokenPath}.old`);
+        }
+        // Clear current token in memory and recursively call authenticate()
+        this.currentGMAPIToken = null;
+        return await this.authenticate();
+      }
 
       const expires_at =
         Math.floor(Date.now() / 1000) +
@@ -412,7 +478,7 @@ export class GMAuth {
     }
   }
 
-  private async setupClient(): Promise<openidClient.Client> {
+  private async setupOpenIDClient(): Promise<openidClient.Client> {
     // console.log("Doing auth discovery");
     const issuer = await this.oidc.Issuer.discover(
       "https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/b2c_1a_seamless_mobile_signuporsignin/v2.0/.well-known/openid-configuration",
@@ -429,12 +495,12 @@ export class GMAuth {
     return client;
   }
 
-  private async startAuthorizationFlow(): Promise<{
+  private async startMSAuthorizationFlow(): Promise<{
     authorizationUrl: string;
     code_verifier: string;
   }> {
     // console.log("Starting PKCE auth");
-    const client = await this.setupClient();
+    const client = await this.setupOpenIDClient();
     const code_verifier = this.oidc.generators.codeVerifier();
     const code_challenge = this.oidc.generators.codeChallenge(code_verifier);
 
@@ -448,11 +514,11 @@ export class GMAuth {
     return { authorizationUrl, code_verifier };
   }
 
-  private async getAccessToken(
+  private async getMSToken(
     code: string,
     code_verifier: string,
   ): Promise<TokenSet> {
-    const client = await this.setupClient();
+    const client = await this.setupOpenIDClient();
 
     try {
       const openIdTokenSet = await client.callback(
@@ -494,7 +560,7 @@ export class GMAuth {
     }
   }
 
-  private async loadAccessToken(): Promise<TokenSet | false> {
+  private async loadMSToken(): Promise<TokenSet | false> {
     // console.log("Loading existing MS tokens, if they exist.");
     let tokenSet: TokenSet;
 
@@ -505,9 +571,25 @@ export class GMAuth {
           fs.readFileSync(this.MSTokenPath, "utf-8"),
         ) as TokenSet;
       } catch (err) {
-        console.error("Error parsing stored tokens:", err);
-        throw err;
+        console.log("Stored MS token was not parseable, getting new token");
+        return false;
       }
+
+      // Decode the JWT payload
+      const decodedPayload = jwt.decode(storedTokens.access_token);
+      if (
+        !decodedPayload ||
+        ((decodedPayload as any).name.toUpperCase() !==
+          this.config.username.toUpperCase() &&
+          (decodedPayload as any).email.toUpperCase() !==
+            this.config.username.toUpperCase())
+      ) {
+        console.log(
+          "Stored MS token was for different user, getting new token",
+        );
+        return false;
+      }
+
       const now = Math.floor(Date.now() / 1000);
 
       if (storedTokens.expires_at && storedTokens.expires_at > now + 5 * 60) {
@@ -516,7 +598,7 @@ export class GMAuth {
         tokenSet = storedTokens;
       } else if (storedTokens.refresh_token) {
         // console.log("Refreshing MS access token");
-        const client = await this.setupClient();
+        const client = await this.setupOpenIDClient();
         const refreshedTokens = await client.refresh(
           storedTokens.refresh_token,
         );
@@ -569,8 +651,11 @@ export async function getGMAPIJWT(config: AuthConfig) {
 
   const auth = new GMAuth(config as GMAuthConfig);
   const token = await auth.authenticate();
+  // Decode the JWT payload
+  const decodedPayload = jwt.decode(token.access_token) as DecodedPayload;
   return {
     token,
     auth,
+    decodedPayload,
   };
 }
