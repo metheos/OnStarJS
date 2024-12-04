@@ -1,6 +1,6 @@
 # OnStarJS (OnStarJS2)
 
-[![npm version](https://badge.fury.io/js/onstarjs2.svg)](https://badge.fury.io/js/onstarjs2&kill_cache=1)
+[![npm version](https://badge.fury.io/js/onstarjs2.svg)](https://badge.fury.io/js/onstarjs2)
 [![Create Github Release](https://github.com/BigThunderSR/OnStarJS/actions/workflows/release.yml/badge.svg)](https://github.com/BigThunderSR/OnStarJS/actions/workflows/release.yml)
 [![Publish Package](https://github.com/BigThunderSR/OnStarJS/actions/workflows/publish.yml/badge.svg)](https://github.com/BigThunderSR/OnStarJS/actions/workflows/publish.yml)
 [![Coverage Status](https://coveralls.io/repos/github/BigThunderSR/OnStarJS/badge.svg?branch=master)](https://coveralls.io/github/BigThunderSR/OnStarJS?branch=master&kill_cache=1)
