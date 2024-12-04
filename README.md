@@ -8,7 +8,7 @@
 
 An unofficial NodeJS library to make OnStar requests. This version has been forked from [samrum/OnStarJS](https://github.com/samrum/OnStarJS) and includes the new TOTP login mechanism implemented by [metheos](https://github.com/metheos/).
 
-Published as OnStarJS2 at https://www.npmjs.com/package/onstarjs2
+Published as OnStarJS2 at https://www.npmjs.com/package/onstarjs2 [![npm](https://img.shields.io/npm/v/onstarjs2.svg?color=green)](https://www.npmjs.com/package/onstarjs2)
 
 **Use at your own risk. This is an unofficial library.**
 
