@@ -57,3 +57,7 @@ jobs:
         uses: coverallsapp/github-action@master
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Purge Camo Cache
+        uses: kevincobain2000/action-camo-purge@v1
+            
