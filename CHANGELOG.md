@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [2.6.1](https://github.com/BigThunderSR/OnStarJS/compare/v2.6.0...v2.6.1) (2024-12-04)
 
+
+### Bug Fixes
+
+* **deps:** update dependency openid-client to ^5.7.1 ([1d3f5ca](https://github.com/BigThunderSR/OnStarJS/commit/1d3f5ca296dbaf45e4d01a37f539f9a0aa0e3c7c))
+
+## What's Changed
+* Bump rollup from 4.27.3 to 4.27.4 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/190
+* Bump axios from 1.7.7 to 1.7.8 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/196
+* fix(deps): update dependency openid-client to ^5.7.1 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/188
+* Bump prettier from 3.3.3 to 3.4.1 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/195
+* Bump dotenv from 16.4.5 to 16.4.6 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/200
+* Bump rollup from 4.27.4 to 4.28.0 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/198
+* Add more token validity checks to prevent 403 errors by @metheos in https://github.com/BigThunderSR/OnStarJS/pull/201
+* Improve test coverage by @BigThunderSR in https://github.com/BigThunderSR/OnStarJS/pull/203
+* Update dependency dotenv to ^16.4.7 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/202
+* Bump husky from 8.0.3 to 9.1.7 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/181
+* Update pnpm to v9 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/83
+* Update dependency typescript to ^5.7.2 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/187
+* Bump @rollup/plugin-typescript from 11.1.6 to 12.1.1 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/168
+
+## New Contributors
+* @metheos made their first contribution in https://github.com/BigThunderSR/OnStarJS/pull/201
+
+## [2.6.0](https://github.com/BigThunderSR/OnStarJS/compare/v2.3.30...v2.6.0) (2024-11-23)
+
+
 ### Features
 
 * Add new TOTP login method by @metheos
@@ -102,20 +128,6 @@ All notable changes to this project will be documented in this file. See [standa
 * Bump uuid from 10.0.0 to 11.0.3 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/178
 * Bump rollup from 4.22.5 to 4.27.3 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/180
 * Add token location folder by @metheos and add test for this feature by @BigThunderSR by @BigThunderSR in https://github.com/BigThunderSR/OnStarJS/pull/189
-
-## [2.6.0](https://github.com/BigThunderSR/OnStarJS/compare/v2.3.30...v2.6.0) (2024-11-23)
-
-
-### Features
-
-* include shared vehicles with getAccountVehicles ([#241](https://github.com/BigThunderSR/OnStarJS/issues/241)) ([09a173c](https://github.com/BigThunderSR/OnStarJS/commit/09a173c544ff7f97c472c903da0146047c11d6ab))
-
-
-### Bug Fixes
-
-* **deps:** update dependency axios to ^1.6.5 ([5e79a41](https://github.com/BigThunderSR/OnStarJS/commit/5e79a41ff32f1af0dee5cc86fb9a5f7a947520bc))
-* **deps:** update dependency jsonwebtoken to ^9.0.2 ([f0450a9](https://github.com/BigThunderSR/OnStarJS/commit/f0450a966af9b9663f38bc52bb4b51c4eb05ed7a))
-* **deps:** update dependency uuid to ^9.0.1 ([7b342f9](https://github.com/BigThunderSR/OnStarJS/commit/7b342f9502751e71fd2aca9c3e6065f84f197445))
 
 ### [2.5.3](https://github.com/samrum/OnStarJS/compare/v2.5.2...v2.5.3) (2024-07-27)
 
