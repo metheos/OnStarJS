@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [2.6.1](https://github.com/BigThunderSR/OnStarJS/compare/v2.6.0...v2.6.1) (2024-12-04)
+
+
+### Bug Fixes
+
+* **deps:** update dependency openid-client to ^5.7.1 ([1d3f5ca](https://github.com/BigThunderSR/OnStarJS/commit/1d3f5ca296dbaf45e4d01a37f539f9a0aa0e3c7c))
+
 ## [2.6.0](https://github.com/BigThunderSR/OnStarJS/compare/v2.3.30...v2.6.0) (2024-11-23)
 
 
