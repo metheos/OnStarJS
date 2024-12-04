@@ -10,7 +10,10 @@ export default {
     json(),
     resolve(),
     commonJS(),
-    typescript({ tsconfig: "./tsconfig.json" }),
+    typescript({
+      tsconfig: "./tsconfig.json",
+      declarationDir: "dist/", // Added for compatibility with @rollup/plugin-typescript 12.1.1
+    }),
   ],
   output: [
     { file: pkg.main, format: "cjs", exports: "default" },
