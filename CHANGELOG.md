@@ -4,10 +4,104 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### [2.6.1](https://github.com/BigThunderSR/OnStarJS/compare/v2.6.0...v2.6.1) (2024-12-04)
 
+### Features
+
+* Add new TOTP login method by @metheos
+* include shared vehicles with getAccountVehicles ([#241](https://github.com/BigThunderSR/OnStarJS/issues/241)) ([09a173c](https://github.com/BigThunderSR/OnStarJS/commit/09a173c544ff7f97c472c903da0146047c11d6ab))
 
 ### Bug Fixes
 
-* **deps:** update dependency openid-client to ^5.7.1 ([1d3f5ca](https://github.com/BigThunderSR/OnStarJS/commit/1d3f5ca296dbaf45e4d01a37f539f9a0aa0e3c7c))
+* **deps:** update dependency axios to ^1.6.5 ([5e79a41](https://github.com/BigThunderSR/OnStarJS/commit/5e79a41ff32f1af0dee5cc86fb9a5f7a947520bc))
+* **deps:** update dependency jsonwebtoken to ^9.0.2 ([f0450a9](https://github.com/BigThunderSR/OnStarJS/commit/f0450a966af9b9663f38bc52bb4b51c4eb05ed7a))
+* **deps:** update dependency uuid to ^9.0.1 ([7b342f9](https://github.com/BigThunderSR/OnStarJS/commit/7b342f9502751e71fd2aca9c3e6065f84f197445))
+
+## What's Changed
+* chore(deps): update pnpm to v8.14.1 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/1
+* chore(deps): update pnpm/action-setup action to v2.4.0 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/2
+* chore(deps): update actions/checkout action to v4 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/3
+* chore(deps): update actions/setup-node action to v4 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/4
+* chore(deps): update dependency lint-staged to v15 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/5
+* chore(deps): update dependency prettier to v3 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/6
+* chore(deps): update dependency rollup to v4 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/7
+* chore(deps): update dependency @rollup/plugin-typescript to ^11.1.6 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/22
+* chore(deps): update dependency lint-staged to ^15.2.0 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/23
+* chore(deps): update dependency rollup to ^4.9.5 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/24
+* chore(deps): update dependency ts-jest to ^29.1.1 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/25
+* chore(deps): update jest monorepo by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/26
+* fix(deps): update dependency axios to ^1.6.5 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/27
+* fix(deps): update dependency jsonwebtoken to ^9.0.2 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/28
+* fix(deps): update dependency uuid to ^9.0.1 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/29
+* chore(deps): update dependency @rollup/plugin-json to ^6.1.0 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/30
+* chore(deps): update dependency dotenv to ^16.3.2 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/31
+* chore(deps): update dependency tslib to ^2.6.2 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/32
+* chore(deps): update dependency typescript to ^5.3.3 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/33
+* chore(deps): update ffurrer2/extract-release-notes action to v2 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/40
+* chore(deps-dev): bump rollup from 4.9.5 to 4.9.6 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/10
+* chore(deps): update pnpm to v8.15.1 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/21
+* chore(deps): bump axios from 1.6.5 to 1.6.7 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/43
+* chore(deps-dev): bump dotenv from 16.3.2 to 16.4.1 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/41
+* chore(deps): update dependency ts-jest to ^29.1.2 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/35
+* chore(deps-dev): bump @types/uuid from 9.0.7 to 9.0.8 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/42
+* chore(deps-dev): bump @types/jest from 29.5.11 to 29.5.12 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/48
+* chore(deps): bump pnpm/action-setup from 2.4.0 to 3.0.0 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/53
+* chore(deps-dev): bump lint-staged from 15.2.0 to 15.2.2 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/47
+* chore(deps-dev): bump husky from 8.0.3 to 9.0.11 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/58
+* chore(deps-dev): bump rollup from 4.9.6 to 4.12.0 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/59
+* chore(deps-dev): bump dotenv from 16.4.1 to 16.4.5 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/61
+* chore(deps-dev): bump prettier from 3.2.4 to 3.2.5 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/49
+* chore(deps): update pnpm to v8.15.4 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/57
+* chore(deps-dev): bump @types/jsonwebtoken from 9.0.5 to 9.0.6 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/64
+* chore(deps-dev): bump rollup from 4.12.0 to 4.13.0 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/71
+* chore(deps): bump axios from 1.6.7 to 1.6.8 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/70
+* chore(deps): update pnpm to v8.15.5 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/74
+* chore(deps-dev): bump rollup from 4.13.0 to 4.13.2 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/76
+* chore(deps-dev): bump rollup from 4.13.2 to 4.14.1 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/79
+* chore(deps-dev): bump typescript from 5.3.3 to 5.4.5 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/80
+* chore(deps): update pnpm to v8.15.6 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/77
+* chore(deps-dev): bump rollup from 4.14.1 to 4.14.3 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/82
+* chore(deps): update pnpm to v8.15.7 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/81
+* chore(deps): bump pnpm/action-setup from 3.0.0 to 4.0.0 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/89
+* chore(deps-dev): bump rollup from 4.14.3 to 4.17.2 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/87
+* chore(deps): bump axios from 1.6.8 to 1.7.2 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/95
+* chore(deps-dev): bump ts-jest from 29.1.2 to 29.1.3 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/94
+* Bump lint-staged from 15.2.2 to 15.2.5 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/98
+* Bump prettier from 3.2.5 to 3.3.0 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/100
+* Bump ts-jest from 29.1.3 to 29.1.4 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/101
+* chore(deps-dev): bump rollup from 4.17.2 to 4.18.0 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/96
+* chore(deps): update pnpm to v8.15.8 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/86
+* Bump prettier from 3.3.0 to 3.3.1 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/103
+* Bump tslib from 2.6.2 to 2.6.3 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/104
+* Bump lint-staged from 15.2.5 to 15.2.7 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/109
+* Bump uuid from 9.0.1 to 10.0.0 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/105
+* Bump prettier from 3.3.1 to 3.3.2 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/110
+* Bump ts-jest from 29.1.4 to 29.1.5 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/111
+* Bump prettier from 3.3.2 to 3.3.3 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/121
+* Bump @types/uuid from 9.0.8 to 10.0.0 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/114
+* Bump axios from 1.7.2 to 1.7.3 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/133
+* Bump lint-staged from 15.2.7 to 15.2.8 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/132
+* Bump ts-jest from 29.1.5 to 29.2.4 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/134
+* Bump rollup from 4.18.0 to 4.20.0 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/135
+* Bump lint-staged from 15.2.8 to 15.2.9 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/137
+* Bump axios from 1.7.3 to 1.7.4 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/138
+* Bump axios from 1.7.4 to 1.7.5 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/146
+* Bump lint-staged from 15.2.9 to 15.2.10 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/149
+* Bump ts-jest from 29.2.4 to 29.2.5 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/145
+* Bump axios from 1.7.5 to 1.7.7 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/150
+* Bump @types/jest from 29.5.12 to 29.5.13 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/154
+* Bump tslib from 2.6.3 to 2.7.0 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/144
+* Bump rollup from 4.20.0 to 4.21.3 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/156
+* Update pnpm to v8.15.9 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/124
+* Bump @types/jsonwebtoken from 9.0.6 to 9.0.7 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/159
+* Bump rollup from 4.21.3 to 4.22.4 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/160
+* Bump rollup from 4.22.4 to 4.22.5 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/164
+* Added new TOTP authentication mechanism from @metheos by @BigThunderSR in https://github.com/BigThunderSR/OnStarJS/pull/183
+* Migrate renovate config by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/182
+* Bump @types/jest from 29.5.13 to 29.5.14 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/172
+* Bump tslib from 2.7.0 to 2.8.1 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/175
+* Update dependency typescript to ^5.6.3 by @renovate in https://github.com/BigThunderSR/OnStarJS/pull/113
+* Bump uuid from 10.0.0 to 11.0.3 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/178
+* Bump rollup from 4.22.5 to 4.27.3 by @dependabot in https://github.com/BigThunderSR/OnStarJS/pull/180
+* Add token location folder by @metheos and add test for this feature by @BigThunderSR by @BigThunderSR in https://github.com/BigThunderSR/OnStarJS/pull/189
 
 ## [2.6.0](https://github.com/BigThunderSR/OnStarJS/compare/v2.3.30...v2.6.0) (2024-11-23)
 
