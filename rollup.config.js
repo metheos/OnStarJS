@@ -12,7 +12,7 @@ export default {
     commonJS(),
     typescript({
       tsconfig: "./tsconfig.json",
-      declarationDir: "dist/", // Added for compatibility with @rollup/plugin-typescript 12.1.1
+      declarationDir: "dist", // Added for compatibility with @rollup/plugin-typescript 12.1.1
     }),
   ],
   output: [
