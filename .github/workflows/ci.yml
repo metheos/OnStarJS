@@ -58,6 +58,6 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Purge Camo Cache
-        uses: kevincobain2000/action-camo-purge@v1
+      #- name: Purge Camo Cache
+      #  uses: kevincobain2000/action-camo-purge@v1
             
