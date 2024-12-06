@@ -4,6 +4,7 @@
 [![Create Github Release](https://github.com/BigThunderSR/OnStarJS/actions/workflows/release.yml/badge.svg)](https://github.com/BigThunderSR/OnStarJS/actions/workflows/release.yml)
 [![Publish Package](https://github.com/BigThunderSR/OnStarJS/actions/workflows/publish.yml/badge.svg)](https://github.com/BigThunderSR/OnStarJS/actions/workflows/publish.yml)
 [![Coverage Status](https://coveralls.io/repos/github/BigThunderSR/OnStarJS/badge.svg?branch=master)](https://coveralls.io/github/BigThunderSR/OnStarJS?branch=master&kill_cache=1)
+
 <!-- [![Build Status](https://github.com/BigThunderSR/OnStarJS/workflows/build/badge.svg)](https://github.com/BigThunderSR/OnStarJS/actions?query=workflow%3Abuild) -->
 
 An unofficial NodeJS library to make OnStar requests. This version has been forked from [samrum/OnStarJS](https://github.com/samrum/OnStarJS) and includes the new TOTP login mechanism implemented by [metheos](https://github.com/metheos/).
@@ -36,7 +37,7 @@ _If you cannot find the option to configure a "Third-Party Authenticator App" on
 
 If that fails, use:
 [this Windows exe](https://github.com/metheos/node-oauth2-gm/releases) or [this web app](https://github.com/joelvandal/onstar-token-gen?tab=readme-ov-file)
-  
+
 for email TOTP and then save the resulting token and provide the token location for use with https://github.com/BigThunderSR/onstar2mqtt and/or https://github.com/BigThunderSR/homeassistant-addons-onstar2mqtt.
 
 Additional comments are noted [here](https://github.com/samrum/OnStarJS/issues/233#issuecomment-2499264436).
