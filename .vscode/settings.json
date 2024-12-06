@@ -20,6 +20,7 @@
         "**/*.min.js",
         "**/coverage/**",
         "**/*.test.ts",
+        "*lock*",
         ".env",
     ]
 }
