@@ -10,10 +10,16 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+    commit-message:
+      prefix: deps
+      prefix-development: chore
     open-pull-requests-limit: 50
   - package-ecosystem: "npm" # See documentation for possible values
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
+    commit-message:
+      prefix: deps
+      prefix-development: chore
     open-pull-requests-limit: 50
     versioning-strategy: increase
