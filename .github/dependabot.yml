@@ -11,15 +11,15 @@ updates:
     schedule:
       interval: "daily"
     commit-message:
-      prefix: "chore"
-      prefix-development: "chore(dev)"
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
     open-pull-requests-limit: 50
   - package-ecosystem: "npm" # See documentation for possible values
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
     commit-message:
-      prefix: "chore"
-      prefix-development: "chore(dev)"
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
     open-pull-requests-limit: 50
     versioning-strategy: increase
