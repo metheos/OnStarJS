@@ -19,7 +19,7 @@ updates:
     schedule:
       interval: "weekly"
     commit-message:
-      prefix: "chore(deps)"
+      prefix: "fix(deps)"
       prefix-development: "chore(deps-dev)"
     open-pull-requests-limit: 50
     versioning-strategy: increase
