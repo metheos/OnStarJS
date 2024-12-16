@@ -65,8 +65,6 @@
   },
   "homepage": "https://github.com/BigThunderSR/OnStarJS#readme",
   "dependencies": {
-    "@rollup/plugin-commonjs": "^28.0.1",
-    "@rollup/plugin-node-resolve": "^15.3.0",
     "axios": "^1.7.9",
     "http-cookie-agent": "^6.0.6",
     "jsonwebtoken": "^9.0.2",
@@ -76,6 +74,8 @@
     "uuid": "^11.0.3"
   },
   "devDependencies": {
+    "@rollup/plugin-commonjs": "^28.0.1",
+    "@rollup/plugin-node-resolve": "^15.3.0",
     "@rollup/plugin-json": "^6.1.0",
     "@rollup/plugin-typescript": "^12.1.1",
     "@types/jest": "^29.5.14",
