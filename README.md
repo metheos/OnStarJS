@@ -5,12 +5,11 @@
 [![Publish Package](https://github.com/BigThunderSR/OnStarJS/actions/workflows/publish.yml/badge.svg)](https://github.com/BigThunderSR/OnStarJS/actions/workflows/publish.yml)
 [![Coverage Status](https://coveralls.io/repos/github/BigThunderSR/OnStarJS/badge.svg?branch=master)](https://coveralls.io/github/BigThunderSR/OnStarJS?branch=master&kill_cache=1)
 
-
 <!-- [![Build Status](https://github.com/BigThunderSR/OnStarJS/workflows/build/badge.svg)](https://github.com/BigThunderSR/OnStarJS/actions?query=workflow%3Abuild) -->
 
 An unofficial NodeJS library to make OnStar requests. This version has been forked from [samrum/OnStarJS](https://github.com/samrum/OnStarJS) and includes the new TOTP login mechanism implemented by [metheos](https://github.com/metheos/).
 
-Published as OnStarJS2 at https://www.npmjs.com/package/onstarjs2 [![npm](https://img.shields.io/npm/v/onstarjs2.svg?color=green)](https://www.npmjs.com/package/onstarjs2)
+Published as OnStarJS2 at <https://www.npmjs.com/package/onstarjs2> [![npm](https://img.shields.io/npm/v/onstarjs2.svg?color=green)](https://www.npmjs.com/package/onstarjs2)
 
 **Use at your own risk. This is an unofficial library.**
 
@@ -18,7 +17,7 @@ Published as OnStarJS2 at https://www.npmjs.com/package/onstarjs2 [![npm](https:
 
 Use the Get Account Vehicles request to see which requests your vehicle supports if you don't already know.
 
-# New Requirement as of 2024-11-19
+## New Requirement as of 2024-11-19
 
 Updated to use TOTP to fulfill new authentication process from GM.
 
@@ -39,7 +38,7 @@ _If you cannot find the option to configure a "Third-Party Authenticator App" on
 If that fails, use:
 [this Windows exe](https://github.com/metheos/node-oauth2-gm/releases) or [this web app](https://github.com/joelvandal/onstar-token-gen?tab=readme-ov-file)
 
-for email TOTP and then save the resulting token and provide the token location for use with https://github.com/BigThunderSR/onstar2mqtt and/or https://github.com/BigThunderSR/homeassistant-addons-onstar2mqtt.
+for email TOTP and then save the resulting token and provide the token location for use with <https://github.com/BigThunderSR/onstar2mqtt> and/or <https://github.com/BigThunderSR/homeassistant-addons-onstar2mqtt>.
 
 Additional comments are noted [here](https://github.com/samrum/OnStarJS/issues/233#issuecomment-2499264436).
 
@@ -49,7 +48,7 @@ Additional comments are noted [here](https://github.com/samrum/OnStarJS/issues/2
 
 Use a random version 4 uuid as a deviceId. Generator available [here](https://www.uuidgenerator.net/version4).
 
-```
+```javascript
 import OnStar from "onstarjs";
 
 const onStar = OnStar.create({
@@ -58,7 +57,7 @@ const onStar = OnStar.create({
   username: "foo@bar.com",
   password: "p@ssw0rd",
   onStarPin: "1234",
-  onStarTOTP: "XXXXXXXXXXXXXXXX"
+  onStarTOTP: "XXXXXXXXXXXXXXXX",
 });
 
 try {
