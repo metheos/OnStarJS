@@ -1,15 +1,16 @@
-import { mock, instance } from "ts-mockito";
+import { mock, instance, verify, when } from "ts-mockito";
 
 import OnStar from "../../src/index";
 import RequestService from "../../src/RequestService";
-import { testConfig } from "./testData";
+import { testConfig, authToken } from "./testData";
+import { Result } from "../../src/types";
 
 let onStar: OnStar;
+let requestService: RequestService;
 
 describe("OnStar", () => {
   beforeEach(() => {
-    const requestService = mock(RequestService);
-
+    requestService = mock(RequestService);
     onStar = new OnStar(instance(requestService));
   });
 
@@ -67,5 +68,21 @@ describe("OnStar", () => {
 
   test("unlockTrunk", async () => {
     await onStar.unlockTrunk();
+  });
+
+  test("location", async () => {
+    const result: Result = { status: "success" };
+    when(requestService.location()).thenResolve(result);
+
+    const response = await onStar.location();
+
+    expect(response).toEqual(result);
+    verify(requestService.location()).once();
+  });
+
+  test("setCheckRequestStatus", () => {
+    onStar.setCheckRequestStatus(true);
+
+    verify(requestService.setCheckRequestStatus(true)).once();
   });
 });
