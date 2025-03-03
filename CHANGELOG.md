@@ -1,6 +1,19 @@
 # Changelog
 
-All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
+All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
+
+## [2.6.2](https://github.com/BigThunderSR/OnStarJS/compare/v2.6.1...v2.6.2) (2025-03-03)
+
+
+### Bug Fixes
+
+* **deps:** bump axios from 1.7.9 to 1.8.1 ([f859bd7](https://github.com/BigThunderSR/OnStarJS/commit/f859bd71292b4f3bb502ddef1b1f70e174583c40))
+* **deps:** bump tough-cookie from 5.0.0 to 5.1.0 ([a1d09fd](https://github.com/BigThunderSR/OnStarJS/commit/a1d09fdbd9f21cb16f82621e305316e9d25ded1c))
+* **deps:** bump tough-cookie from 5.1.0 to 5.1.1 ([2d2b29f](https://github.com/BigThunderSR/OnStarJS/commit/2d2b29f26dd2580f3b4741021c453edc00610623))
+* **deps:** bump tough-cookie from 5.1.1 to 5.1.2 ([d27cb7c](https://github.com/BigThunderSR/OnStarJS/commit/d27cb7cc8d5e511e7951e70591cb562c482aaade))
+* **deps:** bump uuid from 11.0.3 to 11.0.4 ([bfe4298](https://github.com/BigThunderSR/OnStarJS/commit/bfe4298a1571407fc8c7e00be05f648cd482d4e0))
+* **deps:** bump uuid from 11.0.4 to 11.0.5 ([cc49e5d](https://github.com/BigThunderSR/OnStarJS/commit/cc49e5d614e8a0da750c1a019c9233435d9a0fd1))
+* **deps:** bump uuid from 11.0.5 to 11.1.0 ([97cc93f](https://github.com/BigThunderSR/OnStarJS/commit/97cc93fca1095a2df793801e48b4cfea3fe359f6))
 
 ### [2.6.1](https://github.com/BigThunderSR/OnStarJS/compare/v2.6.0...v2.6.1) (2024-12-04)
 
