@@ -1,4 +1,8 @@
 {
+    "markdownlint.config": {
+        "default": true,
+        "MD033": false
+    },
     "cSpell.words": [
         "Bitwarden",
         "Chrony",
@@ -25,5 +29,5 @@
         "**/*.test.ts",
         "*lock*",
         ".env",
-    ]
+    ],
 }

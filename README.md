@@ -13,7 +13,7 @@ Published as OnStarJS2 at <https://www.npmjs.com/package/onstarjs2> [![npm](http
 
 **Use at your own risk. This is an unofficial library.**
 
-# Usage
+## Usage
 
 Use the Get Account Vehicles request to see which requests your vehicle supports if you don't already know.
 
@@ -104,33 +104,32 @@ When `checkRequestStatus` is true, this is how long a request will make subseque
 
 For commands that return data like diagnostics or location, the data returned by the API is accessible via `result.response.data`
 
-# Commands
+## Commands
 
 <details>
 <summary>Get Account Vehicles</summary>
 
-    onStar.getAccountVehicles();
-
-</details>
-
-<details>
-<summary>Start</summary>
-
-    onStar.start();
+```javascript
+onStar.getAccountVehicles();
+```
 
 </details>
 
 <details>
 <summary>Cancel Start</summary>
 
-    onStar.cancelStart();
+```javascript
+onStar.cancelStart();
+```
 
 </details>
 
 <details>
 <summary>Alert</summary>
 
-    onStar.alert([options]);
+```javascript
+onStar.alert([options]);
+```
 
 | Option   | Default                    | Valid Values               |
 | -------- | -------------------------- | -------------------------- |
@@ -144,14 +143,18 @@ For commands that return data like diagnostics or location, the data returned by
 <details>
 <summary>Cancel Alert</summary>
 
-    onStar.cancelAlert();
+```javascript
+onStar.cancelAlert();
+```
 
 </details>
 
 <details>
 <summary>Lock Door</summary>
 
-    onStar.lockDoor([options]);
+```javascript
+onStar.lockDoor([options]);
+```
 
 | Option | Default | Valid Values          |
 | ------ | ------- | --------------------- |
@@ -162,7 +165,9 @@ For commands that return data like diagnostics or location, the data returned by
 <details>
 <summary>Unlock Door</summary>
 
-    onStar.unlockDoor([options]);
+```javascript
+onStar.unlockDoor([options]);
+```
 
 | Option | Default | Valid Values          |
 | ------ | ------- | --------------------- |
@@ -175,7 +180,9 @@ For commands that return data like diagnostics or location, the data returned by
 
 Locks the trunk but doesn't automatically close it.
 
-    onStar.lockTrunk([options]);
+```javascript
+onStar.lockTrunk([options]);
+```
 
 | Option | Default | Valid Values          |
 | ------ | ------- | --------------------- |
@@ -188,7 +195,9 @@ Locks the trunk but doesn't automatically close it.
 
 Unlocks the trunk but doesn't automatically open it. All doors remain locked.
 
-    onStar.unlockTrunk([options]);
+```javascript
+onStar.unlockTrunk([options]);
+```
 
 | Option | Default | Valid Values          |
 | ------ | ------- | --------------------- |
@@ -201,18 +210,24 @@ Unlocks the trunk but doesn't automatically open it. All doors remain locked.
 
 Returns the location of the vehicle
 
-    onStar.location();
+```javascript
+onStar.location();
+```
 
 Example Response
 
-    { location: { lat: '50', long: '-75' } }
+```json
+{ "location": { "lat": "50", "long": "-75" } }
+```
 
 </details>
 
 <details>
 <summary>Charge Override</summary>
 
-    onStar.chargeOverride([options]);
+```javascript
+onStar.chargeOverride([options]);
+```
 
 | Option | Default      | Valid Values                    |
 | ------ | ------------ | ------------------------------- |
@@ -223,14 +238,18 @@ Example Response
 <details>
 <summary>Get Charging Profile</summary>
 
-    onStar.getChargingProfile();
+```javascript
+onStar.getChargingProfile();
+```
 
 </details>
 
 <details>
 <summary>Set Charging Profile</summary>
 
-    onStar.setChargingProfile([options]);
+```javascript
+onStar.setChargingProfile([options]);
+```
 
 | Option     | Default     | Valid Values                                                                             |
 | ---------- | ----------- | ---------------------------------------------------------------------------------------- |
@@ -242,7 +261,9 @@ Example Response
 <details>
 <summary>Diagnostics</summary>
 
-    onStar.diagnostics([options]);
+```javascript
+onStar.diagnostics([options]);
+```
 
 | Option         | Default                                                                        | Valid Values                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | -------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -250,7 +271,7 @@ Example Response
 
 </details>
 
-# Development
+## Development
 
 - Clone this repository
 - Install latest LTS version of [Node.js](https://nodejs.org/en/)
@@ -263,15 +284,15 @@ Example Response
 
 Run both unit and functional tests
 
-    pnpm test
+`pnpm test`
 
 ### Unit
 
-    pnpm test:unit
+`pnpm test:unit`
 
 ### Auth
 
-    pnpm test:auth
+`pnpm test:auth`
 
 ### Functional
 
@@ -279,9 +300,9 @@ These tests will execute actual requests to the OnStar API. They will perform a 
 
 Because of this, the test will require actual OnStar credentials to run. To provide them, copy `.env.example` to `.env` and replace the placeholder values inside.
 
-    pnpm test:functional
+`pnpm test:functional`
 
-# Credits
+## Credits
 
 Made possible by [mikenemat](https://github.com/mikenemat/)'s work in [gm-onstar-probe](https://github.com/mikenemat/gm-onstar-probe). Their work describing the process for remote start enabled the rest of the methods implemented here.
 
