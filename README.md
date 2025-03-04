@@ -76,7 +76,7 @@ try {
 <details>
 <summary>checkRequestStatus</summary>
 
-Default Value: true
+Default Value: `true`
 
 When false, requests resolve when the API returns an 'In Progress' response. For requests that return data, this option is ignored.
 
@@ -86,7 +86,7 @@ This is useful because, with the usual request polling to wait for a "Complete" 
 <details>
 <summary>requestPollingIntervalSeconds</summary>
 
-Default Value: 6
+Default Value: `6`
 
 When `checkRequestStatus` is true, this is how often status check requests will be made (in seconds)
 
@@ -94,7 +94,7 @@ When `checkRequestStatus` is true, this is how often status check requests will 
 <details>
 <summary>requestPollingTimeoutSeconds</summary>
 
-Default Value: 90
+Default Value: `90`
 
 When `checkRequestStatus` is true, this is how long a request will make subsequent status check requests before timing out (in seconds)
 
