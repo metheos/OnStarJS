@@ -1,7 +1,7 @@
 name: Trigger Dependabot Updates
 
 on:
-  schedule:
+  #schedule:
     # Schedule the workflow to run daily at midnight
     #- cron: '0 0 * * *'
   workflow_dispatch:
