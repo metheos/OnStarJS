@@ -15,6 +15,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Dependabot
-        uses: dependabot/fetch-metadata@v1
+        uses: dependabot/fetch-metadata@v2
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
