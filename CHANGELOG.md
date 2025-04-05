@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.6.3](https://github.com/BigThunderSR/OnStarJS/compare/v2.6.2...v2.6.3) (2025-04-05)
+
+
+### Bug Fixes
+
+* **deps:** bump axios from 1.8.1 to 1.8.2 ([b9c1d50](https://github.com/BigThunderSR/OnStarJS/commit/b9c1d504622b7a6ea3a0b11455a125e9daa81df1))
+* **deps:** bump axios from 1.8.2 to 1.8.4 ([e627229](https://github.com/BigThunderSR/OnStarJS/commit/e6272296ca7e7c2153b8fac8a4ed0ed764f46f7c))
+* update license text to reflect current copyright holder ([7f52380](https://github.com/BigThunderSR/OnStarJS/commit/7f5238072c79cccbde4f0cc36fda8d673fd78f49))
+
 ## [2.6.2](https://github.com/BigThunderSR/OnStarJS/compare/v2.6.1...v2.6.2) (2025-03-03)
 
 
