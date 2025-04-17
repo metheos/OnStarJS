@@ -3,7 +3,6 @@ import axios, { AxiosInstance, AxiosResponse } from "axios";
 import { CookieJar } from "tough-cookie";
 import { HttpCookieAgent, HttpsCookieAgent } from "http-cookie-agent/http";
 import * as openidClient from "openid-client";
-import { custom } from "openid-client";
 import fs from "fs";
 import { TOTP } from "totp-generator";
 //import { stringify } from "uuid";
@@ -61,10 +60,6 @@ export class GMAuth {
   private config: GMAuthConfig;
   private MSTokenPath: string;
   private GMTokenPath: string;
-  private oidc: {
-    Issuer: typeof openidClient.Issuer;
-    generators: typeof openidClient.generators;
-  };
   private jar: CookieJar;
   private axiosClient: AxiosInstance;
   private csrfToken: string | null;
@@ -80,10 +75,6 @@ export class GMAuth {
       "microsoft_tokens.json",
     );
     this.GMTokenPath = path.join(this.config.tokenLocation, "gm_tokens.json");
-    this.oidc = {
-      Issuer: openidClient.Issuer,
-      generators: openidClient.generators,
-    };
     this.jar = new CookieJar();
     this.axiosClient = axios.create({
       httpAgent: new HttpCookieAgent({ cookies: { jar: this.jar } }),
@@ -125,7 +116,7 @@ export class GMAuth {
     const { authorizationUrl, code_verifier } =
       await this.startMSAuthorizationFlow();
 
-    const authResponse = await this.getRequest(authorizationUrl);
+    const authResponse = await this.getRequest(authorizationUrl.toString());
     this.csrfToken = this.getRegexMatch(
       authResponse.data,
       `\"csrf\":\"(.*?)\"`,
@@ -478,38 +469,53 @@ export class GMAuth {
     }
   }
 
-  private async setupOpenIDClient(): Promise<openidClient.Client> {
-    // console.log("Doing auth discovery");
-    const issuer = await this.oidc.Issuer.discover(
-      "https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/b2c_1a_seamless_mobile_signuporsignin/v2.0/.well-known/openid-configuration",
-    );
+  private async setupOpenIDClient(): Promise<openidClient.Configuration> {
+    let discoveryUrl =
+      "https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/b2c_1a_seamless_mobile_signuporsignin/v2.0/.well-known/openid-configuration";
+    let server!: URL; // Authorization server's Issuer Identifier URL
+    let clientId!: string;
+    let config!: openidClient.Configuration;
+    try {
+      server = new URL(discoveryUrl);
+      clientId = "3ff30506-d242-4bed-835b-422bf992622e";
+      console.log("Starting OIDC discovery with URL:", discoveryUrl);
 
-    const client = new issuer.Client({
-      client_id: "3ff30506-d242-4bed-835b-422bf992622e",
-      redirect_uris: ["msauth.com.gm.myChevrolet://auth"],
-      response_types: ["code"],
-      token_endpoint_auth_method: "none",
-    });
-    client[custom.clock_tolerance] = 5; // to allow a 5 second skew
+      config = await openidClient.discovery(server, clientId);
+      console.log("OIDC discovery successful");
+    } catch (error) {
+      console.error("OIDC discovery failed:", error);
+      throw error;
+    }
+    // client.metadata.clock_tolerance = 5; // to allow a 5 second skew
 
-    return client;
+    return config;
   }
 
   private async startMSAuthorizationFlow(): Promise<{
-    authorizationUrl: string;
+    authorizationUrl: URL;
     code_verifier: string;
   }> {
     // console.log("Starting PKCE auth");
-    const client = await this.setupOpenIDClient();
-    const code_verifier = this.oidc.generators.codeVerifier();
-    const code_challenge = this.oidc.generators.codeChallenge(code_verifier);
-
-    const authorizationUrl = client.authorizationUrl({
+    const config = await this.setupOpenIDClient();
+    let code_challenge_method = "S256";
+    let redirect_uri = "msauth.com.gm.myChevrolet://auth";
+    const code_verifier = openidClient.randomPKCECodeVerifier();
+    const code_challenge =
+      await openidClient.calculatePKCECodeChallenge(code_verifier);
+    let parameters: Record<string, string> = {
+      redirect_uri,
       scope:
         "https://gmb2cprod.onmicrosoft.com/3ff30506-d242-4bed-835b-422bf992622e/Test.Read openid profile offline_access",
       code_challenge,
-      code_challenge_method: "S256",
-    });
+      code_challenge_method,
+      response_type: "code",
+      token_endpoint_auth_method: "none",
+    };
+
+    let authorizationUrl = openidClient.buildAuthorizationUrl(
+      config,
+      parameters,
+    );
 
     return { authorizationUrl, code_verifier };
   }
@@ -518,14 +524,29 @@ export class GMAuth {
     code: string,
     code_verifier: string,
   ): Promise<TokenSet> {
-    const client = await this.setupOpenIDClient();
+    const config = await this.setupOpenIDClient();
 
     try {
-      const openIdTokenSet = await client.callback(
-        "msauth.com.gm.myChevrolet://auth",
-        { code },
-        { code_verifier },
-      );
+      // const openIdTokenSet = await client.callback(
+      //   "msauth.com.gm.myChevrolet://auth",
+      //   { code },
+      //   { code_verifier },
+      // );
+
+      let openIdTokenSet: openidClient.TokenEndpointResponse;
+      {
+        let currentUrl = new URL("msauth.com.gm.myChevrolet://auth");
+        let tokens = await openidClient.authorizationCodeGrant(
+          config,
+          currentUrl,
+          {
+            pkceCodeVerifier: code_verifier,
+          },
+        );
+
+        console.log("Token Endpoint Response", tokens);
+        openIdTokenSet = tokens;
+      }
 
       // Validate that we received the required tokens
       if (!openIdTokenSet.access_token) {
@@ -533,6 +554,9 @@ export class GMAuth {
           "No access token received from authentication provider",
         );
       }
+
+      let expires_at =
+        (openIdTokenSet.expires_in ?? 0) + Math.floor(Date.now() / 1000);
 
       // Convert the openid-client TokenSet to our TokenSet format
       const tokenSet: TokenSet = {
@@ -543,7 +567,7 @@ export class GMAuth {
           refresh_token: openIdTokenSet.refresh_token,
         }),
         ...(openIdTokenSet.expires_at && {
-          expires_at: openIdTokenSet.expires_at,
+          expires_at: expires_at,
         }),
         ...(openIdTokenSet.expires_in && {
           expires_in: openIdTokenSet.expires_in,
@@ -598,8 +622,11 @@ export class GMAuth {
         tokenSet = storedTokens;
       } else if (storedTokens.refresh_token) {
         // console.log("Refreshing MS access token");
-        const client = await this.setupOpenIDClient();
-        const refreshedTokens = await client.refresh(
+        const config = await this.setupOpenIDClient();
+        // Create a params object for the refresh
+        const params = new URLSearchParams();
+        const refreshedTokens = await openidClient.refreshTokenGrant(
+          config,
           storedTokens.refresh_token,
         );
 
@@ -607,6 +634,9 @@ export class GMAuth {
         if (!refreshedTokens.access_token) {
           throw new Error("Refresh token response missing access_token");
         }
+        const expires_at =
+          Math.floor(Date.now() / 1000) +
+          parseInt((refreshedTokens.expires_in ?? 0).toString());
 
         // Create a valid TokenSet object
         tokenSet = {
@@ -614,7 +644,7 @@ export class GMAuth {
           refresh_token: refreshedTokens.refresh_token,
           id_token: refreshedTokens.id_token,
           expires_in: refreshedTokens.expires_in,
-          expires_at: refreshedTokens.expires_at,
+          expires_at: expires_at,
         };
 
         // console.log("Saving current MS tokens to ", this.MSTokenPath);
