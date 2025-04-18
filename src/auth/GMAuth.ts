@@ -71,6 +71,7 @@ export class GMAuth {
   private transId: string | null;
 
   private currentGMAPIToken: GMAPITokenResponse | null = null;
+  private debugMode: boolean = false;
 
   constructor(config: GMAuthConfig) {
     this.config = config;
@@ -84,7 +85,14 @@ export class GMAuth {
       Issuer: openidClient.Issuer,
       generators: openidClient.generators,
     };
-    this.jar = new CookieJar();
+
+    // Create cookie jar with more permissive settings
+    this.jar = new CookieJar(undefined, {
+      looseMode: true,
+      rejectPublicSuffixes: false,
+      allowSpecialUseDomain: true,
+    });
+
     this.axiosClient = axios.create({
       httpAgent: new HttpCookieAgent({ cookies: { jar: this.jar } }),
       httpsAgent: new HttpsCookieAgent({ cookies: { jar: this.jar } }),
@@ -387,13 +395,71 @@ export class GMAuth {
     }
   }
 
+  // Add this method to manually extract and add cookies from response headers
+  private processCookieHeaders(response: AxiosResponse, url: string): void {
+    const setCookieHeaders = response.headers["set-cookie"];
+    if (setCookieHeaders && Array.isArray(setCookieHeaders)) {
+      setCookieHeaders.forEach((cookieString) => {
+        const parsedUrl = new URL(url);
+        try {
+          // Use setCookieSync to handle each Set-Cookie header
+          this.jar.setCookieSync(cookieString, parsedUrl.origin);
+          if (this.debugMode) {
+            console.log(`Added cookie: ${cookieString.split(";")[0]}`);
+          }
+        } catch (error) {
+          console.error(`Failed to add cookie: ${error}`);
+        }
+      });
+    }
+  }
+
   private async getRequest(url: string): Promise<AxiosResponse> {
     try {
+      // Get cookies for this URL before the request
+      const cookieStringBefore = await this.jar.getCookieString(url);
+
+      if (this.debugMode) {
+        console.log("Cookies before GET:", cookieStringBefore);
+        console.log("GET URL:", url);
+      }
+
       const response = await this.axiosClient.get(url, {
         withCredentials: true,
         maxRedirects: 0,
+        headers: {
+          Accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Encoding": "gzip, deflate, br",
+          "Accept-Language": "en-US,en;q=0.9",
+          Connection: "keep-alive",
+          "User-Agent":
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.6 Mobile/15E148 Safari/604.1",
+          ...(cookieStringBefore && { Cookie: cookieStringBefore }),
+        },
       });
-      // console.log("Response Status:", response.status);
+
+      // Process and store cookies from the response
+      this.processCookieHeaders(response, url);
+
+      if (this.debugMode) {
+        console.log(
+          "Set-Cookie headers after GET:",
+          response.headers["set-cookie"],
+        );
+        console.log(
+          "Current cookies after GET:",
+          await this.jar.getCookieString(url),
+        );
+
+        // Also check for cookies for the domain
+        const domain = new URL(url).hostname;
+        console.log(
+          `Cookies for domain ${domain}:`,
+          await this.jar.getCookieString(`https://${domain}/`),
+        );
+      }
+
       return response;
     } catch (error: any) {
       if (axios.isAxiosError(error)) {
@@ -411,16 +477,68 @@ export class GMAuth {
     csrfToken: string | null,
   ): Promise<AxiosResponse> {
     try {
-      const response = await this.axiosClient.post(url, postData, {
+      // Properly serialize form data
+      const formData = new URLSearchParams();
+      for (const [key, value] of Object.entries(postData)) {
+        formData.append(key, value as string);
+      }
+
+      // Get cookies for the specific URL and also for the base domain
+      const urlObj = new URL(url);
+      const domain = urlObj.hostname;
+
+      // Try to get cookies from both URL path and root path
+      const cookieString = await this.jar.getCookieString(url);
+      const domainCookieString = await this.jar.getCookieString(
+        `https://${domain}/`,
+      );
+
+      // Combine cookie strings if they're different
+      const combinedCookies =
+        cookieString !== domainCookieString
+          ? `${cookieString}; ${domainCookieString}`.replace(/;\s+;/g, "; ")
+          : cookieString;
+
+      if (this.debugMode) {
+        console.log("POST URL:", url);
+        console.log("Cookies before POST (URL):", cookieString);
+        console.log("Cookies before POST (domain):", domainCookieString);
+        console.log("Combined cookies:", combinedCookies);
+        console.log("POST data:", postData);
+      }
+
+      const response = await this.axiosClient.post(url, formData.toString(), {
         withCredentials: true,
         headers: {
           "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-          accept: "application/json, text/javascript, */*; q=0.01",
-          origin: "https://custlogin.gm.com",
+          Accept: "application/json, text/javascript, */*; q=0.01",
+          "Accept-Language": "en-US,en;q=0.9",
+          Origin: "https://custlogin.gm.com",
           "x-csrf-token": csrfToken,
+          "User-Agent":
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.6 Mobile/15E148 Safari/604.1",
+          "X-Requested-With": "XMLHttpRequest",
+          "Accept-Encoding": "gzip, deflate, br",
+          Connection: "keep-alive",
+          // Using the combined cookies
+          ...(combinedCookies && { Cookie: combinedCookies }),
         },
       });
-      // console.log("Response Status:", response.status);
+
+      // Process and store cookies from the response
+      this.processCookieHeaders(response, url);
+
+      if (this.debugMode) {
+        console.log(
+          "Set-Cookie headers after POST:",
+          response.headers["set-cookie"],
+        );
+        console.log(
+          "Current cookies after POST:",
+          await this.jar.getCookieString(url),
+        );
+      }
+
       return response;
     } catch (error: any) {
       if (axios.isAxiosError(error)) {
@@ -457,12 +575,50 @@ export class GMAuth {
   }
 
   private async captureRedirectLocation(url: string): Promise<string> {
-    // console.log("Requesting PKCE code");
     try {
+      // Get cookies for this URL before the request
+      const cookieStringBefore = await this.jar.getCookieString(url);
+
+      if (this.debugMode) {
+        console.log("Cookies before redirect capture:", cookieStringBefore);
+        console.log("Redirect capture URL:", url);
+      }
+
       const response = await this.axiosClient.get(url, {
         maxRedirects: 0,
         validateStatus: (status) => status >= 200 && status < 400,
+        headers: {
+          Accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Encoding": "gzip, deflate, br",
+          "Accept-Language": "en-US,en;q=0.9",
+          Connection: "keep-alive",
+          "User-Agent":
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.6 Mobile/15E148 Safari/604.1",
+          ...(cookieStringBefore && { Cookie: cookieStringBefore }),
+        },
       });
+
+      // Process and store cookies from the response
+      this.processCookieHeaders(response, url);
+
+      if (this.debugMode) {
+        console.log(
+          "Set-Cookie headers after redirect capture:",
+          response.headers["set-cookie"],
+        );
+        console.log(
+          "Current cookies after redirect capture:",
+          await this.jar.getCookieString(url),
+        );
+
+        // Check for domain cookies too
+        const domain = new URL(url).hostname;
+        console.log(
+          `Cookies for domain ${domain}:`,
+          await this.jar.getCookieString(`https://${domain}/`),
+        );
+      }
 
       if (response.status === 302) {
         const redirectLocation = response.headers["location"];
@@ -471,6 +627,7 @@ export class GMAuth {
         }
         return redirectLocation;
       }
+
       throw new Error(`Unexpected response status: ${response.status}`);
     } catch (error: any) {
       this.handleRequestError(error);
@@ -479,17 +636,100 @@ export class GMAuth {
   }
 
   private async setupOpenIDClient(): Promise<openidClient.Client> {
-    // console.log("Doing auth discovery");
-    const issuer = await this.oidc.Issuer.discover(
-      "https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/b2c_1a_seamless_mobile_signuporsignin/v2.0/.well-known/openid-configuration",
-    );
+    // Hard-coded fallback configuration with required endpoints
+    const fallbackConfig = {
+      issuer:
+        "https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/b2c_1a_seamless_mobile_signuporsignin/v2.0/",
+      authorization_endpoint:
+        "https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/b2c_1a_seamless_mobile_signuporsignin/v2.0/authorize",
+      token_endpoint:
+        "https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/b2c_1a_seamless_mobile_signuporsignin/v2.0/token",
+      jwks_uri:
+        "https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/b2c_1a_seamless_mobile_signuporsignin/discovery/v2.0/keys",
+      response_types_supported: ["code", "id_token", "code id_token"],
+      response_modes_supported: ["query", "fragment", "form_post"],
+      grant_types_supported: [
+        "authorization_code",
+        "implicit",
+        "refresh_token",
+      ],
+      subject_types_supported: ["pairwise"],
+      id_token_signing_alg_values_supported: ["RS256"],
+      scopes_supported: ["openid"],
+    };
 
+    let issuer: openidClient.Issuer | null = null;
+
+    try {
+      // Try direct discovery first
+      const discoveryUrl =
+        "https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/b2c_1a_seamless_mobile_signuporsignin/v2.0/.well-known/openid-configuration";
+
+      if (this.debugMode) {
+        console.log("Attempting OpenID discovery from:", discoveryUrl);
+      }
+
+      const response = await axios.get(discoveryUrl, {
+        headers: {
+          Accept: "application/json",
+          "User-Agent":
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.6 Mobile/15E148 Safari/604.1",
+        },
+        timeout: 10000,
+      });
+
+      // Use the discovery data but merge with fallback to ensure required fields
+      const discoveredConfig = response.data;
+
+      // Create issuer with combined configuration
+      issuer = new this.oidc.Issuer({
+        ...fallbackConfig,
+        ...discoveredConfig,
+        // Ensure these critical endpoints are defined
+        authorization_endpoint:
+          discoveredConfig.authorization_endpoint ||
+          fallbackConfig.authorization_endpoint,
+        token_endpoint:
+          discoveredConfig.token_endpoint || fallbackConfig.token_endpoint,
+        jwks_uri: discoveredConfig.jwks_uri || fallbackConfig.jwks_uri,
+      });
+
+      if (this.debugMode) {
+        console.log("Successfully created issuer with discovery data");
+      }
+    } catch (error) {
+      console.warn(
+        "OpenID discovery failed, using fallback configuration",
+        error,
+      );
+
+      // Create issuer using fallback configuration
+      issuer = new this.oidc.Issuer(fallbackConfig);
+
+      if (this.debugMode) {
+        console.log("Created issuer with fallback configuration");
+      }
+    }
+
+    if (!issuer) {
+      throw new Error("Failed to create OpenID issuer");
+    }
+
+    // Verify the critical endpoint is available
+    if (!issuer.authorization_endpoint) {
+      throw new Error(
+        "Issuer missing authorization_endpoint even after fallback",
+      );
+    }
+
+    // Create client
     const client = new issuer.Client({
       client_id: "3ff30506-d242-4bed-835b-422bf992622e",
       redirect_uris: ["msauth.com.gm.myChevrolet://auth"],
       response_types: ["code"],
       token_endpoint_auth_method: "none",
     });
+
     client[custom.clock_tolerance] = 5; // to allow a 5 second skew
 
     return client;
@@ -504,11 +744,23 @@ export class GMAuth {
     const code_verifier = this.oidc.generators.codeVerifier();
     const code_challenge = this.oidc.generators.codeChallenge(code_verifier);
 
+    const state = this.oidc.generators.nonce();
+    // const nonce = this.oidc.generators.nonce();
     const authorizationUrl = client.authorizationUrl({
       scope:
         "https://gmb2cprod.onmicrosoft.com/3ff30506-d242-4bed-835b-422bf992622e/Test.Read openid profile offline_access",
       code_challenge,
       code_challenge_method: "S256",
+      bundleID: "com.gm.myChevrolet",
+      client_id: "3ff30506-d242-4bed-835b-422bf992622e",
+      mode: "dark",
+      evar25:
+        "mobile_mychevrolet_chevrolet_us_app_launcher_sign_in_or_create_account",
+      channel: "lightreg",
+      ui_locales: "en-US",
+      brand: "chevrolet",
+      // nonce,
+      state,
     });
 
     return { authorizationUrl, code_verifier };
