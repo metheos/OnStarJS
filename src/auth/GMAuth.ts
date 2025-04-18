@@ -71,7 +71,7 @@ export class GMAuth {
   private transId: string | null;
 
   private currentGMAPIToken: GMAPITokenResponse | null = null;
-  private debugMode: boolean = true;
+  private debugMode: boolean = false;
 
   constructor(config: GMAuthConfig) {
     this.config = config;
@@ -636,17 +636,100 @@ export class GMAuth {
   }
 
   private async setupOpenIDClient(): Promise<openidClient.Client> {
-    // console.log("Doing auth discovery");
-    const issuer = await this.oidc.Issuer.discover(
-      "https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/b2c_1a_seamless_mobile_signuporsignin/v2.0/.well-known/openid-configuration",
-    );
+    // Hard-coded fallback configuration with required endpoints
+    const fallbackConfig = {
+      issuer:
+        "https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/b2c_1a_seamless_mobile_signuporsignin/v2.0/",
+      authorization_endpoint:
+        "https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/b2c_1a_seamless_mobile_signuporsignin/v2.0/authorize",
+      token_endpoint:
+        "https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/b2c_1a_seamless_mobile_signuporsignin/v2.0/token",
+      jwks_uri:
+        "https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/b2c_1a_seamless_mobile_signuporsignin/discovery/v2.0/keys",
+      response_types_supported: ["code", "id_token", "code id_token"],
+      response_modes_supported: ["query", "fragment", "form_post"],
+      grant_types_supported: [
+        "authorization_code",
+        "implicit",
+        "refresh_token",
+      ],
+      subject_types_supported: ["pairwise"],
+      id_token_signing_alg_values_supported: ["RS256"],
+      scopes_supported: ["openid"],
+    };
 
+    let issuer: openidClient.Issuer | null = null;
+
+    try {
+      // Try direct discovery first
+      const discoveryUrl =
+        "https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/b2c_1a_seamless_mobile_signuporsignin/v2.0/.well-known/openid-configuration";
+
+      if (this.debugMode) {
+        console.log("Attempting OpenID discovery from:", discoveryUrl);
+      }
+
+      const response = await axios.get(discoveryUrl, {
+        headers: {
+          Accept: "application/json",
+          "User-Agent":
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.6 Mobile/15E148 Safari/604.1",
+        },
+        timeout: 10000,
+      });
+
+      // Use the discovery data but merge with fallback to ensure required fields
+      const discoveredConfig = response.data;
+
+      // Create issuer with combined configuration
+      issuer = new this.oidc.Issuer({
+        ...fallbackConfig,
+        ...discoveredConfig,
+        // Ensure these critical endpoints are defined
+        authorization_endpoint:
+          discoveredConfig.authorization_endpoint ||
+          fallbackConfig.authorization_endpoint,
+        token_endpoint:
+          discoveredConfig.token_endpoint || fallbackConfig.token_endpoint,
+        jwks_uri: discoveredConfig.jwks_uri || fallbackConfig.jwks_uri,
+      });
+
+      if (this.debugMode) {
+        console.log("Successfully created issuer with discovery data");
+      }
+    } catch (error) {
+      console.warn(
+        "OpenID discovery failed, using fallback configuration",
+        error,
+      );
+
+      // Create issuer using fallback configuration
+      issuer = new this.oidc.Issuer(fallbackConfig);
+
+      if (this.debugMode) {
+        console.log("Created issuer with fallback configuration");
+      }
+    }
+
+    if (!issuer) {
+      throw new Error("Failed to create OpenID issuer");
+    }
+
+    // Verify the critical endpoint is available
+    if (!issuer.authorization_endpoint) {
+      throw new Error(
+        "Issuer missing authorization_endpoint even after fallback",
+      );
+    }
+
+    // Create client
     const client = new issuer.Client({
       client_id: "3ff30506-d242-4bed-835b-422bf992622e",
       redirect_uris: ["msauth.com.gm.myChevrolet://auth"],
       response_types: ["code"],
       token_endpoint_auth_method: "none",
     });
+
     client[custom.clock_tolerance] = 5; // to allow a 5 second skew
 
     return client;
@@ -662,7 +745,7 @@ export class GMAuth {
     const code_challenge = this.oidc.generators.codeChallenge(code_verifier);
 
     const state = this.oidc.generators.nonce();
-    const nonce = this.oidc.generators.nonce();
+    // const nonce = this.oidc.generators.nonce();
     const authorizationUrl = client.authorizationUrl({
       scope:
         "https://gmb2cprod.onmicrosoft.com/3ff30506-d242-4bed-835b-422bf992622e/Test.Read openid profile offline_access",
@@ -676,7 +759,7 @@ export class GMAuth {
       channel: "lightreg",
       ui_locales: "en-US",
       brand: "chevrolet",
-      nonce,
+      // nonce,
       state,
     });
 
