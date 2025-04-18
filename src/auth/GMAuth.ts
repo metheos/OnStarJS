@@ -6,6 +6,7 @@ import * as openidClient from "openid-client";
 import { custom } from "openid-client";
 import fs from "fs";
 import { TOTP } from "totp-generator";
+import https from "https";
 //import { stringify } from "uuid";
 import path from "path";
 import jwt from "jsonwebtoken";
@@ -86,6 +87,29 @@ export class GMAuth {
       generators: openidClient.generators,
     };
 
+    // Define modern cipher suites similar to browsers
+    const modernCiphers = [
+      "TLS_AES_128_GCM_SHA256",
+      "TLS_AES_256_GCM_SHA384",
+      "TLS_CHACHA20_POLY1305_SHA256",
+      "ECDHE-ECDSA-AES128-GCM-SHA256",
+      "ECDHE-RSA-AES128-GCM-SHA256",
+      "ECDHE-ECDSA-AES256-GCM-SHA384",
+      "ECDHE-RSA-AES256-GCM-SHA384",
+      "ECDHE-ECDSA-CHACHA20_POLY1305",
+      "ECDHE-RSA-CHACHA20_POLY1305",
+      "ECDHE-RSA-AES128-SHA",
+      "ECDHE-RSA-AES256-SHA",
+      "AES128-GCM-SHA256",
+      "AES256-GCM-SHA384",
+      "AES128-SHA",
+      "AES256-SHA",
+    ].join(":");
+
+    // Configure Node.js global HTTPS agent for openid-client
+    https.globalAgent.options.ciphers = modernCiphers;
+    https.globalAgent.options.minVersion = "TLSv1.2";
+
     // Create cookie jar with more permissive settings
     this.jar = new CookieJar(undefined, {
       looseMode: true,
@@ -95,7 +119,14 @@ export class GMAuth {
 
     this.axiosClient = axios.create({
       httpAgent: new HttpCookieAgent({ cookies: { jar: this.jar } }),
-      httpsAgent: new HttpsCookieAgent({ cookies: { jar: this.jar } }),
+      httpsAgent: new HttpsCookieAgent({
+        cookies: { jar: this.jar },
+        ciphers: modernCiphers,
+        minVersion: "TLSv1.2",
+        keepAlive: true,
+      }),
+      maxRedirects: 0,
+      validateStatus: (status) => status >= 200 && status < 400,
     });
     this.csrfToken = null;
     this.transId = null;
