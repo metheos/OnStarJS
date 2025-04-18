@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.6.4](https://github.com/BigThunderSR/OnStarJS/compare/v2.6.3...v2.6.4) (2025-04-18)
+
+
+### Bug Fixes
+
+* **deps:** bump http-cookie-agent from 6.0.8 to 7.0.1 ([62b76c9](https://github.com/BigThunderSR/OnStarJS/commit/62b76c9e305850c652eaef312db5d30474257f50))
+
 ## [2.6.3](https://github.com/BigThunderSR/OnStarJS/compare/v2.6.2...v2.6.3) (2025-04-05)
 
 
