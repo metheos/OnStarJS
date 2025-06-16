@@ -77,7 +77,7 @@ export class GMAuth {
   private capturedAuthCode: string | null = null;
 
   private currentGMAPIToken: GMAPITokenResponse | null = null;
-  private debugMode: boolean = true;
+  private debugMode: boolean = true; // Default to visible mode for reliability
 
   constructor(config: GMAuthConfig) {
     this.config = config;
@@ -145,19 +145,28 @@ export class GMAuth {
     }
 
     this.browser = await chromium.launch({
-      headless: !this.debugMode, // Show browser when debugging
-      args: [
-        "--disable-blink-features=AutomationControlled",
-        "--disable-web-security",
-        "--disable-features=VizDisplayCompositor",
-      ],
+      headless: !this.debugMode, // Show browser when debugging (default false for reliability)
+      slowMo: this.debugMode ? 1000 : 0,
     });
 
     this.context = await this.browser.newContext({
-      viewport: { width: 1280, height: 720 },
+      viewport: { width: 1920, height: 1080 },
       userAgent:
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      locale: "en-US",
+      extraHTTPHeaders: {
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        Connection: "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+      },
     });
+
+    console.log(
+      `🌐 Browser initialized in ${this.debugMode ? "visible" : "headless"} mode`,
+    );
   }
   private async closeBrowser(): Promise<void> {
     if (this.currentPage) {
@@ -267,7 +276,7 @@ export class GMAuth {
     }
   }
   private async handleMFA(): Promise<void> {
-    // console.log("Handling MFA via browser automation");
+    console.log("Handling MFA via browser automation");
 
     if (!this.context || !this.currentPage) {
       throw new Error(
@@ -278,10 +287,10 @@ export class GMAuth {
     const page = this.currentPage;
 
     try {
-      // Wait for the MFA page to load - it should already be there after credential submission
+      // Wait for MFA page to load
       await page.waitForLoadState("networkidle");
 
-      // Look for MFA elements on the page
+      // Look for MFA elements
       await page.waitForSelector(
         'input[name="otpCode"], input[name="emailMfa"], input[name="strongAuthenticationPhoneNumber"]',
         { timeout: 10000 },
@@ -289,7 +298,7 @@ export class GMAuth {
 
       const pageContent = await page.content();
 
-      // Determine MFA type by checking for specific elements
+      // Determine MFA type
       let mfaType = null;
       if (
         (await page.locator('input[name="otpCode"]').count()) > 0 ||
@@ -314,7 +323,6 @@ export class GMAuth {
         throw new Error("Could not determine MFA Type. Bad email or password?");
       }
 
-      // console.log("MFA Type:", mfaType);
       if (mfaType != "TOTP") {
         throw new Error(
           `Only TOTP via "Third-Party Authenticator" is currently supported by this implementation. Please update your OnStar account to use this method, if possible.`,
@@ -340,7 +348,8 @@ export class GMAuth {
         period: 30,
       });
 
-      // console.log("Submitting OTP Code:", otp);
+      console.log("Submitting OTP Code:", otp);
+
       // Fill in the OTP code
       const otpField = await page.locator('input[name="otpCode"]').first();
       await otpField.fill(otp);
@@ -380,18 +389,12 @@ export class GMAuth {
         .first();
       await submitButton.click();
 
-      // Wait for the MFA submission to complete and capture the redirect
+      // Wait for the MFA submission to complete
       console.log("Waiting for redirect after MFA submission...");
-
-      // Wait for the response or navigation to complete
       await page.waitForLoadState("networkidle");
 
-      // Give a small delay to ensure the response handler has fired
-      await page.waitForTimeout(1000);
-
-      // Check if we captured the authorization code from the response
+      // Check if we captured the authorization code
       if (!this.capturedAuthCode && redirectLocation) {
-        // Try to extract again from the captured redirect location
         this.capturedAuthCode = this.getRegexMatch(
           redirectLocation,
           `[?&]code=([^&]*)`,
@@ -414,37 +417,10 @@ export class GMAuth {
         console.log(
           "Failed to capture authorization code from browser redirect",
         );
-        if (redirectLocation) {
-          console.log("Redirect location was:", redirectLocation);
-        }
       }
-
-      // Update CSRF token and transaction ID after MFA submission (if still needed)
-      const updatedContent = await page.content();
-      this.csrfToken = this.getRegexMatch(updatedContent, `\"csrf\":\"(.*?)\"`);
-      this.transId = this.getRegexMatch(
-        updatedContent,
-        `\"transId\":\"(.*?)\"`,
-      );
-
-      if (!this.csrfToken || !this.transId) {
-        // Try alternative patterns
-        this.csrfToken = this.getRegexMatch(
-          updatedContent,
-          `csrf_token[\"']=[\\"'](.*?)[\\"']`,
-        );
-        this.transId = this.getRegexMatch(
-          updatedContent,
-          `tx[\"']=[\\"'](.*?)[\\"']`,
-        );
-      }
-
-      // Sync cookies from browser to axios client for subsequent API calls
-      await this.syncCookiesFromBrowser();
-    } finally {
-      // Close the page after MFA is complete
-      await page.close();
-      this.currentPage = null;
+    } catch (error) {
+      console.error("Error in handleMFA:", error);
+      throw error;
     }
   }
 
@@ -466,7 +442,7 @@ export class GMAuth {
     }
   }
   private async submitCredentials(authorizationUrl: string): Promise<void> {
-    // console.log("Sending GM login credentials via browser automation");
+    console.log("Starting browser-based authentication");
 
     // Initialize browser if not already done
     await this.initBrowser();
@@ -475,216 +451,56 @@ export class GMAuth {
     }
 
     const page = await this.context.newPage();
+    this.currentPage = page;
 
     try {
       // Navigate to the authorization URL
-      console.log("Navigating to:", authorizationUrl);
-      await page.goto(authorizationUrl, { waitUntil: "networkidle" });
+      console.log("Navigating to auth URL...");
+      await page.goto(authorizationUrl, {
+        waitUntil: "domcontentloaded",
+        timeout: 30000,
+      });
+      await page.waitForLoadState("networkidle");
 
-      // Debug: Check what's actually on the page
-      const pageTitle = await page.title();
-      console.log("Page title:", pageTitle);
+      console.log("Page loaded, looking for email field...");
 
-      const pageUrl = page.url();
-      console.log("Current URL:", pageUrl);
-
-      // Take a screenshot for debugging (optional)
-      // await page.screenshot({ path: 'debug-login-page.png' });
-
-      // Check for various possible email input selectors
-      const emailSelectors = [
-        'input[type="email"]#logonIdentifier',
-        'input[name="Sign in name"]',
-        "input#logonIdentifier",
-        'input[type="email"]',
-        'input[name="logonIdentifier"]',
-        'input[placeholder*="email" i]',
-        'input[placeholder*="Email" i]',
-      ];
-
-      let emailField = null;
-      let foundSelector = "";
-
-      // Try each selector until we find one that works
-      for (const selector of emailSelectors) {
-        try {
-          await page.waitForSelector(selector, { timeout: 2000 });
-          emailField = page.locator(selector).first();
-          foundSelector = selector;
-          console.log("Found email field with selector:", selector);
-          break;
-        } catch (e) {
-          console.log("Selector not found:", selector);
-        }
-      }
-
-      if (!emailField) {
-        // Debug: Print all input elements on the page
-        const allInputs = await page.locator("input").all();
-        console.log("All input elements found:");
-        for (let i = 0; i < allInputs.length; i++) {
-          const input = allInputs[i];
-          const type = await input.getAttribute("type");
-          const id = await input.getAttribute("id");
-          const name = await input.getAttribute("name");
-          const placeholder = await input.getAttribute("placeholder");
-          console.log(
-            `Input ${i}: type="${type}", id="${id}", name="${name}", placeholder="${placeholder}"`,
-          );
-        }
-        throw new Error("Could not find email input field on the page");
-      }
-
-      // Step 1: Enter email and click Continue
-      console.log("Filling email field with selector:", foundSelector);
+      // Find and fill email field
+      const emailField = page
+        .locator(
+          'input[type="email"], input[name="logonIdentifier"], input#logonIdentifier',
+        )
+        .first();
+      await emailField.waitFor({ timeout: 10000 });
       await emailField.fill(this.config.username);
 
-      // Look for continue button
-      const continueSelectors = [
-        'button#continue:has-text("Continue")',
-        "button#continue",
-        'button:has-text("Continue")',
-        'button[type="button"]:has-text("Continue")',
-        'input[type="submit"]',
-        'button[type="submit"]',
-      ];
-
-      let continueButton = null;
-      let foundContinueSelector = "";
-
-      for (const selector of continueSelectors) {
-        try {
-          await page.waitForSelector(selector, { timeout: 2000 });
-          continueButton = page.locator(selector).first();
-          foundContinueSelector = selector;
-          console.log("Found continue button with selector:", selector);
-          break;
-        } catch (e) {
-          console.log("Continue selector not found:", selector);
-        }
-      }
-
-      if (!continueButton) {
-        // Debug: Print all button elements
-        const allButtons = await page.locator("button").all();
-        console.log("All button elements found:");
-        for (let i = 0; i < allButtons.length; i++) {
-          const button = allButtons[i];
-          const text = await button.textContent();
-          const id = await button.getAttribute("id");
-          const type = await button.getAttribute("type");
-          console.log(
-            `Button ${i}: text="${text}", id="${id}", type="${type}"`,
-          );
-        }
-        throw new Error("Could not find continue button on the page");
-      }
-
-      console.log("Clicking continue button");
+      // Click continue button
+      const continueButton = page
+        .locator(
+          'button:has-text("Continue"), button#continue, input[type="submit"]',
+        )
+        .first();
       await continueButton.click();
 
-      // Wait for the password page to load
+      // Wait for password page and fill password
       await page.waitForLoadState("networkidle");
-      console.log("Navigated to password page, URL:", page.url());
-
-      // Step 2: Enter password and click Log In
-      const passwordSelectors = [
-        'input[type="password"]#password',
-        "input#password",
-        'input[type="password"]',
-        'input[name="Password"]',
-      ];
-
-      let passwordField = null;
-      let foundPasswordSelector = "";
-
-      for (const selector of passwordSelectors) {
-        try {
-          await page.waitForSelector(selector, { timeout: 5000 });
-          passwordField = page.locator(selector).first();
-          foundPasswordSelector = selector;
-          console.log("Found password field with selector:", selector);
-          break;
-        } catch (e) {
-          console.log("Password selector not found:", selector);
-        }
-      }
-
-      if (!passwordField) {
-        throw new Error("Could not find password input field on the page");
-      }
-
-      console.log("Filling password field");
+      const passwordField = page
+        .locator('input[type="password"], input[name="password"]')
+        .first();
+      await passwordField.waitFor({ timeout: 10000 });
       await passwordField.fill(this.config.password);
 
-      // Look for login button
-      const loginSelectors = [
-        'button#continue:has-text("Log In")',
-        'button#continue:has-text("Sign in")',
-        "button#continue",
-        'button:has-text("Log In")',
-        'button:has-text("Sign in")',
-        'button[type="button"]:has-text("Log In")',
-        'input[type="submit"]',
-        'button[type="submit"]',
-      ];
-
-      let loginButton = null;
-
-      for (const selector of loginSelectors) {
-        try {
-          await page.waitForSelector(selector, { timeout: 2000 });
-          loginButton = page.locator(selector).first();
-          console.log("Found login button with selector:", selector);
-          break;
-        } catch (e) {
-          console.log("Login selector not found:", selector);
-        }
-      }
-
-      if (!loginButton) {
-        throw new Error("Could not find login button on the page");
-      }
-
-      console.log("Clicking login button");
-      await loginButton.click();
-
-      // Wait for navigation to MFA page
+      // Submit password form
+      const submitButton = page
+        .locator(
+          'button[type="submit"], input[type="submit"], button:has-text("Sign in")',
+        )
+        .first();
+      await submitButton.click();
       await page.waitForLoadState("networkidle");
-      console.log("Navigated to MFA page, URL:", page.url());
 
-      // Extract CSRF token and transaction ID from the page content
-      const pageContent = await page.content();
-      this.csrfToken = this.getRegexMatch(pageContent, `\"csrf\":\"(.*?)\"`);
-      this.transId = this.getRegexMatch(pageContent, `\"transId\":\"(.*?)\"`);
-
-      if (!this.csrfToken || !this.transId) {
-        // Try alternative patterns for CSRF and transaction ID
-        this.csrfToken = this.getRegexMatch(
-          pageContent,
-          `csrf_token[\"']=[\\"'](.*?)[\\"']`,
-        );
-        this.transId = this.getRegexMatch(
-          pageContent,
-          `tx[\"']=[\\"'](.*?)[\\"']`,
-        );
-      }
-
-      console.log("CSRF Token:", this.csrfToken ? "Found" : "Not found");
-      console.log("Transaction ID:", this.transId ? "Found" : "Not found");
-
-      if (!this.csrfToken || !this.transId) {
-        console.log("Page content preview:", pageContent.substring(0, 500));
-        throw new Error(
-          "Failed to extract csrf token or transId after credential submission",
-        );
-      }
-
-      // Store the page for MFA use - don't close it yet
-      this.currentPage = page;
+      console.log("Credentials submitted successfully");
     } catch (error) {
       console.error("Error in submitCredentials:", error);
-      await page.close();
       throw error;
     }
   }
