@@ -10,7 +10,7 @@ import https from "https";
 //import { stringify } from "uuid";
 import path from "path";
 import jwt from "jsonwebtoken";
-import { chromium, Browser, BrowserContext, Page } from "playwright";
+import { chromium, Browser, BrowserContext, Page } from "patchright";
 
 // Define an interface for the vehicle structure and the payload containing them
 interface Vehicle {
@@ -144,29 +144,34 @@ export class GMAuth {
       return; // Browser already initialized
     }
 
-    this.browser = await chromium.launch({
-      headless: !this.debugMode, // Show browser when debugging (default false for reliability)
-      slowMo: this.debugMode ? 1000 : 0,
-    });
-
-    this.context = await this.browser.newContext({
-      viewport: { width: 1920, height: 1080 },
-      userAgent:
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      locale: "en-US",
-      extraHTTPHeaders: {
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        Connection: "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
+    // Use persistent context instead of launch + newContext for more realistic browser behavior
+    this.context = await chromium.launchPersistentContext(
+      "./temp-browser-profile",
+      {
+        channel: "chrome", // Use real Chrome
+        headless: false, // Always visible
+        viewport: null, // Use full window size
+        // Important: Don't add custom headers or userAgent - let Chrome use its defaults
+        args: [
+          "--disable-blink-features=AutomationControlled",
+          "--no-first-run",
+          "--disable-default-browser-check",
+          "--start-maximized",
+        ],
       },
+    );
+
+    // The browser is part of the persistent context
+    this.browser = this.context.browser()!;
+
+    // Minimal stealth - only hide the most obvious automation indicators
+    await this.context.addInitScript(() => {
+      Object.defineProperty(navigator, "webdriver", {
+        get: () => undefined,
+      });
     });
 
-    console.log(
-      `🌐 Browser initialized in ${this.debugMode ? "visible" : "headless"} mode`,
-    );
+    console.log(`🌐 Browser initialized with persistent context`);
   }
   private async closeBrowser(): Promise<void> {
     if (this.currentPage) {
@@ -454,6 +459,9 @@ export class GMAuth {
     this.currentPage = page;
 
     try {
+      // Small delay to mimic human behavior before navigation
+      await page.waitForTimeout(1000);
+
       // Navigate to the authorization URL
       console.log("Navigating to auth URL...");
       await page.goto(authorizationUrl, {
@@ -462,7 +470,35 @@ export class GMAuth {
       });
       await page.waitForLoadState("networkidle");
 
-      console.log("Page loaded, looking for email field...");
+      console.log("Page loaded, current URL:", page.url());
+      console.log("Page title:", await page.title());
+
+      // Check if we're stuck on a loading page
+      const title = await page.title();
+      if (
+        title.includes("Loading") ||
+        title.trim() === "" ||
+        title.includes("...")
+      ) {
+        console.log(
+          "Detected loading page, taking screenshot for debugging...",
+        );
+        await page.screenshot({
+          path: "debug-loading-page.png",
+          fullPage: true,
+        });
+        console.log("Screenshot saved as debug-loading-page.png");
+
+        // Try refreshing the page
+        console.log("Attempting page refresh...");
+        await page.reload({ waitUntil: "domcontentloaded" });
+        await page.waitForLoadState("networkidle");
+
+        const newTitle = await page.title();
+        console.log("Page title after refresh:", newTitle);
+      }
+
+      console.log("Looking for email field...");
 
       // Find and fill email field
       const emailField = page
