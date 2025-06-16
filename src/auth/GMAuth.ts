@@ -156,9 +156,10 @@ export class GMAuth {
       "./temp-browser-profile",
       {
         channel: "chrome", // Use real Chrome
-        headless: false, // Always visible
-        viewport: null, // Use full window size
-        // Important: Don't add custom headers or userAgent - let Chrome use its defaults
+        headless: true, // Always visible
+        userAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36",
+        viewport: { width: 1920, height: 1080 },
         args: [
           "--no-first-run",
           "--disable-default-browser-check",

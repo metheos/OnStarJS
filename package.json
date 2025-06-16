@@ -31,7 +31,8 @@
     "test:functional": "jest test/functional",
     "test:keys": "jest test/functional -t 'Unupgraded Command Successful'",
     "test:auth": "jest test/auth/testAuth",
-    "prepare": "husky install"
+    "prepare": "husky install",
+    "postinstall": "patchright install chromium"
   },
   "lint-staged": {
     "*.{js,ts,md,yml}": [
