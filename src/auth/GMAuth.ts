@@ -155,7 +155,7 @@ export class GMAuth {
     this.context = await chromium.launchPersistentContext(
       "./temp-browser-profile",
       {
-        channel: "chrome", // Use real Chrome
+        channel: "chromium", // Use chromium
         headless: true, // Always visible
         userAgent:
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36",
