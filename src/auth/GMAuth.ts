@@ -10,6 +10,8 @@ import https from "https";
 //import { stringify } from "uuid";
 import path from "path";
 import jwt from "jsonwebtoken";
+import { chromium, Browser, BrowserContext, Page } from "patchright";
+import { randomInt } from "crypto";
 
 // Define an interface for the vehicle structure and the payload containing them
 interface Vehicle {
@@ -69,10 +71,14 @@ export class GMAuth {
   private jar: CookieJar;
   private axiosClient: AxiosInstance;
   private csrfToken: string | null;
-  private transId: string | null;
+  private transId: string | null; // Browser automation properties
+  private browser: Browser | null = null;
+  private context: BrowserContext | null = null;
+  private currentPage: Page | null = null;
+  private capturedAuthCode: string | null = null;
 
   private currentGMAPIToken: GMAPITokenResponse | null = null;
-  private debugMode: boolean = false;
+  private debugMode: boolean = true; // Default to visible mode for reliability
 
   constructor(config: GMAuthConfig) {
     this.config = config;
@@ -133,6 +139,72 @@ export class GMAuth {
     // Load the current GM API token
     this.loadCurrentGMAPIToken();
   }
+  // Browser management methods
+  private async initBrowser(): Promise<void> {
+    if (this.browser) {
+      return; // Browser already initialized
+    }
+
+    // delete ./temp-browser-profile if it exists
+    if (fs.existsSync("./temp-browser-profile")) {
+      fs.rmSync("./temp-browser-profile", { recursive: true, force: true });
+      console.log("🗑️ Deleted existing temp browser profile");
+    }
+
+    // Use persistent context instead of launch + newContext for more realistic browser behavior
+    this.context = await chromium.launchPersistentContext(
+      "./temp-browser-profile",
+      {
+        channel: "chromium", // Use chromium
+        headless: true, // Always visible
+        userAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36",
+        viewport: { width: 1920, height: 1080 },
+        args: [
+          "--no-first-run",
+          "--disable-default-browser-check",
+          "--start-maximized",
+        ],
+      },
+    );
+
+    // The browser is part of the persistent context
+    this.browser = this.context.browser()!;
+
+    // Minimal stealth - only hide the most obvious automation indicators
+    await this.context.addInitScript(() => {
+      Object.defineProperty(navigator, "webdriver", {
+        get: () => undefined,
+      });
+    });
+
+    console.log(`🌐 Browser initialized with persistent context`);
+  }
+  private async closeBrowser(): Promise<void> {
+    if (this.currentPage) {
+      await this.currentPage.close();
+      this.currentPage = null;
+    }
+    if (this.context) {
+      await this.context.close();
+      this.context = null;
+    }
+    if (this.browser) {
+      await this.browser.close();
+      this.browser = null;
+    }
+    // Reset captured auth code when closing browser
+    this.capturedAuthCode = null;
+  }
+
+  // Enable debug mode to show browser and detailed logging
+  public enableDebugMode(): void {
+    this.debugMode = true;
+  }
+
+  public disableDebugMode(): void {
+    this.debugMode = false;
+  }
 
   async authenticate(): Promise<GMAPITokenResponse> {
     try {
@@ -159,35 +231,34 @@ export class GMAuth {
       throw error;
     }
   }
-
   async doFullAuthSequence(): Promise<TokenSet> {
-    const { authorizationUrl, code_verifier } =
-      await this.startMSAuthorizationFlow();
+    try {
+      // Reset any previously captured authorization code
+      this.capturedAuthCode = null;
 
-    const authResponse = await this.getRequest(authorizationUrl);
-    this.csrfToken = this.getRegexMatch(
-      authResponse.data,
-      `\"csrf\":\"(.*?)\"`,
-    );
-    this.transId = this.getRegexMatch(
-      authResponse.data,
-      `\"transId\":\"(.*?)\"`,
-    );
+      const { authorizationUrl, code_verifier } =
+        await this.startMSAuthorizationFlow();
 
-    if (!this.csrfToken || !this.transId) {
-      throw new Error("Failed to extract csrf token or transId");
+      // Use browser automation for the initial auth flow
+      await this.submitCredentials(authorizationUrl);
+
+      // Only call handleMFA if the auth code wasn't captured by submitCredentials
+      if (!this.capturedAuthCode) {
+        await this.handleMFA();
+      }
+
+      const authCode = await this.getAuthorizationCode();
+      if (!authCode)
+        throw new Error("Failed to get authorization code. Bad TOTP Key?");
+
+      const tokenSet = await this.getMSToken(authCode, code_verifier);
+      await this.saveTokens(tokenSet);
+
+      return tokenSet;
+    } finally {
+      // Always clean up browser resources
+      await this.closeBrowser();
     }
-
-    await this.submitCredentials();
-    await this.handleMFA();
-    const authCode = await this.getAuthorizationCode();
-    if (!authCode)
-      throw new Error("Failed to get authorization code. Bad TOTP Key?");
-
-    const tokenSet = await this.getMSToken(authCode, code_verifier);
-    await this.saveTokens(tokenSet);
-
-    return tokenSet;
   }
 
   private async saveTokens(tokenSet: TokenSet): Promise<void> {
@@ -202,94 +273,451 @@ export class GMAuth {
       // console.log("Saved current GM API token to ", tokenFilePath);
     }
   }
-
   private async getAuthorizationCode(): Promise<string | null> {
+    // Return the authorization code captured during the browser flow
+    if (this.capturedAuthCode) {
+      console.log("Using authorization code captured from browser redirect");
+      return this.capturedAuthCode;
+    }
+
+    // Fallback to the original HTTP method if browser capture failed
+    console.log("Browser capture failed, trying fallback HTTP method");
     const authCodeRequestURL = `https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/B2C_1A_SEAMLESS_MOBILE_SignUpOrSignIn/api/SelfAsserted/confirmed?csrf_token=${this.csrfToken}&tx=${this.transId}&p=B2C_1A_SEAMLESS_MOBILE_SignUpOrSignIn`;
-    const authResponse = await this.captureRedirectLocation(authCodeRequestURL);
-    return this.getRegexMatch(authResponse, `code=(.*)`);
+    try {
+      const authResponse =
+        await this.captureRedirectLocation(authCodeRequestURL);
+      return this.getRegexMatch(authResponse, `code=(.*)`);
+    } catch (error) {
+      console.error("Fallback HTTP method also failed:", error);
+      return null;
+    }
   }
-
   private async handleMFA(): Promise<void> {
-    // console.log("Loading MFA Page");
-    const mfaRequestURL = `https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/B2C_1A_SEAMLESS_MOBILE_SignUpOrSignIn/api/CombinedSigninAndSignup/confirmed?rememberMe=true&csrf_token=${this.csrfToken}&tx=${this.transId}&p=B2C_1A_SEAMLESS_MOBILE_SignUpOrSignIn`;
+    console.log("Handling MFA via browser automation");
 
-    const authResponse = await this.getRequest(mfaRequestURL);
-    this.csrfToken = this.getRegexMatch(
-      authResponse.data,
-      `\"csrf\":\"(.*?)\"`,
-    );
-    this.transId = this.getRegexMatch(
-      authResponse.data,
-      `\"transId\":\"(.*?)\"`,
-    );
-
-    if (!this.csrfToken || !this.transId) {
-      throw new Error("Failed to extract csrf token or transId during MFA");
-    }
-
-    //DETERMINE MFA TYPE
-    var mfaType = null;
-    if (authResponse.data.includes("otpCode")) {
-      mfaType = "TOTP";
-    }
-    if (authResponse.data.includes("emailMfa")) {
-      mfaType = "EMAIL";
-    }
-    if (authResponse.data.includes("strongAuthenticationPhoneNumber")) {
-      mfaType = "SMS";
-    }
-
-    if (mfaType == null) {
-      throw new Error("Could not determine MFA Type. Bad email or password?");
-    }
-
-    // console.log("MFA Type:", mfaType);
-    if (mfaType != "TOTP") {
+    if (!this.context || !this.currentPage) {
       throw new Error(
-        `Only TOTP via "Third-Party Authenticator" is currently supported by this implementation. Please update your OnStar account to use this method, if possible.`,
+        "Browser context and page not initialized - call submitCredentials first",
       );
     }
 
-    var totp_secret = this.config.totpKey.trim();
-    // Handle instances where users blindly copy the TOTP link. We can just extract the key.
-    if (totp_secret.includes("secret=")) {
-      const match = this.getRegexMatch(totp_secret, "secret=(.*?)&");
-      totp_secret = match ?? totp_secret;
-    }
-    if (totp_secret.length != 16) {
-      throw new Error(
-        "Provided TOTP Key does not meet expected key length. Key should be 16 alphanumeric characters.",
+    const page = this.currentPage;
+
+    try {
+      // Wait for MFA page to load
+      await page.waitForLoadState("networkidle");
+
+      // Look for MFA elements
+      await page.waitForSelector(
+        'input[name="otpCode"], input[name="emailMfa"], input[name="strongAuthenticationPhoneNumber"]',
+        { timeout: 10000 },
       );
+
+      const pageContent = await page.content();
+
+      // Determine MFA type
+      let mfaType = null;
+      if (
+        (await page.locator('input[name="otpCode"]').count()) > 0 ||
+        pageContent.includes("otpCode")
+      ) {
+        mfaType = "TOTP";
+      } else if (
+        (await page.locator('input[name="emailMfa"]').count()) > 0 ||
+        pageContent.includes("emailMfa")
+      ) {
+        mfaType = "EMAIL";
+      } else if (
+        (await page
+          .locator('input[name="strongAuthenticationPhoneNumber"]')
+          .count()) > 0 ||
+        pageContent.includes("strongAuthenticationPhoneNumber")
+      ) {
+        mfaType = "SMS";
+      }
+
+      if (mfaType == null) {
+        throw new Error("Could not determine MFA Type. Bad email or password?");
+      }
+
+      if (mfaType != "TOTP") {
+        throw new Error(
+          `Only TOTP via "Third-Party Authenticator" is currently supported by this implementation. Please update your OnStar account to use this method, if possible.`,
+        );
+      }
+
+      // Generate TOTP code
+      var totp_secret = this.config.totpKey.trim();
+      // Handle instances where users blindly copy the TOTP link. We can just extract the key.
+      if (totp_secret.includes("secret=")) {
+        const match = this.getRegexMatch(totp_secret, "secret=(.*?)&");
+        totp_secret = match ?? totp_secret;
+      }
+      if (totp_secret.length != 16) {
+        throw new Error(
+          "Provided TOTP Key does not meet expected key length. Key should be 16 alphanumeric characters.",
+        );
+      }
+
+      const { otp } = TOTP.generate(totp_secret, {
+        digits: 6,
+        algorithm: "SHA-1",
+        period: 30,
+      });
+
+      console.log("Submitting OTP Code:", otp); // Fill in the OTP code
+      const otpField = await page
+        .locator(
+          'input[name="otpCode"], [aria-label*="One-Time Passcode"i], [aria-label*="OTP"i]',
+        )
+        .first();
+      await otpField.fill(otp);
+
+      // Enable CDP Network domain for low-level network monitoring
+      const client = await page.context().newCDPSession(page);
+      await client.send("Network.enable");
+
+      // Set up CDP network listener to catch everything that appears in DevTools
+      client.on("Network.requestWillBeSent", (params: any) => {
+        const requestUrl = params.request.url;
+        if (this.debugMode) {
+          console.log(
+            `[DEBUG handleMFA CDP requestWillBeSent] Request to: ${requestUrl}`,
+          );
+        }
+
+        if (
+          requestUrl
+            .toLowerCase()
+            .startsWith("msauth.com.gm.mychevrolet://auth")
+        ) {
+          console.log(
+            `[SUCCESS handleMFA CDP requestWillBeSent] Captured msauth redirect via CDP. URL: ${requestUrl}`,
+          );
+          this.capturedAuthCode = this.getRegexMatch(
+            requestUrl,
+            `[?&]code=([^&]*)`,
+          );
+          if (this.capturedAuthCode) {
+            console.log(
+              `[SUCCESS handleMFA CDP requestWillBeSent] Extracted authorization code: ${this.capturedAuthCode}`,
+            );
+          } else {
+            console.error(
+              `[ERROR handleMFA CDP requestWillBeSent] msauth redirect found, but FAILED to extract code from: ${requestUrl}`,
+            );
+          }
+        }
+      });
+
+      // Also listen for redirects at CDP level
+      client.on("Network.responseReceived", (params: any) => {
+        const response = params.response;
+        if (
+          (response.status === 301 || response.status === 302) &&
+          response.headers &&
+          response.headers.location
+        ) {
+          const location = response.headers.location;
+          if (this.debugMode) {
+            console.log(
+              `[DEBUG handleMFA CDP responseReceived] Redirect from ${response.url} to: ${location}`,
+            );
+          }
+
+          if (
+            location
+              .toLowerCase()
+              .startsWith("msauth.com.gm.mychevrolet://auth")
+          ) {
+            console.log(
+              `[SUCCESS handleMFA CDP responseReceived] Captured msauth redirect via CDP response. Location: ${location}`,
+            );
+            this.capturedAuthCode = this.getRegexMatch(
+              location,
+              `[?&]code=([^&]*)`,
+            );
+            if (this.capturedAuthCode) {
+              console.log(
+                `[SUCCESS handleMFA CDP responseReceived] Extracted authorization code: ${this.capturedAuthCode}`,
+              );
+            } else {
+              console.error(
+                `[ERROR handleMFA CDP responseReceived] msauth redirect found, but FAILED to extract code from: ${location}`,
+              );
+            }
+          }
+        }
+      });
+
+      // Submit the MFA form
+      const submitMfaButton = await page // Renamed variable to avoid conflict
+        .locator(
+          'button[type="submit"], input[type="submit"], button:has-text("Verify"), button:has-text("Continue"), button:has-text("Submit"), [role="button"][aria-label*="Verify"i], [role="button"][aria-label*="Continue"i], [role="button"][aria-label*="Submit"i]',
+        )
+        .first();
+      // Wait for a random few seconds to mimic human behavior
+      // await page.waitForTimeout(1000 + randomInt(0, 5000));
+      await submitMfaButton.click(); // Use the new variable name      // Wait a bit for the redirect to potentially happen
+      await page.waitForTimeout(3000);
+
+      // Clean up CDP session
+      try {
+        await client.detach();
+      } catch (e) {
+        // CDP session might already be detached
+      }
+
+      // Wait for the MFA submission to complete
+      console.log("Waiting for redirect after MFA submission...");
+      await page.waitForLoadState("networkidle");
+
+      if (this.capturedAuthCode) {
+        console.log("Successfully captured authorization code");
+      } else {
+        console.log(
+          "Failed to capture authorization code from browser redirect",
+        );
+      }
+    } catch (error) {
+      console.error("Error in handleMFA:", error);
+      throw error;
     }
-
-    const { otp } = TOTP.generate(totp_secret, {
-      digits: 6,
-      algorithm: "SHA-1",
-      period: 30,
-    });
-
-    // console.log("Submitting OTP Code:", otp);
-    const postMFACodeRespURL = `https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/B2C_1A_SEAMLESS_MOBILE_SignUpOrSignIn/SelfAsserted?tx=${this.transId}&p=B2C_1A_SEAMLESS_MOBILE_SignUpOrSignIn`;
-
-    const MFACodeDataResp = {
-      otpCode: otp,
-      request_type: "RESPONSE",
-    };
-
-    await this.postRequest(postMFACodeRespURL, MFACodeDataResp, this.csrfToken);
   }
 
-  private async submitCredentials(): Promise<void> {
-    // console.log("Sending GM login credentials");
-    const cpe1Url = `https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/B2C_1A_SEAMLESS_MOBILE_SignUpOrSignIn/SelfAsserted?tx=${this.transId}&p=B2C_1A_SEAMLESS_MOBILE_SignUpOrSignIn`;
+  private async syncCookiesFromBrowser(): Promise<void> {
+    if (!this.context) return;
 
-    const cpe1Data = {
-      request_type: "RESPONSE",
-      logonIdentifier: this.config.username,
-      password: this.config.password,
-    };
+    // Get all cookies from the browser context
+    const cookies = await this.context.cookies();
 
-    await this.postRequest(cpe1Url, cpe1Data, this.csrfToken);
+    // Add each cookie to the tough-cookie jar
+    for (const cookie of cookies) {
+      const cookieString = `${cookie.name}=${cookie.value}; Domain=${cookie.domain}; Path=${cookie.path}`;
+      try {
+        await this.jar.setCookie(cookieString, `https://${cookie.domain}`);
+      } catch (error) {
+        // Skip cookies that can't be set (e.g., invalid format)
+        console.warn(`Failed to sync cookie ${cookie.name}:`, error);
+      }
+    }
+  }
+  private async submitCredentials(authorizationUrl: string): Promise<void> {
+    console.log("Starting browser-based authentication");
+
+    // Initialize browser if not already done
+    await this.initBrowser();
+    if (!this.context) {
+      throw new Error("Browser context not initialized");
+    }
+
+    const page = await this.context.newPage();
+    this.currentPage = page;
+
+    try {
+      // Small delay to mimic human behavior before navigation
+      // await page.waitForTimeout(1000);
+
+      // Navigate to the authorization URL
+      console.log("Navigating to auth URL...");
+      let attempts = 0;
+      const maxAttempts = 3;
+      let navigationSuccessful = false;
+      while (attempts < maxAttempts && !navigationSuccessful) {
+        try {
+          await page.goto(authorizationUrl, {
+            waitUntil: "load", // Changed from domcontentloaded
+            timeout: 45000, // Increased timeout
+          });
+          navigationSuccessful = true;
+        } catch (e: any) {
+          attempts++;
+          console.warn(`Navigation attempt ${attempts} failed: ${e.message}`);
+          if (attempts >= maxAttempts) {
+            throw e; // Re-throw the error after max attempts
+          }
+          await page.waitForTimeout(2000 * attempts); // Exponential backoff
+        }
+      }
+
+      await page.waitForLoadState("networkidle", { timeout: 20000 }); // Keep this for after successful goto
+
+      console.log("Page loaded, current URL:", page.url());
+      console.log("Page title:", await page.title());
+
+      // Check if we're stuck on a loading page
+      const title = await page.title();
+      if (
+        title.includes("Loading") ||
+        title.trim() === "" ||
+        title.includes("...")
+      ) {
+        console.log(
+          "Detected loading page, taking screenshot for debugging...",
+        );
+        await page.screenshot({
+          path: "debug-loading-page.png",
+          fullPage: true,
+        });
+        console.log("Screenshot saved as debug-loading-page.png");
+
+        // Try refreshing the page
+        console.log("Attempting page refresh...");
+        await page.reload({ waitUntil: "domcontentloaded" });
+        await page.waitForLoadState("networkidle");
+
+        const newTitle = await page.title();
+        console.log("Page title after refresh:", newTitle);
+      }
+
+      console.log("Looking for email field...");
+
+      // Find and fill email field
+      const emailField = page
+        .locator(
+          'input[type="email"], input[name="logonIdentifier"], input#logonIdentifier, [aria-label*="Email"i], [placeholder*="Email"i]',
+        )
+        .first();
+      await emailField.waitFor({ timeout: 10000 });
+      await emailField.fill(this.config.username);
+
+      console.log("Looking for Continue button...");
+
+      // Click continue button
+      const continueButton = page
+        .locator(
+          'button#continue[data-dtm="sign in"][aria-label="Continue"], button:has-text("Continue")[data-dtm="sign in"], [role="button"][aria-label*="Continue"i]',
+        )
+        .first();
+      // Wait for a random few seconds to mimic human behavior
+      // await page.waitForTimeout(1000 + randomInt(0, 5000));
+      await continueButton.click();
+
+      console.log("Looking for Password field...");
+
+      // Wait for password page and fill password
+      await page.waitForLoadState("networkidle");
+      const passwordField = page
+        .locator(
+          'input[type="password"], input[name="password"], [aria-label*="Password"i], [placeholder*="Password"i]',
+        )
+        .first();
+      // Wait for a random few seconds to mimic human behavior
+      // await page.waitForTimeout(1000 + randomInt(0, 5000));
+      await passwordField.fill(this.config.password);
+      console.log(
+        "Looking for Sign In button and preparing to capture redirect...",
+      );
+
+      // Enable CDP Network domain for low-level network monitoring
+      const client = await page.context().newCDPSession(page);
+      await client.send("Network.enable");
+
+      // Set up CDP network listener to catch everything that appears in DevTools
+      client.on("Network.requestWillBeSent", (params: any) => {
+        const requestUrl = params.request.url;
+        if (this.debugMode) {
+          console.log(
+            `[DEBUG CDP requestWillBeSent] Request to: ${requestUrl}`,
+          );
+        }
+
+        if (
+          requestUrl
+            .toLowerCase()
+            .startsWith("msauth.com.gm.mychevrolet://auth")
+        ) {
+          console.log(
+            `[SUCCESS CDP requestWillBeSent] Captured msauth redirect via CDP. URL: ${requestUrl}`,
+          );
+          this.capturedAuthCode = this.getRegexMatch(
+            requestUrl,
+            `[?&]code=([^&]*)`,
+          );
+          if (this.capturedAuthCode) {
+            console.log(
+              `[SUCCESS CDP requestWillBeSent] Extracted authorization code: ${this.capturedAuthCode}`,
+            );
+          } else {
+            console.error(
+              `[ERROR CDP requestWillBeSent] msauth redirect found, but FAILED to extract code from: ${requestUrl}`,
+            );
+          }
+        }
+      });
+
+      // Also listen for redirects at CDP level
+      client.on("Network.responseReceived", (params: any) => {
+        const response = params.response;
+        if (
+          (response.status === 301 || response.status === 302) &&
+          response.headers &&
+          response.headers.location
+        ) {
+          const location = response.headers.location;
+          if (this.debugMode) {
+            console.log(
+              `[DEBUG CDP responseReceived] Redirect from ${response.url} to: ${location}`,
+            );
+          }
+
+          if (
+            location
+              .toLowerCase()
+              .startsWith("msauth.com.gm.mychevrolet://auth")
+          ) {
+            console.log(
+              `[SUCCESS CDP responseReceived] Captured msauth redirect via CDP response. Location: ${location}`,
+            );
+            this.capturedAuthCode = this.getRegexMatch(
+              location,
+              `[?&]code=([^&]*)`,
+            );
+            if (this.capturedAuthCode) {
+              console.log(
+                `[SUCCESS CDP responseReceived] Extracted authorization code: ${this.capturedAuthCode}`,
+              );
+            } else {
+              console.error(
+                `[ERROR CDP responseReceived] msauth redirect found, but FAILED to extract code from: ${location}`,
+              );
+            }
+          }
+        }
+      });
+
+      // Click the sign-in button
+      const submitButton = page
+        .locator(
+          'button#continue[data-dtm="sign in"][aria-label="Sign in"], button:has-text("Log In")[data-dtm="sign in"], button:has-text("Sign in")[data-dtm="sign in"], [role="button"][aria-label*="Sign in"i], [role="button"][aria-label*="Log In"i]',
+        )
+        .first();
+
+      await submitButton.click();
+
+      // Wait a bit for the redirect to potentially happen
+      await page.waitForTimeout(3000); // Clean up CDP session
+      try {
+        await client.detach();
+      } catch (e) {
+        // CDP session might already be detached
+      }
+
+      // Wait for network to be idle in case other things are happening,
+      // or if MFA is indeed the next step.
+      console.log(
+        "Waiting for network idle after credential submission attempt...",
+      );
+      await page.waitForLoadState("networkidle", { timeout: 20000 });
+
+      console.log(
+        "Credentials submitted (or redirect captured). Current URL:",
+        page.url(),
+      );
+    } catch (error) {
+      console.error("Error in submitCredentials:", error);
+      throw error;
+    }
   }
 
   static GMAuthTokenIsValid(authToken: GMAPITokenResponse): boolean {
