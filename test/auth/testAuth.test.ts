@@ -27,5 +27,5 @@ describe("GM Authentication", () => {
     expect(auth).toBeDefined();
     expect(decodedPayload.vehs[0]).toBeDefined();
     console.log(token.access_token);
-  }, 300000); // Increased timeout for authentication
+  }, 30000); // Increased timeout for authentication
 });
