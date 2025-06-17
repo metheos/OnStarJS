@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.6.6](https://github.com/BigThunderSR/OnStarJS/compare/v2.6.5...v2.6.6) (2025-06-17)
+
+
+### Bug Fixes
+
+* change browser channel from 'chrome' to 'chromium' in GMAuth ([a70e90c](https://github.com/BigThunderSR/OnStarJS/commit/a70e90ca53ed90c4d5e8a8be284db41bac067d8b))
+* **deps:** bump axios from 1.8.4 to 1.9.0 ([8714ee2](https://github.com/BigThunderSR/OnStarJS/commit/8714ee2762037d9e8e56130cace1846a602c3817))
+* **deps:** bump axios from 1.9.0 to 1.10.0 ([54680d6](https://github.com/BigThunderSR/OnStarJS/commit/54680d62d50e00c8f9c0c9789c8dfd2accb2fe08))
+* **test:** revert timeout value for authentication test ([45b4cb1](https://github.com/BigThunderSR/OnStarJS/commit/45b4cb1a001ceb6085741d0e22dcc5a467716f9e))
+
 ## [2.6.5](https://github.com/BigThunderSR/OnStarJS/compare/v2.6.4...v2.6.5) (2025-04-18)
 
 ## [2.6.4](https://github.com/BigThunderSR/OnStarJS/compare/v2.6.3...v2.6.4) (2025-04-18)
