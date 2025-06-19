@@ -139,6 +139,22 @@ export class GMAuth {
     // Load the current GM API token
     this.loadCurrentGMAPIToken();
   }
+  // Helper function to wait for authorization code
+  async waitForAuthCode(timeoutMs = 10000, intervalMs = 500) {
+    const startTime = Date.now();
+    while (Date.now() - startTime < timeoutMs) {
+      if (this.capturedAuthCode) {
+        console.log(
+          `🪝 [waitForAuthCode] Auth code captured: ${this.capturedAuthCode.substring(0, 20)}${this.capturedAuthCode.length > 20 ? "..." : ""}`,
+        );
+        return true;
+      }
+      // if (this.debugMode) console.log(`[waitForAuthCode] Waiting for auth code... ${(Date.now() - startTime) / 1000}s elapsed`);
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+    // if (this.debugMode) console.log(`[waitForAuthCode] Timeout waiting for auth code after ${timeoutMs / 1000}s`);
+    return false;
+  }
   // Browser management methods
   private async initBrowser(): Promise<void> {
     if (this.browser) {
@@ -249,7 +265,9 @@ export class GMAuth {
 
       const authCode = await this.getAuthorizationCode();
       if (!authCode)
-        throw new Error("Failed to get authorization code. Bad TOTP Key?");
+        throw new Error(
+          "🚫 Failed to get authorization code after all attempts. Possible incorrect credentials, MFA issue, or unexpected page flow.",
+        );
 
       const tokenSet = await this.getMSToken(authCode, code_verifier);
       await this.saveTokens(tokenSet);
@@ -278,17 +296,7 @@ export class GMAuth {
     if (this.capturedAuthCode) {
       console.log("Using authorization code captured from browser redirect");
       return this.capturedAuthCode;
-    }
-
-    // Fallback to the original HTTP method if browser capture failed
-    console.log("Browser capture failed, trying fallback HTTP method");
-    const authCodeRequestURL = `https://custlogin.gm.com/gmb2cprod.onmicrosoft.com/B2C_1A_SEAMLESS_MOBILE_SignUpOrSignIn/api/SelfAsserted/confirmed?csrf_token=${this.csrfToken}&tx=${this.transId}&p=B2C_1A_SEAMLESS_MOBILE_SignUpOrSignIn`;
-    try {
-      const authResponse =
-        await this.captureRedirectLocation(authCodeRequestURL);
-      return this.getRegexMatch(authResponse, `code=(.*)`);
-    } catch (error) {
-      console.error("Fallback HTTP method also failed:", error);
+    } else {
       return null;
     }
   }
@@ -302,6 +310,7 @@ export class GMAuth {
     }
 
     const page = this.currentPage;
+    console.log("Page title:", await page.title());
 
     try {
       // Wait for MFA page to load
@@ -310,7 +319,7 @@ export class GMAuth {
       // Look for MFA elements
       await page.waitForSelector(
         'input[name="otpCode"], input[name="emailMfa"], input[name="strongAuthenticationPhoneNumber"]',
-        { timeout: 10000 },
+        { timeout: 60000 },
       );
 
       const pageContent = await page.content();
@@ -380,11 +389,11 @@ export class GMAuth {
       // Set up CDP network listener to catch everything that appears in DevTools
       client.on("Network.requestWillBeSent", (params: any) => {
         const requestUrl = params.request.url;
-        if (this.debugMode) {
-          console.log(
-            `[DEBUG handleMFA CDP requestWillBeSent] Request to: ${requestUrl}`,
-          );
-        }
+        // if (this.debugMode) {
+        //   console.log(
+        //     `[DEBUG handleMFA CDP requestWillBeSent] Request to: ${requestUrl}`,
+        //   );
+        // }
 
         if (
           requestUrl
@@ -410,45 +419,45 @@ export class GMAuth {
         }
       });
 
-      // Also listen for redirects at CDP level
-      client.on("Network.responseReceived", (params: any) => {
-        const response = params.response;
-        if (
-          (response.status === 301 || response.status === 302) &&
-          response.headers &&
-          response.headers.location
-        ) {
-          const location = response.headers.location;
-          if (this.debugMode) {
-            console.log(
-              `[DEBUG handleMFA CDP responseReceived] Redirect from ${response.url} to: ${location}`,
-            );
-          }
+      // // Also listen for redirects at CDP level
+      // client.on("Network.responseReceived", (params: any) => {
+      //   const response = params.response;
+      //   if (
+      //     (response.status === 301 || response.status === 302) &&
+      //     response.headers &&
+      //     response.headers.location
+      //   ) {
+      //     const location = response.headers.location;
+      //     if (this.debugMode) {
+      //       console.log(
+      //         `[DEBUG handleMFA CDP responseReceived] Redirect from ${response.url} to: ${location}`,
+      //       );
+      //     }
 
-          if (
-            location
-              .toLowerCase()
-              .startsWith("msauth.com.gm.mychevrolet://auth")
-          ) {
-            console.log(
-              `[SUCCESS handleMFA CDP responseReceived] Captured msauth redirect via CDP response. Location: ${location}`,
-            );
-            this.capturedAuthCode = this.getRegexMatch(
-              location,
-              `[?&]code=([^&]*)`,
-            );
-            if (this.capturedAuthCode) {
-              console.log(
-                `[SUCCESS handleMFA CDP responseReceived] Extracted authorization code: ${this.capturedAuthCode}`,
-              );
-            } else {
-              console.error(
-                `[ERROR handleMFA CDP responseReceived] msauth redirect found, but FAILED to extract code from: ${location}`,
-              );
-            }
-          }
-        }
-      });
+      //     if (
+      //       location
+      //         .toLowerCase()
+      //         .startsWith("msauth.com.gm.mychevrolet://auth")
+      //     ) {
+      //       console.log(
+      //         `[SUCCESS handleMFA CDP responseReceived] Captured msauth redirect via CDP response. Location: ${location}`,
+      //       );
+      //       this.capturedAuthCode = this.getRegexMatch(
+      //         location,
+      //         `[?&]code=([^&]*)`,
+      //       );
+      //       if (this.capturedAuthCode) {
+      //         console.log(
+      //           `[SUCCESS handleMFA CDP responseReceived] Extracted authorization code: ${this.capturedAuthCode}`,
+      //         );
+      //       } else {
+      //         console.error(
+      //           `[ERROR handleMFA CDP responseReceived] msauth redirect found, but FAILED to extract code from: ${location}`,
+      //         );
+      //       }
+      //     }
+      //   }
+      // });
 
       // Submit the MFA form
       const submitMfaButton = await page // Renamed variable to avoid conflict
@@ -456,20 +465,37 @@ export class GMAuth {
           'button[type="submit"], input[type="submit"], button:has-text("Verify"), button:has-text("Continue"), button:has-text("Submit"), [role="button"][aria-label*="Verify"i], [role="button"][aria-label*="Continue"i], [role="button"][aria-label*="Submit"i]',
         )
         .first();
-      // Wait for a random few seconds to mimic human behavior
-      // await page.waitForTimeout(1000 + randomInt(0, 5000));
-      await submitMfaButton.click(); // Use the new variable name      // Wait a bit for the redirect to potentially happen
-      await page.waitForTimeout(3000);
+      await submitMfaButton.waitFor({ timeout: 60000 });
+      await submitMfaButton.click();
 
-      // Clean up CDP session
+      if (this.debugMode)
+        console.log("⌛ Waiting for redirect after MFA submission...");
+      await page.waitForLoadState("networkidle", { timeout: 60000 }); // Wait for potential redirects or network activity
+
+      try {
+        // Wait for the auth code to be captured by CDP listeners
+        if (this.debugMode)
+          console.log(
+            "⌛ [handleMFA] Waiting for auth code capture after submit...",
+          );
+        const captured = await this.waitForAuthCode(60000); // Use the new helper
+        if (!captured && this.debugMode) {
+          console.log(
+            "🚫 [handleMFA] Did not capture auth code after submit within timeout.",
+          );
+        }
+      } catch (e) {
+        console.error("🚫 [handleMFA] Error during waitForAuthCode:", e);
+      }
+
       try {
         await client.detach();
       } catch (e) {
         // CDP session might already be detached
       }
 
-      // Wait for the MFA submission to complete
-      console.log("Waiting for redirect after MFA submission...");
+      if (this.debugMode)
+        console.log("⌛ Waiting for redirect after MFA submission...");
       await page.waitForLoadState("networkidle");
 
       if (this.capturedAuthCode) {
@@ -515,9 +541,6 @@ export class GMAuth {
     this.currentPage = page;
 
     try {
-      // Small delay to mimic human behavior before navigation
-      // await page.waitForTimeout(1000);
-
       // Navigate to the authorization URL
       console.log("Navigating to auth URL...");
       let attempts = 0;
@@ -527,7 +550,7 @@ export class GMAuth {
         try {
           await page.goto(authorizationUrl, {
             waitUntil: "load", // Changed from domcontentloaded
-            timeout: 45000, // Increased timeout
+            timeout: 60000, // Increased timeout
           });
           navigationSuccessful = true;
         } catch (e: any) {
@@ -540,7 +563,7 @@ export class GMAuth {
         }
       }
 
-      await page.waitForLoadState("networkidle", { timeout: 20000 }); // Keep this for after successful goto
+      await page.waitForLoadState("networkidle", { timeout: 60000 }); // Keep this for after successful goto
 
       console.log("Page loaded, current URL:", page.url());
       console.log("Page title:", await page.title());
@@ -552,14 +575,12 @@ export class GMAuth {
         title.trim() === "" ||
         title.includes("...")
       ) {
-        console.log(
-          "Detected loading page, taking screenshot for debugging...",
-        );
-        await page.screenshot({
-          path: "debug-loading-page.png",
-          fullPage: true,
-        });
-        console.log("Screenshot saved as debug-loading-page.png");
+        console.log("Detected loading page, attempting to recover...");
+        // await page.screenshot({
+        //   path: "debug-loading-page.png",
+        //   fullPage: true,
+        // });
+        // console.log("Screenshot saved as debug-loading-page.png");
 
         // Try refreshing the page
         console.log("Attempting page refresh...");
@@ -578,7 +599,7 @@ export class GMAuth {
           'input[type="email"], input[name="logonIdentifier"], input#logonIdentifier, [aria-label*="Email"i], [placeholder*="Email"i]',
         )
         .first();
-      await emailField.waitFor({ timeout: 10000 });
+      await emailField.waitFor({ timeout: 60000 });
       await emailField.fill(this.config.username);
 
       console.log("Looking for Continue button...");
@@ -589,21 +610,19 @@ export class GMAuth {
           'button#continue[data-dtm="sign in"][aria-label="Continue"], button:has-text("Continue")[data-dtm="sign in"], [role="button"][aria-label*="Continue"i]',
         )
         .first();
-      // Wait for a random few seconds to mimic human behavior
-      // await page.waitForTimeout(1000 + randomInt(0, 5000));
+      await emailField.waitFor({ timeout: 60000 });
       await continueButton.click();
 
       console.log("Looking for Password field...");
 
       // Wait for password page and fill password
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("networkidle", { timeout: 60000 });
       const passwordField = page
         .locator(
           'input[type="password"], input[name="password"], [aria-label*="Password"i], [placeholder*="Password"i]',
         )
         .first();
-      // Wait for a random few seconds to mimic human behavior
-      // await page.waitForTimeout(1000 + randomInt(0, 5000));
+      await passwordField.waitFor({ timeout: 60000 });
       await passwordField.fill(this.config.password);
       console.log(
         "Looking for Sign In button and preparing to capture redirect...",
@@ -617,9 +636,9 @@ export class GMAuth {
       client.on("Network.requestWillBeSent", (params: any) => {
         const requestUrl = params.request.url;
         if (this.debugMode) {
-          console.log(
-            `[DEBUG CDP requestWillBeSent] Request to: ${requestUrl}`,
-          );
+          // console.log(
+          //   `[DEBUG CDP requestWillBeSent] Request to: ${requestUrl}`,
+          // );
         }
 
         if (
@@ -646,45 +665,45 @@ export class GMAuth {
         }
       });
 
-      // Also listen for redirects at CDP level
-      client.on("Network.responseReceived", (params: any) => {
-        const response = params.response;
-        if (
-          (response.status === 301 || response.status === 302) &&
-          response.headers &&
-          response.headers.location
-        ) {
-          const location = response.headers.location;
-          if (this.debugMode) {
-            console.log(
-              `[DEBUG CDP responseReceived] Redirect from ${response.url} to: ${location}`,
-            );
-          }
+      // // Also listen for redirects at CDP level
+      // client.on("Network.responseReceived", (params: any) => {
+      //   const response = params.response;
+      //   if (
+      //     (response.status === 301 || response.status === 302) &&
+      //     response.headers &&
+      //     response.headers.location
+      //   ) {
+      //     const location = response.headers.location;
+      //     if (this.debugMode) {
+      //       console.log(
+      //         `[DEBUG CDP responseReceived] Redirect from ${response.url} to: ${location}`,
+      //       );
+      //     }
 
-          if (
-            location
-              .toLowerCase()
-              .startsWith("msauth.com.gm.mychevrolet://auth")
-          ) {
-            console.log(
-              `[SUCCESS CDP responseReceived] Captured msauth redirect via CDP response. Location: ${location}`,
-            );
-            this.capturedAuthCode = this.getRegexMatch(
-              location,
-              `[?&]code=([^&]*)`,
-            );
-            if (this.capturedAuthCode) {
-              console.log(
-                `[SUCCESS CDP responseReceived] Extracted authorization code: ${this.capturedAuthCode}`,
-              );
-            } else {
-              console.error(
-                `[ERROR CDP responseReceived] msauth redirect found, but FAILED to extract code from: ${location}`,
-              );
-            }
-          }
-        }
-      });
+      //     if (
+      //       location
+      //         .toLowerCase()
+      //         .startsWith("msauth.com.gm.mychevrolet://auth")
+      //     ) {
+      //       console.log(
+      //         `[SUCCESS CDP responseReceived] Captured msauth redirect via CDP response. Location: ${location}`,
+      //       );
+      //       this.capturedAuthCode = this.getRegexMatch(
+      //         location,
+      //         `[?&]code=([^&]*)`,
+      //       );
+      //       if (this.capturedAuthCode) {
+      //         console.log(
+      //           `[SUCCESS CDP responseReceived] Extracted authorization code: ${this.capturedAuthCode}`,
+      //         );
+      //       } else {
+      //         console.error(
+      //           `[ERROR CDP responseReceived] msauth redirect found, but FAILED to extract code from: ${location}`,
+      //         );
+      //       }
+      //     }
+      //   }
+      // });
 
       // Click the sign-in button
       const submitButton = page
@@ -693,27 +712,74 @@ export class GMAuth {
         )
         .first();
 
+      await submitButton.waitFor({ timeout: 60000 });
       await submitButton.click();
 
       // Wait a bit for the redirect to potentially happen
-      await page.waitForTimeout(3000); // Clean up CDP session
-      try {
-        await client.detach();
-      } catch (e) {
-        // CDP session might already be detached
-      }
+      await page.waitForTimeout(3000);
+      var postSubmitTitle = await page.title();
 
       // Wait for network to be idle in case other things are happening,
       // or if MFA is indeed the next step.
       console.log(
         "Waiting for network idle after credential submission attempt...",
       );
-      await page.waitForLoadState("networkidle", { timeout: 20000 });
+      await page.waitForLoadState("networkidle", { timeout: 60000 });
+      // Wait a bit for the redirect to potentially happen
+      await page.waitForTimeout(3000);
+      postSubmitTitle = await page.title();
+
+      await page.waitForLoadState("networkidle", { timeout: 60000 });
+
+      postSubmitTitle = await page.title();
+      // if the current page title contains "Verify" or "MFA" or "Authentication" or "Security" or "Challenge", we have moved to MFA step
+      if (
+        postSubmitTitle.includes("Verify") ||
+        postSubmitTitle.includes("MFA") ||
+        postSubmitTitle.includes("Authentication") ||
+        postSubmitTitle.includes("Security") ||
+        postSubmitTitle.includes("Challenge")
+      ) {
+        console.log(
+          "Detected MFA challenge page based on title, proceeding to handleMFA step.",
+        );
+      } else {
+        console.log(
+          "Post-submit page title does not indicate MFA, continuing to check for auth code.",
+        );
+
+        try {
+          // Wait for the auth code to be captured by CDP listeners
+          if (this.debugMode)
+            console.log(
+              "⌛ [submitCredentials] Waiting for auth code capture after submit...",
+            );
+          const captured = await this.waitForAuthCode(15000); // Use the new helper
+          if (!captured && this.debugMode) {
+            console.log(
+              "🚫 [submitCredentials] Did not capture auth code after submit within timeout. This is probably OK.",
+            );
+          }
+        } catch (e) {
+          console.error(
+            "🚫 [submitCredentials] Error during waitForAuthCode:",
+            e,
+          );
+        }
+      }
+
+      // Clean up CDP session
+      try {
+        await client.detach();
+      } catch (e) {
+        // CDP session might already be detached
+      }
 
       console.log(
         "Credentials submitted (or redirect captured). Current URL:",
         page.url(),
       );
+      console.log("Page title:", await page.title());
     } catch (error) {
       console.error("Error in submitCredentials:", error);
       throw error;
@@ -1134,7 +1200,7 @@ export class GMAuth {
           "User-Agent":
             "Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.6 Mobile/15E148 Safari/604.1",
         },
-        timeout: 10000,
+        timeout: 60000,
       });
 
       // Use the discovery data but merge with fallback to ensure required fields
