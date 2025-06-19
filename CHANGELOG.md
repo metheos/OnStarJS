@@ -2,6 +2,8 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.6.7](https://github.com/BigThunderSR/OnStarJS/compare/v2.6.6...v2.6.7) (2025-06-19)
+
 ## [2.6.6](https://github.com/BigThunderSR/OnStarJS/compare/v2.6.5...v2.6.6) (2025-06-17)
 
 
