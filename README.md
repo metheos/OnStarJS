@@ -13,6 +13,10 @@ Published as OnStarJS2 at <https://www.npmjs.com/package/onstarjs2> [![npm](http
 
 **Use at your own risk. This is an unofficial library.**
 
+## Prerequisites
+
+This library requires [chromium-bidi](https://www.npmjs.com/package/chromium-bidi) to be installed and available in your environment.
+
 ## Usage
 
 Use the Get Account Vehicles request to see which requests your vehicle supports if you don't already know.
