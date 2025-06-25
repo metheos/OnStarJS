@@ -116,6 +116,15 @@ onStar.getAccountVehicles();
 </details>
 
 <details>
+<summary>Start</summary>
+
+```javascript
+onStar.start();
+```
+
+</details>
+
+<details>
 <summary>Cancel Start</summary>
 
 ```javascript
