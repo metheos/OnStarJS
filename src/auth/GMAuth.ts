@@ -172,14 +172,17 @@ export class GMAuth {
       "./temp-browser-profile",
       {
         channel: "chromium", // Use chromium
-        headless: true, // Always visible
+        headless: true,
+        hasTouch: true, // Simulate touch support
+        isMobile: true, // Simulate mobile device
         userAgent:
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36",
-        viewport: { width: 1920, height: 1080 },
+        //simulate iphone 16 resolution
+        viewport: { width: 430, height: 932 }, // iPhone 16 resolution
         args: [
+          "--disable-blink-features=AutomationControlled",
           "--no-first-run",
           "--disable-default-browser-check",
-          "--start-maximized",
         ],
       },
     );
@@ -315,6 +318,12 @@ export class GMAuth {
     try {
       // Wait for MFA page to load
       await page.waitForLoadState("networkidle");
+
+      // Check for Cloudflare protection on MFA page
+      const hasCloudflare = await this.detectCloudflare(page);
+      if (hasCloudflare) {
+        await this.handleCloudflareDetection(page);
+      }
 
       // Look for MFA elements
       await page.waitForSelector(
@@ -567,6 +576,12 @@ export class GMAuth {
 
       console.log("Page loaded, current URL:", page.url());
       console.log("Page title:", await page.title());
+
+      // Check for Cloudflare protection after page loads
+      const hasCloudflare = await this.detectCloudflare(page);
+      if (hasCloudflare) {
+        await this.handleCloudflareDetection(page);
+      }
 
       // Check if we're stuck on a loading page
       const title = await page.title();
@@ -1403,6 +1418,75 @@ export class GMAuth {
     }
 
     return false;
+  }
+
+  private async detectCloudflare(page: Page): Promise<boolean> {
+    try {
+      // Check for Cloudflare text indicators
+      const cloudflareTextVisible = await page
+        .getByText("cloudflare", { exact: false })
+        .isVisible();
+      const checkingBrowserVisible = await page
+        .getByText("checking your browser", { exact: false })
+        .isVisible();
+      const ddosProtectionVisible = await page
+        .getByText("ddos protection", { exact: false })
+        .isVisible();
+      const rayIdVisible = await page
+        .locator("[data-ray], .cf-ray, #cf-ray")
+        .isVisible();
+
+      // Check for Cloudflare-specific elements
+      const cloudflareElements = await page
+        .locator(
+          ".cf-browser-verification, .cf-challenge-running, .cf-checking-browser",
+        )
+        .count();
+
+      // Check for typical Cloudflare challenge page structure
+      const challengeForm = await page
+        .locator('form[action*="__cf_chl_jschl_tk__"]')
+        .count();
+
+      return (
+        cloudflareTextVisible ||
+        checkingBrowserVisible ||
+        ddosProtectionVisible ||
+        rayIdVisible ||
+        cloudflareElements > 0 ||
+        challengeForm > 0
+      );
+    } catch (error) {
+      // If any check fails, assume no Cloudflare (better to proceed than fail)
+      console.warn("Error checking for Cloudflare:", error);
+      return false;
+    }
+  }
+
+  private async handleCloudflareDetection(page: Page): Promise<void> {
+    console.log("*** CLOUDFLARE DETECTED ***");
+
+    console.log(
+      "Cloudflare protection detected. This may interfere with authentication.",
+    );
+
+    // Wait a bit to see if Cloudflare challenge completes automatically
+    console.log(
+      "Waiting 10 seconds to see if Cloudflare challenge completes...",
+    );
+    await page.waitForTimeout(10000);
+
+    // Check again if we're still on Cloudflare page
+    const stillHasCloudflare = await this.detectCloudflare(page);
+    if (stillHasCloudflare) {
+      throw new Error(
+        "Cloudflare protection is blocking authentication. Please try again later or use a different network.",
+      );
+    } else {
+      console.log(
+        "Cloudflare challenge appears to have completed. Continuing...",
+      );
+    }
   }
 }
 
