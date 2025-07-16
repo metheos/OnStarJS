@@ -73,7 +73,8 @@
     "patchright": "^1.52.5",
     "totp-generator": "^1.0.0",
     "tough-cookie": "^5.1.2",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "xvfb": "^0.4.0"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^28.0.6",

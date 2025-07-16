@@ -13,6 +13,9 @@ import jwt from "jsonwebtoken";
 import { chromium, Browser, BrowserContext, Page } from "patchright";
 import { randomInt } from "crypto";
 
+// Import xvfb with explicit any type to avoid TypeScript issues
+const Xvfb = require("xvfb") as any;
+
 // Define an interface for the vehicle structure and the payload containing them
 interface Vehicle {
   vin: string;
@@ -79,6 +82,7 @@ export class GMAuth {
 
   private currentGMAPIToken: GMAPITokenResponse | null = null;
   private debugMode: boolean = true; // Default to visible mode for reliability
+  private xvfb: any = null; // Xvfb instance for Linux virtual display
 
   constructor(config: GMAuthConfig) {
     this.config = config;
@@ -167,20 +171,77 @@ export class GMAuth {
       console.log("🗑️ Deleted existing temp browser profile");
     }
 
+    // Detect platform
+    const isLinux = process.platform === "linux";
+    const isWindows = process.platform === "win32";
+    const hasDisplay = isLinux && process.env.DISPLAY;
+
+    // Start Xvfb on Linux if no display is available
+    if (isLinux && !hasDisplay) {
+      console.log("🖥️ Starting Xvfb for virtual display...");
+      try {
+        this.xvfb = new Xvfb({
+          silent: true,
+          xvfb_args: [
+            "-screen",
+            "0",
+            "1280x720x24",
+            "-ac",
+            "+extension",
+            "GLX",
+          ],
+        });
+        this.xvfb.startSync();
+        console.log(
+          `🖥️ Xvfb started successfully on display ${process.env.DISPLAY}`,
+        );
+      } catch (error) {
+        console.error("❌ Failed to start Xvfb:", error);
+        console.error("💡 To fix this issue, either:");
+        console.error("   1. Install Xvfb: sudo apt-get install xvfb");
+        console.error("   2. Run with xvfb-run: xvfb-run -a node your-app.js");
+        console.error(
+          "   3. Set a DISPLAY environment variable if you have a GUI",
+        );
+        throw new Error(
+          "Cannot run browser automation on Linux without a display server. Xvfb is required for headless operation.",
+        );
+      }
+    }
+
+    // Prepare browser arguments based on platform
+    const browserArgs = [
+      "--disable-blink-features=AutomationControlled",
+      "--no-first-run",
+      "--disable-default-browser-check",
+    ];
+
+    // Add platform-specific args
+    if (isWindows) {
+      // On Windows, start minimized
+      browserArgs.push("--start-minimized");
+    } else if (isLinux) {
+      // On Linux with virtual display, add GPU-related args
+      browserArgs.push(
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--use-gl=swiftshader",
+      );
+    }
+
     // Use persistent context instead of launch + newContext for more realistic browser behavior
     this.context = await chromium.launchPersistentContext(
       "./temp-browser-profile",
       {
         channel: "chromium", // Use chromium
-        headless: true, // Always visible
+        headless: false, // Always headful for better compatibility
+        hasTouch: true, // Simulate touch support
+        isMobile: true, // Simulate mobile device
         userAgent:
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36",
-        viewport: { width: 1920, height: 1080 },
-        args: [
-          "--no-first-run",
-          "--disable-default-browser-check",
-          "--start-maximized",
-        ],
+          "Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.6 Mobile/15E148 Safari/604.1",
+        //simulate iphone 16 resolution
+        viewport: { width: 430, height: 932 }, // iPhone 16 resolution
+        args: browserArgs,
       },
     );
 
@@ -194,7 +255,16 @@ export class GMAuth {
       });
     });
 
-    console.log(`🌐 Browser initialized with persistent context`);
+    const displayMode = isWindows
+      ? "headful (minimized)"
+      : isLinux
+        ? hasDisplay
+          ? "headful"
+          : "headful (Xvfb virtual display)"
+        : "headful";
+    console.log(
+      `🌐 Browser initialized with persistent context (${displayMode})`,
+    );
   }
   private async closeBrowser(): Promise<void> {
     if (this.currentPage) {
@@ -209,6 +279,19 @@ export class GMAuth {
       await this.browser.close();
       this.browser = null;
     }
+
+    // Stop Xvfb if we started it
+    if (this.xvfb) {
+      try {
+        console.log("🖥️ Stopping Xvfb...");
+        this.xvfb.stopSync();
+        this.xvfb = null;
+        console.log("🖥️ Xvfb stopped successfully");
+      } catch (error) {
+        console.warn("⚠️ Failed to stop Xvfb:", error);
+      }
+    }
+
     // Reset captured auth code when closing browser
     this.capturedAuthCode = null;
   }
@@ -315,6 +398,9 @@ export class GMAuth {
     try {
       // Wait for MFA page to load
       await page.waitForLoadState("networkidle");
+
+      // Check for Cloudflare protection on MFA page
+      await this.checkAndHandleCloudflare(page, "MFA page load");
 
       // Look for MFA elements
       await page.waitForSelector(
@@ -466,11 +552,18 @@ export class GMAuth {
         )
         .first();
       await submitMfaButton.waitFor({ timeout: 60000 });
+
+      // Check for Cloudflare protection before MFA submission
+      await this.checkAndHandleCloudflare(page, "before MFA submission");
+
       await submitMfaButton.click();
 
       if (this.debugMode)
         console.log("⌛ Waiting for redirect after MFA submission...");
       await page.waitForLoadState("networkidle", { timeout: 60000 }); // Wait for potential redirects or network activity
+
+      // Check for Cloudflare protection after MFA submission
+      await this.checkAndHandleCloudflare(page, "after MFA submission");
 
       try {
         // Wait for the auth code to be captured by CDP listeners
@@ -497,6 +590,12 @@ export class GMAuth {
       if (this.debugMode)
         console.log("⌛ Waiting for redirect after MFA submission...");
       await page.waitForLoadState("networkidle");
+
+      // Check for Cloudflare protection before final check
+      await this.checkAndHandleCloudflare(
+        page,
+        "before final authorization code check",
+      );
 
       if (this.capturedAuthCode) {
         console.log("Successfully captured authorization code");
@@ -540,6 +639,21 @@ export class GMAuth {
     const page = await this.context.newPage();
     this.currentPage = page;
 
+    // Add a general page load listener to detect Cloudflare on any navigation
+    page.on("load", async () => {
+      try {
+        const hasCloudflare = await this.detectCloudflare(page);
+        if (hasCloudflare && this.debugMode) {
+          console.log("Cloudflare detected on page load:", page.url());
+        }
+      } catch (error) {
+        // Ignore errors in the load listener to not break the main flow
+        if (this.debugMode) {
+          console.warn("Error checking Cloudflare on page load:", error);
+        }
+      }
+    });
+
     try {
       // Navigate to the authorization URL
       console.log("Navigating to auth URL...");
@@ -568,6 +682,9 @@ export class GMAuth {
       console.log("Page loaded, current URL:", page.url());
       console.log("Page title:", await page.title());
 
+      // Check for Cloudflare protection after page loads
+      await this.checkAndHandleCloudflare(page, "initial page load");
+
       // Check if we're stuck on a loading page
       const title = await page.title();
       if (
@@ -589,9 +706,18 @@ export class GMAuth {
 
         const newTitle = await page.title();
         console.log("Page title after refresh:", newTitle);
+
+        // Check for Cloudflare protection after page refresh
+        await this.checkAndHandleCloudflare(page, "page refresh");
       }
 
       console.log("Looking for email field...");
+
+      // Check for Cloudflare protection before attempting to find email field
+      await this.checkAndHandleCloudflare(
+        page,
+        "before email field interaction",
+      );
 
       // Find and fill email field
       const emailField = page
@@ -617,6 +743,10 @@ export class GMAuth {
 
       // Wait for password page and fill password
       await page.waitForLoadState("networkidle", { timeout: 60000 });
+
+      // Check for Cloudflare protection on password page
+      await this.checkAndHandleCloudflare(page, "password page");
+
       const passwordField = page
         .locator(
           'input[type="password"], input[name="password"], [aria-label*="Password"i], [placeholder*="Password"i]',
@@ -719,6 +849,9 @@ export class GMAuth {
       await page.waitForTimeout(3000);
       var postSubmitTitle = await page.title();
 
+      // Check for Cloudflare protection after credential submission
+      await this.checkAndHandleCloudflare(page, "after credential submission");
+
       // Wait for network to be idle in case other things are happening,
       // or if MFA is indeed the next step.
       console.log(
@@ -732,6 +865,100 @@ export class GMAuth {
       await page.waitForLoadState("networkidle", { timeout: 60000 });
 
       postSubmitTitle = await page.title();
+      // Check for Cloudflare protection after network idle
+      await this.checkAndHandleCloudflare(page, "after network idle");
+
+      // Check if we're still on the sign-in page (credential submission failed)
+      if (postSubmitTitle.toLowerCase().includes("sign in")) {
+        console.log(
+          `⚠️ Still on sign-in page after credential submission: "${postSubmitTitle}". This suggests credentials weren't accepted properly.`,
+        );
+
+        // // Check for any error messages on the page
+        // const errorMessages = await page
+        //   .locator(
+        //     '[role="alert"], .error, .alert, [class*="error"], [class*="alert"]',
+        //   )
+        //   .allTextContents();
+        // if (errorMessages.length > 0) {
+        //   console.log("Found error messages on page:", errorMessages);
+        //   throw new Error(
+        //     `Authentication failed with errors: ${errorMessages.join(", ")}`,
+        //   );
+        // }
+
+        // Try refreshing and re-submitting credentials once more
+        console.log(
+          "🔄 Attempting to refresh page and retry credential submission...",
+        );
+        await page.reload({ waitUntil: "networkidle" });
+        await this.checkAndHandleCloudflare(
+          page,
+          "after page reload for retry",
+        );
+
+        // Re-find and fill email field
+        const retryEmailField = page
+          .locator(
+            'input[type="email"], input[name="logonIdentifier"], input#logonIdentifier, [aria-label*="Email"i], [placeholder*="Email"i]',
+          )
+          .first();
+        await retryEmailField.waitFor({ timeout: 30000 });
+        await retryEmailField.fill(this.config.username);
+
+        // Click continue button again
+        const retryContinueButton = page
+          .locator(
+            'button#continue[data-dtm="sign in"][aria-label="Continue"], button:has-text("Continue")[data-dtm="sign in"], [role="button"][aria-label*="Continue"i]',
+          )
+          .first();
+        await retryContinueButton.click();
+
+        // Wait for password page
+        await page.waitForLoadState("networkidle", { timeout: 30000 });
+        await this.checkAndHandleCloudflare(page, "password page retry");
+
+        // Re-find and fill password field
+        const retryPasswordField = page
+          .locator(
+            'input[type="password"], input[name="password"], [aria-label*="Password"i], [placeholder*="Password"i]',
+          )
+          .first();
+        await retryPasswordField.waitFor({ timeout: 30000 });
+        await retryPasswordField.fill(this.config.password);
+
+        // Click the sign-in button again
+        const retrySubmitButton = page
+          .locator(
+            'button#continue[data-dtm="sign in"][aria-label="Sign in"], button:has-text("Log In")[data-dtm="sign in"], button:has-text("Sign in")[data-dtm="sign in"], [role="button"][aria-label*="Sign in"i], [role="button"][aria-label*="Log In"i]',
+          )
+          .first();
+        await retrySubmitButton.waitFor({ timeout: 30000 });
+        await retrySubmitButton.click();
+
+        // Wait for response after retry
+        await page.waitForTimeout(3000);
+        await page.waitForLoadState("networkidle", { timeout: 60000 });
+
+        const retryTitle = await page.title();
+        console.log(`Page title after retry: "${retryTitle}"`);
+
+        // If still stuck on sign-in page after retry, something is seriously wrong
+        if (retryTitle.toLowerCase().includes("sign in")) {
+          // Save a screenshot
+          await page.screenshot({
+            path: "debug-retry-failed.png",
+            fullPage: true,
+          });
+          throw new Error(
+            `Credentials repeatedly rejected. Page title after retry: "${retryTitle}". Please check your username and password.`,
+          );
+        }
+
+        // Update postSubmitTitle for subsequent checks
+        postSubmitTitle = retryTitle;
+      }
+
       // if the current page title contains "Verify" or "MFA" or "Authentication" or "Security" or "Challenge", we have moved to MFA step
       if (
         postSubmitTitle.includes("Verify") ||
@@ -745,7 +972,7 @@ export class GMAuth {
         );
       } else {
         console.log(
-          "Post-submit page title does not indicate MFA, continuing to check for auth code.",
+          `Post-submit page title does not indicate MFA "${postSubmitTitle}", continuing to check for auth code.`,
         );
 
         try {
@@ -1403,6 +1630,144 @@ export class GMAuth {
     }
 
     return false;
+  }
+
+  private async detectCloudflare(page: Page): Promise<boolean> {
+    try {
+      // Check for Cloudflare text indicators (case insensitive)
+      const cloudflareTextVisible = await page
+        .getByText("cloudflare", { exact: false })
+        .isVisible();
+      const checkingBrowserVisible = await page
+        .getByText("checking your browser", { exact: false })
+        .isVisible();
+      const ddosProtectionVisible = await page
+        .getByText("ddos protection", { exact: false })
+        .isVisible();
+      const verifyingVisible = await page
+        .getByText("verifying you are human", { exact: false })
+        .isVisible();
+      const pleaseWaitVisible = await page
+        .getByText("please wait", { exact: false })
+        .isVisible();
+
+      // Check for Cloudflare-specific elements and IDs
+      const rayIdVisible = await page
+        .locator("[data-ray], .cf-ray, #cf-ray, [id*='ray']")
+        .isVisible();
+
+      // Check for Cloudflare-specific classes and elements
+      const cloudflareElements = await page
+        .locator(
+          ".cf-browser-verification, .cf-challenge-running, .cf-checking-browser, .cf-wrapper, .cf-column, .cf-section, .cf-header, #cf-content, .challenge-running, .challenge-stage",
+        )
+        .count();
+
+      // Check for typical Cloudflare challenge page structure
+      const challengeForm = await page
+        .locator(
+          'form[action*="__cf_chl_jschl_tk__"], form[action*="cf_chl_jschl_tk"], form[id*="challenge"], form[class*="challenge"]',
+        )
+        .count();
+
+      // Check page title for Cloudflare indicators
+      const pageTitle = await page.title();
+      const titleHasCloudflare =
+        pageTitle.toLowerCase().includes("cloudflare") ||
+        pageTitle.toLowerCase().includes("checking your browser") ||
+        pageTitle.toLowerCase().includes("ddos protection") ||
+        pageTitle.toLowerCase().includes("security check");
+
+      // Check for Cloudflare scripts
+      const cloudflareScripts = await page
+        .locator('script[src*="cloudflare"], script[src*="cf-"]')
+        .count();
+
+      // Check page content for Cloudflare indicators
+      const pageContent = await page.content();
+      const contentHasCloudflare =
+        pageContent.toLowerCase().includes("cloudflare") ||
+        pageContent.toLowerCase().includes("cf-ray") ||
+        pageContent.toLowerCase().includes("checking your browser") ||
+        pageContent.toLowerCase().includes("ddos protection");
+
+      const isCloudflare =
+        cloudflareTextVisible ||
+        checkingBrowserVisible ||
+        ddosProtectionVisible ||
+        verifyingVisible ||
+        pleaseWaitVisible ||
+        rayIdVisible ||
+        cloudflareElements > 0 ||
+        challengeForm > 0 ||
+        titleHasCloudflare ||
+        cloudflareScripts > 0 ||
+        contentHasCloudflare;
+
+      if (isCloudflare && this.debugMode) {
+        console.log("Cloudflare detection results:", {
+          cloudflareTextVisible,
+          checkingBrowserVisible,
+          ddosProtectionVisible,
+          verifyingVisible,
+          pleaseWaitVisible,
+          rayIdVisible,
+          cloudflareElements,
+          challengeForm,
+          titleHasCloudflare,
+          cloudflareScripts,
+          contentHasCloudflare,
+          pageTitle,
+          currentUrl: page.url(),
+        });
+      }
+
+      return isCloudflare;
+    } catch (error) {
+      // If any check fails, assume no Cloudflare (better to proceed than fail)
+      console.warn("Error checking for Cloudflare:", error);
+      return false;
+    }
+  }
+
+  private async handleCloudflareDetection(page: Page): Promise<void> {
+    console.log("*** CLOUDFLARE DETECTED ***");
+
+    console.log(
+      "Cloudflare protection detected. This may interfere with authentication.",
+    );
+
+    // Wait a bit to see if Cloudflare challenge completes automatically
+    console.log(
+      "Waiting 10 seconds to see if Cloudflare challenge completes...",
+    );
+    await page.waitForTimeout(10000);
+
+    // Check again if we're still on Cloudflare page
+    const stillHasCloudflare = await this.detectCloudflare(page);
+    if (stillHasCloudflare) {
+      throw new Error(
+        "Cloudflare protection is blocking authentication. Please try again later or use a different network.",
+      );
+    } else {
+      console.log(
+        "Cloudflare challenge appears to have completed. Continuing...",
+      );
+    }
+  }
+
+  // Helper method to check for Cloudflare and handle it in one call
+  private async checkAndHandleCloudflare(
+    page: Page,
+    context: string,
+  ): Promise<void> {
+    const hasCloudflare = await this.detectCloudflare(page);
+    if (hasCloudflare) {
+      if (this.debugMode) {
+        console.log(`Cloudflare detected at ${context}`);
+      }
+      await this.handleCloudflareDetection(page);
+    }
   }
 }
 
