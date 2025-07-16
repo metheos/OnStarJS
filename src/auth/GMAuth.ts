@@ -196,9 +196,15 @@ export class GMAuth {
           `🖥️ Xvfb started successfully on display ${process.env.DISPLAY}`,
         );
       } catch (error) {
-        console.warn("⚠️ Failed to start Xvfb:", error);
-        console.log(
-          "🖥️ Continuing without virtual display - ensure you have a DISPLAY set or run with xvfb-run",
+        console.error("❌ Failed to start Xvfb:", error);
+        console.error("💡 To fix this issue, either:");
+        console.error("   1. Install Xvfb: sudo apt-get install xvfb");
+        console.error("   2. Run with xvfb-run: xvfb-run -a node your-app.js");
+        console.error(
+          "   3. Set a DISPLAY environment variable if you have a GUI",
+        );
+        throw new Error(
+          "Cannot run browser automation on Linux without a display server. Xvfb is required for headless operation.",
         );
       }
     }
@@ -254,9 +260,7 @@ export class GMAuth {
       : isLinux
         ? hasDisplay
           ? "headful"
-          : this.xvfb
-            ? "headful (Xvfb virtual display)"
-            : "headful (no display)"
+          : "headful (Xvfb virtual display)"
         : "headful";
     console.log(
       `🌐 Browser initialized with persistent context (${displayMode})`,
