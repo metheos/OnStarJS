@@ -214,6 +214,16 @@ export class GMAuth {
       "--disable-blink-features=AutomationControlled",
       "--no-first-run",
       "--disable-default-browser-check",
+      "--disable-password-generation",
+      "--disable-save-password-bubble",
+      "--disable-password-manager-reauthentication",
+      "--password-store=basic",
+      "--disable-features=PasswordManager",
+      "--disable-features=VizDisplayCompositor",
+      "--disable-password-manager",
+      "--disable-save-password",
+      "--disable-background-timer-throttling", // Prevent throttling
+      "--disable-backgrounding-occluded-windows", // Prevent backgrounding
     ];
 
     // Add platform-specific args
@@ -331,35 +341,87 @@ export class GMAuth {
     }
   }
   async doFullAuthSequence(): Promise<TokenSet> {
-    try {
-      // Reset any previously captured authorization code
-      this.capturedAuthCode = null;
+    const maxRetries = 2;
+    let lastError: Error | null = null;
 
-      const { authorizationUrl, code_verifier } =
-        await this.startMSAuthorizationFlow();
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        if (attempt > 0) {
+          console.log(
+            `🔄 Authentication attempt ${attempt + 1}/${maxRetries + 1} (retry ${attempt})`,
+          );
+          // Wait a bit before retrying to avoid rate limiting
+          await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+        }
 
-      // Use browser automation for the initial auth flow
-      await this.submitCredentials(authorizationUrl);
+        // Reset any previously captured authorization code
+        this.capturedAuthCode = null;
 
-      // Only call handleMFA if the auth code wasn't captured by submitCredentials
-      if (!this.capturedAuthCode) {
-        await this.handleMFA();
-      }
+        const { authorizationUrl, code_verifier } =
+          await this.startMSAuthorizationFlow();
 
-      const authCode = await this.getAuthorizationCode();
-      if (!authCode)
-        throw new Error(
-          "🚫 Failed to get authorization code after all attempts. Possible incorrect credentials, MFA issue, or unexpected page flow.",
+        // Use browser automation for the initial auth flow
+        await this.submitCredentials(authorizationUrl);
+
+        // Only call handleMFA if the auth code wasn't captured by submitCredentials
+        if (!this.capturedAuthCode) {
+          await this.handleMFA();
+        }
+
+        const authCode = await this.getAuthorizationCode();
+        if (!authCode) {
+          throw new Error(
+            "🚫 Failed to get authorization code after all attempts. Possible incorrect credentials, MFA issue, or unexpected page flow.",
+          );
+        }
+
+        const tokenSet = await this.getMSToken(authCode, code_verifier);
+        await this.saveTokens(tokenSet);
+
+        if (attempt > 0) {
+          console.log(`✅ Authentication succeeded on attempt ${attempt + 1}`);
+        }
+
+        // Always clean up browser resources after successful authentication
+        try {
+          await this.closeBrowser();
+        } catch (cleanupError) {
+          console.warn(
+            "Warning: Browser cleanup failed after success:",
+            cleanupError,
+          );
+        }
+
+        return tokenSet;
+      } catch (error) {
+        lastError = error as Error;
+        console.error(
+          `❌ Authentication attempt ${attempt + 1} failed:`,
+          error,
         );
 
-      const tokenSet = await this.getMSToken(authCode, code_verifier);
-      await this.saveTokens(tokenSet);
+        // Always clean up browser resources after each attempt
+        try {
+          await this.closeBrowser();
+        } catch (cleanupError) {
+          console.warn("Warning: Browser cleanup failed:", cleanupError);
+        }
 
-      return tokenSet;
-    } finally {
-      // Always clean up browser resources
-      await this.closeBrowser();
+        // If this is not the last attempt, continue to retry
+        if (attempt < maxRetries) {
+          console.log(
+            `⏳ Will retry authentication in ${2 * (attempt + 1)} seconds...`,
+          );
+          continue;
+        }
+      }
     }
+
+    // If we get here, all retries failed
+    console.error(`🚫 Authentication failed after ${maxRetries + 1} attempts`);
+    throw (
+      lastError || new Error("Authentication failed after all retry attempts")
+    );
   }
 
   private async saveTokens(tokenSet: TokenSet): Promise<void> {
@@ -943,17 +1005,17 @@ export class GMAuth {
         const retryTitle = await page.title();
         console.log(`Page title after retry: "${retryTitle}"`);
 
-        // If still stuck on sign-in page after retry, something is seriously wrong
-        if (retryTitle.toLowerCase().includes("sign in")) {
-          // Save a screenshot
-          await page.screenshot({
-            path: "debug-retry-failed.png",
-            fullPage: true,
-          });
-          throw new Error(
-            `Credentials repeatedly rejected. Page title after retry: "${retryTitle}". Please check your username and password.`,
-          );
-        }
+        // // If still stuck on sign-in page after retry, something is seriously wrong
+        // if (retryTitle.toLowerCase().includes("sign in")) {
+        //   // Save a screenshot
+        //   await page.screenshot({
+        //     path: "debug-retry-failed.png",
+        //     fullPage: true,
+        //   });
+        //   throw new Error(
+        //     `Credentials repeatedly rejected. Page title after retry: "${retryTitle}". Please check your username and password.`,
+        //   );
+        // }
 
         // Update postSubmitTitle for subsequent checks
         postSubmitTitle = retryTitle;
