@@ -160,9 +160,29 @@ export class GMAuth {
     return false;
   }
   // Browser management methods
-  private async initBrowser(): Promise<void> {
+  private async initBrowser(
+    useRandomFingerprint: boolean = false,
+  ): Promise<void> {
     if (this.browser) {
       return; // Browser already initialized
+    }
+
+    // Generate random fingerprint if requested
+    const fingerprint = useRandomFingerprint
+      ? this.generateRandomFingerprint()
+      : {
+          userAgent:
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.6 Mobile/15E148 Safari/604.1",
+          viewport: { width: 430, height: 932 },
+        };
+
+    if (useRandomFingerprint) {
+      console.log(
+        `🎭 Using randomized fingerprint: ${fingerprint.userAgent.substring(0, 50)}...`,
+      );
+      console.log(
+        `🎭 Using randomized viewport: ${fingerprint.viewport.width}x${fingerprint.viewport.height}`,
+      );
     }
 
     // delete ./temp-browser-profile if it exists
@@ -247,10 +267,8 @@ export class GMAuth {
         headless: false, // Always headful for better compatibility
         hasTouch: true, // Simulate touch support
         isMobile: true, // Simulate mobile device
-        userAgent:
-          "Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.6 Mobile/15E148 Safari/604.1",
-        //simulate iphone 16 resolution
-        viewport: { width: 430, height: 932 }, // iPhone 16 resolution
+        userAgent: fingerprint.userAgent,
+        viewport: fingerprint.viewport,
         args: browserArgs,
       },
     );
@@ -343,6 +361,7 @@ export class GMAuth {
   async doFullAuthSequence(): Promise<TokenSet> {
     const maxRetries = 2;
     let lastError: Error | null = null;
+    let useRandomFingerprint = false;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
@@ -350,8 +369,21 @@ export class GMAuth {
           console.log(
             `🔄 Authentication attempt ${attempt + 1}/${maxRetries + 1} (retry ${attempt})`,
           );
+
+          // Check if the last error was access denied
+          if (lastError && lastError.message.includes("Access Denied")) {
+            console.log(
+              "🎭 Access denied detected - using randomized browser fingerprint for retry",
+            );
+            useRandomFingerprint = true;
+          }
+
           // Wait a bit before retrying to avoid rate limiting
-          await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+          const delayMs =
+            lastError && lastError.message.includes("Access Denied")
+              ? 5000 + Math.random() * 5000 // 5-10 seconds for access denied
+              : 2000 * attempt; // Standard exponential backoff
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
         }
 
         // Reset any previously captured authorization code
@@ -360,8 +392,8 @@ export class GMAuth {
         const { authorizationUrl, code_verifier } =
           await this.startMSAuthorizationFlow();
 
-        // Use browser automation for the initial auth flow
-        await this.submitCredentials(authorizationUrl);
+        // Use browser automation for the initial auth flow with optional fingerprint randomization
+        await this.submitCredentials(authorizationUrl, useRandomFingerprint);
 
         // Only call handleMFA if the auth code wasn't captured by submitCredentials
         if (!this.capturedAuthCode) {
@@ -409,8 +441,10 @@ export class GMAuth {
 
         // If this is not the last attempt, continue to retry
         if (attempt < maxRetries) {
+          const isAccessDenied = lastError.message.includes("Access Denied");
+          const delayTime = isAccessDenied ? "5-10" : `${2 * (attempt + 1)}`;
           console.log(
-            `⏳ Will retry authentication in ${2 * (attempt + 1)} seconds...`,
+            `⏳ Will retry authentication in ${delayTime} seconds${isAccessDenied ? " with randomized fingerprint" : ""}...`,
           );
           continue;
         }
@@ -460,9 +494,6 @@ export class GMAuth {
     try {
       // Wait for MFA page to load
       await page.waitForLoadState("networkidle");
-
-      // Check for Cloudflare protection on MFA page
-      await this.checkAndHandleCloudflare(page, "MFA page load");
 
       // Look for MFA elements
       await page.waitForSelector(
@@ -615,17 +646,11 @@ export class GMAuth {
         .first();
       await submitMfaButton.waitFor({ timeout: 60000 });
 
-      // Check for Cloudflare protection before MFA submission
-      await this.checkAndHandleCloudflare(page, "before MFA submission");
-
       await submitMfaButton.click();
 
       if (this.debugMode)
         console.log("⌛ Waiting for redirect after MFA submission...");
       await page.waitForLoadState("networkidle", { timeout: 60000 }); // Wait for potential redirects or network activity
-
-      // Check for Cloudflare protection after MFA submission
-      await this.checkAndHandleCloudflare(page, "after MFA submission");
 
       try {
         // Wait for the auth code to be captured by CDP listeners
@@ -652,12 +677,6 @@ export class GMAuth {
       if (this.debugMode)
         console.log("⌛ Waiting for redirect after MFA submission...");
       await page.waitForLoadState("networkidle");
-
-      // Check for Cloudflare protection before final check
-      await this.checkAndHandleCloudflare(
-        page,
-        "before final authorization code check",
-      );
 
       if (this.capturedAuthCode) {
         console.log("Successfully captured authorization code");
@@ -689,32 +708,86 @@ export class GMAuth {
       }
     }
   }
-  private async submitCredentials(authorizationUrl: string): Promise<void> {
+
+  // Generate randomized browser fingerprint to avoid detection
+  private generateRandomFingerprint() {
+    const iPhoneVersions = [
+      "15_8_3",
+      "16_0",
+      "16_1",
+      "16_2",
+      "16_3",
+      "16_4",
+      "16_5",
+      "16_6",
+      "16_7",
+      "17_0",
+      "17_1",
+      "17_2",
+      "17_3",
+      "17_4",
+      "17_5",
+      "17_6",
+      "18_0",
+      "18_1",
+    ];
+
+    const safariVersions = [
+      "604.1",
+      "605.1.15",
+      "606.1.36",
+      "607.1.56",
+      "608.1.49",
+      "609.1.20",
+    ];
+
+    const webkitVersions = [
+      "605.1.15",
+      "606.4.10",
+      "607.3.10",
+      "608.4.9",
+      "609.4.1",
+      "610.1.28",
+    ];
+
+    const viewports = [
+      { width: 430, height: 932 }, // iPhone 16
+      { width: 428, height: 926 }, // iPhone 15 Pro Max
+      { width: 414, height: 896 }, // iPhone 14
+      { width: 390, height: 844 }, // iPhone 13
+      { width: 375, height: 812 }, // iPhone 12 mini
+      { width: 414, height: 736 }, // iPhone 8 Plus
+    ];
+
+    const randomiPhoneVersion =
+      iPhoneVersions[Math.floor(Math.random() * iPhoneVersions.length)];
+    const randomSafariVersion =
+      safariVersions[Math.floor(Math.random() * safariVersions.length)];
+    const randomWebkitVersion =
+      webkitVersions[Math.floor(Math.random() * webkitVersions.length)];
+    const randomViewport =
+      viewports[Math.floor(Math.random() * viewports.length)];
+
+    return {
+      userAgent: `Mozilla/5.0 (iPhone; CPU iPhone OS ${randomiPhoneVersion} like Mac OS X) AppleWebKit/${randomWebkitVersion} (KHTML, like Gecko) Version/${randomSafariVersion} Mobile/15E148 Safari/${randomSafariVersion}`,
+      viewport: randomViewport,
+    };
+  }
+
+  private async submitCredentials(
+    authorizationUrl: string,
+    useRandomFingerprint: boolean = false,
+  ): Promise<void> {
     console.log("Starting browser-based authentication");
 
     // Initialize browser if not already done
-    await this.initBrowser();
+    await this.initBrowser(useRandomFingerprint);
     if (!this.context) {
       throw new Error("Browser context not initialized");
     }
 
     const page = await this.context.newPage();
     this.currentPage = page;
-
-    // Add a general page load listener to detect Cloudflare on any navigation
-    page.on("load", async () => {
-      try {
-        const hasCloudflare = await this.detectCloudflare(page);
-        if (hasCloudflare && this.debugMode) {
-          console.log("Cloudflare detected on page load:", page.url());
-        }
-      } catch (error) {
-        // Ignore errors in the load listener to not break the main flow
-        if (this.debugMode) {
-          console.warn("Error checking Cloudflare on page load:", error);
-        }
-      }
-    });
 
     try {
       // Navigate to the authorization URL
@@ -744,9 +817,6 @@ export class GMAuth {
       console.log("Page loaded, current URL:", page.url());
       console.log("Page title:", await page.title());
 
-      // Check for Cloudflare protection after page loads
-      await this.checkAndHandleCloudflare(page, "initial page load");
-
       // Check if we're stuck on a loading page
       const title = await page.title();
       if (
@@ -768,18 +838,9 @@ export class GMAuth {
 
         const newTitle = await page.title();
         console.log("Page title after refresh:", newTitle);
-
-        // Check for Cloudflare protection after page refresh
-        await this.checkAndHandleCloudflare(page, "page refresh");
       }
 
       console.log("Looking for email field...");
-
-      // Check for Cloudflare protection before attempting to find email field
-      await this.checkAndHandleCloudflare(
-        page,
-        "before email field interaction",
-      );
 
       // Find and fill email field
       const emailField = page
@@ -806,9 +867,6 @@ export class GMAuth {
       // Wait for password page and fill password
       await page.waitForLoadState("networkidle", { timeout: 60000 });
 
-      // Check for Cloudflare protection on password page
-      await this.checkAndHandleCloudflare(page, "password page");
-
       const passwordField = page
         .locator(
           'input[type="password"], input[name="password"], [aria-label*="Password"i], [placeholder*="Password"i]',
@@ -823,6 +881,9 @@ export class GMAuth {
       // Enable CDP Network domain for low-level network monitoring
       const client = await page.context().newCDPSession(page);
       await client.send("Network.enable");
+
+      // Flag to track if access is denied
+      let accessDenied = false;
 
       // Set up CDP network listener to catch everything that appears in DevTools
       client.on("Network.requestWillBeSent", (params: any) => {
@@ -857,45 +918,66 @@ export class GMAuth {
         }
       });
 
-      // // Also listen for redirects at CDP level
-      // client.on("Network.responseReceived", (params: any) => {
-      //   const response = params.response;
-      //   if (
-      //     (response.status === 301 || response.status === 302) &&
-      //     response.headers &&
-      //     response.headers.location
-      //   ) {
-      //     const location = response.headers.location;
-      //     if (this.debugMode) {
-      //       console.log(
-      //         `[DEBUG CDP responseReceived] Redirect from ${response.url} to: ${location}`,
-      //       );
-      //     }
+      // Listen for responses to check for Access Denied
+      client.on("Network.responseReceived", async (params: any) => {
+        const response = params.response;
 
-      //     if (
-      //       location
-      //         .toLowerCase()
-      //         .startsWith("msauth.com.gm.mychevrolet://auth")
-      //     ) {
-      //       console.log(
-      //         `[SUCCESS CDP responseReceived] Captured msauth redirect via CDP response. Location: ${location}`,
-      //       );
-      //       this.capturedAuthCode = this.getRegexMatch(
-      //         location,
-      //         `[?&]code=([^&]*)`,
-      //       );
-      //       if (this.capturedAuthCode) {
-      //         console.log(
-      //           `[SUCCESS CDP responseReceived] Extracted authorization code: ${this.capturedAuthCode}`,
-      //         );
-      //       } else {
-      //         console.error(
-      //           `[ERROR CDP responseReceived] msauth redirect found, but FAILED to extract code from: ${location}`,
-      //         );
-      //       }
-      //     }
-      //   }
-      // });
+        try {
+          // Get the response body to check for access denied
+          const responseBody = await client.send("Network.getResponseBody", {
+            requestId: params.requestId,
+          });
+
+          if (
+            responseBody.body &&
+            responseBody.body.includes("<TITLE>Access Denied</TITLE>")
+          ) {
+            console.log(
+              `[ACCESS DENIED] Detected access denied response from: ${response.url}`,
+            );
+            accessDenied = true;
+          }
+        } catch (error) {
+          // Ignore errors when getting response body (some responses may not be available)
+        }
+
+        // Also check redirects at CDP level for auth codes
+        if (
+          (response.status === 301 || response.status === 302) &&
+          response.headers &&
+          response.headers.location
+        ) {
+          const location = response.headers.location;
+          if (this.debugMode) {
+            console.log(
+              `[DEBUG CDP responseReceived] Redirect from ${response.url} to: ${location}`,
+            );
+          }
+
+          if (
+            location
+              .toLowerCase()
+              .startsWith("msauth.com.gm.mychevrolet://auth")
+          ) {
+            console.log(
+              `[SUCCESS CDP responseReceived] Captured msauth redirect via CDP response. Location: ${location}`,
+            );
+            this.capturedAuthCode = this.getRegexMatch(
+              location,
+              `[?&]code=([^&]*)`,
+            );
+            if (this.capturedAuthCode) {
+              console.log(
+                `[SUCCESS CDP responseReceived] Extracted authorization code: ${this.capturedAuthCode}`,
+              );
+            } else {
+              console.error(
+                `[ERROR CDP responseReceived] msauth redirect found, but FAILED to extract code from: ${location}`,
+              );
+            }
+          }
+        }
+      });
 
       // Click the sign-in button
       const submitButton = page
@@ -911,8 +993,12 @@ export class GMAuth {
       await page.waitForTimeout(3000);
       var postSubmitTitle = await page.title();
 
-      // Check for Cloudflare protection after credential submission
-      await this.checkAndHandleCloudflare(page, "after credential submission");
+      // Check for access denied response detected by CDP
+      if (accessDenied) {
+        throw new Error(
+          "🚫 Access Denied: Authentication blocked. This could be due to rate limiting, IP blocking, or security restrictions. Please wait before retrying or check if your IP is blocked.",
+        );
+      }
 
       // Wait for network to be idle in case other things are happening,
       // or if MFA is indeed the next step.
@@ -927,8 +1013,6 @@ export class GMAuth {
       await page.waitForLoadState("networkidle", { timeout: 60000 });
 
       postSubmitTitle = await page.title();
-      // Check for Cloudflare protection after network idle
-      await this.checkAndHandleCloudflare(page, "after network idle");
 
       // Check if we're still on the sign-in page (credential submission failed)
       if (postSubmitTitle.toLowerCase().includes("sign in")) {
@@ -954,10 +1038,6 @@ export class GMAuth {
           "🔄 Attempting to refresh page and retry credential submission...",
         );
         await page.reload({ waitUntil: "networkidle" });
-        await this.checkAndHandleCloudflare(
-          page,
-          "after page reload for retry",
-        );
 
         // Re-find and fill email field
         const retryEmailField = page
@@ -978,7 +1058,6 @@ export class GMAuth {
 
         // Wait for password page
         await page.waitForLoadState("networkidle", { timeout: 30000 });
-        await this.checkAndHandleCloudflare(page, "password page retry");
 
         // Re-find and fill password field
         const retryPasswordField = page
@@ -1692,144 +1771,6 @@ export class GMAuth {
     }
 
     return false;
-  }
-
-  private async detectCloudflare(page: Page): Promise<boolean> {
-    try {
-      // Check for Cloudflare text indicators (case insensitive)
-      const cloudflareTextVisible = await page
-        .getByText("cloudflare", { exact: false })
-        .isVisible();
-      const checkingBrowserVisible = await page
-        .getByText("checking your browser", { exact: false })
-        .isVisible();
-      const ddosProtectionVisible = await page
-        .getByText("ddos protection", { exact: false })
-        .isVisible();
-      const verifyingVisible = await page
-        .getByText("verifying you are human", { exact: false })
-        .isVisible();
-      const pleaseWaitVisible = await page
-        .getByText("please wait", { exact: false })
-        .isVisible();
-
-      // Check for Cloudflare-specific elements and IDs
-      const rayIdVisible = await page
-        .locator("[data-ray], .cf-ray, #cf-ray, [id*='ray']")
-        .isVisible();
-
-      // Check for Cloudflare-specific classes and elements
-      const cloudflareElements = await page
-        .locator(
-          ".cf-browser-verification, .cf-challenge-running, .cf-checking-browser, .cf-wrapper, .cf-column, .cf-section, .cf-header, #cf-content, .challenge-running, .challenge-stage",
-        )
-        .count();
-
-      // Check for typical Cloudflare challenge page structure
-      const challengeForm = await page
-        .locator(
-          'form[action*="__cf_chl_jschl_tk__"], form[action*="cf_chl_jschl_tk"], form[id*="challenge"], form[class*="challenge"]',
-        )
-        .count();
-
-      // Check page title for Cloudflare indicators
-      const pageTitle = await page.title();
-      const titleHasCloudflare =
-        pageTitle.toLowerCase().includes("cloudflare") ||
-        pageTitle.toLowerCase().includes("checking your browser") ||
-        pageTitle.toLowerCase().includes("ddos protection") ||
-        pageTitle.toLowerCase().includes("security check");
-
-      // Check for Cloudflare scripts
-      const cloudflareScripts = await page
-        .locator('script[src*="cloudflare"], script[src*="cf-"]')
-        .count();
-
-      // Check page content for Cloudflare indicators
-      const pageContent = await page.content();
-      const contentHasCloudflare =
-        pageContent.toLowerCase().includes("cloudflare") ||
-        pageContent.toLowerCase().includes("cf-ray") ||
-        pageContent.toLowerCase().includes("checking your browser") ||
-        pageContent.toLowerCase().includes("ddos protection");
-
-      const isCloudflare =
-        cloudflareTextVisible ||
-        checkingBrowserVisible ||
-        ddosProtectionVisible ||
-        verifyingVisible ||
-        pleaseWaitVisible ||
-        rayIdVisible ||
-        cloudflareElements > 0 ||
-        challengeForm > 0 ||
-        titleHasCloudflare ||
-        cloudflareScripts > 0 ||
-        contentHasCloudflare;
-
-      if (isCloudflare && this.debugMode) {
-        console.log("Cloudflare detection results:", {
-          cloudflareTextVisible,
-          checkingBrowserVisible,
-          ddosProtectionVisible,
-          verifyingVisible,
-          pleaseWaitVisible,
-          rayIdVisible,
-          cloudflareElements,
-          challengeForm,
-          titleHasCloudflare,
-          cloudflareScripts,
-          contentHasCloudflare,
-          pageTitle,
-          currentUrl: page.url(),
-        });
-      }
-
-      return isCloudflare;
-    } catch (error) {
-      // If any check fails, assume no Cloudflare (better to proceed than fail)
-      console.warn("Error checking for Cloudflare:", error);
-      return false;
-    }
-  }
-
-  private async handleCloudflareDetection(page: Page): Promise<void> {
-    console.log("*** CLOUDFLARE DETECTED ***");
-
-    console.log(
-      "Cloudflare protection detected. This may interfere with authentication.",
-    );
-
-    // Wait a bit to see if Cloudflare challenge completes automatically
-    console.log(
-      "Waiting 10 seconds to see if Cloudflare challenge completes...",
-    );
-    await page.waitForTimeout(10000);
-
-    // Check again if we're still on Cloudflare page
-    const stillHasCloudflare = await this.detectCloudflare(page);
-    if (stillHasCloudflare) {
-      throw new Error(
-        "Cloudflare protection is blocking authentication. Please try again later or use a different network.",
-      );
-    } else {
-      console.log(
-        "Cloudflare challenge appears to have completed. Continuing...",
-      );
-    }
-  }
-
-  // Helper method to check for Cloudflare and handle it in one call
-  private async checkAndHandleCloudflare(
-    page: Page,
-    context: string,
-  ): Promise<void> {
-    const hasCloudflare = await this.detectCloudflare(page);
-    if (hasCloudflare) {
-      if (this.debugMode) {
-        console.log(`Cloudflare detected at ${context}`);
-      }
-      await this.handleCloudflareDetection(page);
-    }
   }
 }
 
