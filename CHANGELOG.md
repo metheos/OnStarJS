@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.7.0](https://github.com/BigThunderSR/OnStarJS/compare/v2.6.7...v2.7.0) (2025-07-17)
+
+
+### Features
+
+* **auth:** enhance browser automation ([#395](https://github.com/BigThunderSR/OnStarJS/issues/395)) ([065f6fa](https://github.com/BigThunderSR/OnStarJS/commit/065f6faef8b2a4f624ababe455d87ee3222c17b7))
+* **deps:** add chromium-bidi dependency ([8d87ec0](https://github.com/BigThunderSR/OnStarJS/commit/8d87ec08e3e4cd70133192f95b5952bae7404d52))
+
+
+### Bug Fixes
+
+* **deps:** bump http-cookie-agent from 7.0.1 to 7.0.2 ([a8b90c4](https://github.com/BigThunderSR/OnStarJS/commit/a8b90c43cd5efa2413124d298d15e3ff7eedb1f5))
+
 ## [2.6.7](https://github.com/BigThunderSR/OnStarJS/compare/v2.6.6...v2.6.7) (2025-06-19)
 
 ## [2.6.6](https://github.com/BigThunderSR/OnStarJS/compare/v2.6.5...v2.6.6) (2025-06-17)
