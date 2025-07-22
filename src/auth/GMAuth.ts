@@ -84,6 +84,7 @@ export class GMAuth {
   private currentGMAPIToken: GMAPITokenResponse | null = null;
   private debugMode: boolean = true; // Default to visible mode for reliability
   private xvfb: any = null; // Xvfb instance for Linux virtual display
+  private xvfbDisplay: string | null = null; // Store the DISPLAY value for Xvfb
 
   constructor(config: GMAuthConfig) {
     this.config = config;
@@ -168,11 +169,9 @@ export class GMAuth {
     const isLinux = process.platform === "linux";
     const hasDisplay = isLinux && process.env.DISPLAY;
 
-    // Check if we need to restart Xvfb (Linux without display and no running Xvfb)
-    const needsXvfb = isLinux && !hasDisplay && !this.xvfb;
-
-    if (this.browser && !needsXvfb) {
-      return; // Browser already initialized and Xvfb is running if needed
+    // If browser is already running, no need to reinitialize
+    if (this.browser) {
+      return;
     }
 
     // Generate random fingerprint if requested
@@ -210,8 +209,20 @@ export class GMAuth {
     // Detect platform (isLinux and hasDisplay already declared above)
     const isWindows = process.platform === "win32";
 
-    // Start Xvfb on Linux if no display is available
-    if (isLinux && !hasDisplay) {
+    // Check if Xvfb is already running on Linux
+    if (isLinux && !hasDisplay && this.xvfb) {
+      console.log("🖥️ Xvfb already running, reusing existing virtual display");
+      // Restore the DISPLAY environment variable
+      if (this.xvfbDisplay) {
+        process.env.DISPLAY = this.xvfbDisplay;
+        console.log(`🖥️ Restored DISPLAY: ${process.env.DISPLAY}`);
+      } else {
+        console.log(`🖥️ Current DISPLAY: ${process.env.DISPLAY}`);
+      }
+    }
+
+    // Start Xvfb on Linux if no display is available and Xvfb is not already running
+    if (isLinux && !hasDisplay && !this.xvfb) {
       console.log("🖥️ Starting Xvfb for virtual display...");
       try {
         // First check if Xvfb binary is available
@@ -274,6 +285,7 @@ export class GMAuth {
 
             this.xvfb.startSync();
             xvfbStarted = true;
+            this.xvfbDisplay = process.env.DISPLAY || null; // Store the DISPLAY value
             console.log(
               `🖥️ Xvfb started successfully on display :${displayNum} (${process.env.DISPLAY})`,
             );
@@ -402,20 +414,26 @@ export class GMAuth {
       this.browser = null;
     }
 
-    // Stop Xvfb if we started it
+    // DON'T stop Xvfb here - we want to reuse it for retries
+    // Xvfb will be stopped in cleanup methods or when the class is destroyed
+
+    // Reset captured auth code when closing browser
+    this.capturedAuthCode = null;
+  }
+
+  // Stop Xvfb when completely done (success or final failure)
+  private async stopXvfb(): Promise<void> {
     if (this.xvfb) {
       try {
         console.log("🖥️ Stopping Xvfb...");
         this.xvfb.stopSync();
         this.xvfb = null;
+        this.xvfbDisplay = null; // Clear stored display value
         console.log("🖥️ Xvfb stopped successfully");
       } catch (error) {
         console.warn("⚠️ Failed to stop Xvfb:", error);
       }
     }
-
-    // Reset captured auth code when closing browser
-    this.capturedAuthCode = null;
   }
 
   // Enable debug mode to show browser and detailed logging
@@ -425,6 +443,16 @@ export class GMAuth {
 
   public disableDebugMode(): void {
     this.debugMode = false;
+  }
+
+  // Public cleanup method to properly stop Xvfb and close browser
+  public async cleanup(): Promise<void> {
+    try {
+      await this.closeBrowser();
+      await this.stopXvfb();
+    } catch (error) {
+      console.warn("Warning: Cleanup failed:", error);
+    }
   }
 
   async authenticate(): Promise<GMAPITokenResponse> {
@@ -449,6 +477,17 @@ export class GMAuth {
       } else {
         console.error("Authentication failed:", error);
       }
+
+      // Ensure cleanup happens on any authentication error
+      try {
+        await this.stopXvfb();
+      } catch (cleanupError) {
+        console.warn(
+          "Warning: Xvfb cleanup failed in authenticate error handler:",
+          cleanupError,
+        );
+      }
+
       throw error;
     }
   }
@@ -508,6 +547,7 @@ export class GMAuth {
         // Always clean up browser resources after successful authentication
         try {
           await this.closeBrowser();
+          await this.stopXvfb(); // Stop Xvfb on successful completion
         } catch (cleanupError) {
           console.warn(
             "Warning: Browser cleanup failed after success:",
@@ -544,6 +584,17 @@ export class GMAuth {
 
     // If we get here, all retries failed
     console.error(`🚫 Authentication failed after ${maxRetries + 1} attempts`);
+
+    // Clean up Xvfb on final failure
+    try {
+      await this.stopXvfb();
+    } catch (cleanupError) {
+      console.warn(
+        "Warning: Xvfb cleanup failed after final failure:",
+        cleanupError,
+      );
+    }
+
     throw (
       lastError || new Error("Authentication failed after all retry attempts")
     );
