@@ -181,14 +181,22 @@ export class GMAuth {
           userAgent:
             "Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.6 Mobile/15E148 Safari/604.1",
           viewport: { width: 430, height: 932 },
+          deviceType: "iPhone (default)",
         };
 
     if (useRandomFingerprint) {
       console.log(
-        `🎭 Using randomized fingerprint: ${fingerprint.userAgent.substring(0, 50)}...`,
+        `🎭 Using randomized fingerprint (${fingerprint.deviceType}): ${fingerprint.userAgent.substring(0, 80)}...`,
       );
       console.log(
         `🎭 Using randomized viewport: ${fingerprint.viewport.width}x${fingerprint.viewport.height}`,
+      );
+    } else {
+      console.log(
+        `🎭 Using default fingerprint (${fingerprint.deviceType}): ${fingerprint.userAgent.substring(0, 80)}...`,
+      );
+      console.log(
+        `🎭 Using default viewport: ${fingerprint.viewport.width}x${fingerprint.viewport.height}`,
       );
     }
 
@@ -713,67 +721,206 @@ export class GMAuth {
 
   // Generate randomized browser fingerprint to avoid detection
   private generateRandomFingerprint() {
-    const iPhoneVersions = [
-      "15_8_3",
-      "16_0",
-      "16_1",
-      "16_2",
-      "16_3",
-      "16_4",
-      "16_5",
-      "16_6",
-      "16_7",
-      "17_0",
-      "17_1",
-      "17_2",
-      "17_3",
-      "17_4",
-      "17_5",
-      "17_6",
-      "18_0",
-      "18_1",
+    const deviceProfiles = [
+      // iPhones
+      {
+        type: "iPhone",
+        osVersions: [
+          "15_8_3",
+          "16_0",
+          "16_1",
+          "16_2",
+          "16_3",
+          "16_4",
+          "16_5",
+          "16_6",
+          "16_7",
+          "17_0",
+          "17_1",
+          "17_2",
+          "17_3",
+          "17_4",
+          "17_5",
+          "17_6",
+          "18_0",
+          "18_1",
+          "18_2",
+          "18_3",
+        ],
+        safariVersions: [
+          "604.1",
+          "605.1.15",
+          "606.1.36",
+          "607.1.56",
+          "608.1.49",
+          "609.1.20",
+          "610.4.3",
+          "611.2.7",
+        ],
+        webkitVersions: [
+          "605.1.15",
+          "606.4.10",
+          "607.3.10",
+          "608.4.9",
+          "609.4.1",
+          "610.1.28",
+          "611.3.10",
+          "612.1.6",
+        ],
+        viewports: [
+          { width: 430, height: 932 }, // iPhone 15 Pro Max
+          { width: 393, height: 852 }, // iPhone 15 Pro
+          { width: 390, height: 844 }, // iPhone 15/15 Plus
+          { width: 428, height: 926 }, // iPhone 14 Pro Max
+          { width: 393, height: 852 }, // iPhone 14 Pro
+          { width: 390, height: 844 }, // iPhone 14/14 Plus
+          { width: 428, height: 926 }, // iPhone 13 Pro Max
+          { width: 390, height: 844 }, // iPhone 13/13 Pro/13 Mini
+          { width: 375, height: 812 }, // iPhone 12/12 Pro/12 Mini
+          { width: 414, height: 896 }, // iPhone 11/11 Pro Max/XR/XS Max
+          { width: 375, height: 812 }, // iPhone X/XS/11 Pro
+          { width: 414, height: 736 }, // iPhone 8 Plus/7 Plus/6s Plus
+          { width: 375, height: 667 }, // iPhone 8/7/6s/6/SE
+        ],
+        getUserAgent: (p: any) =>
+          `Mozilla/5.0 (iPhone; CPU iPhone OS ${this.getRandom(p.osVersions)} like Mac OS X) AppleWebKit/${this.getRandom(p.webkitVersions)} (KHTML, like Gecko) Version/${this.getRandom(p.safariVersions)} Mobile/15E148 Safari/${this.getRandom(p.safariVersions)}`,
+      },
+      // iPads
+      {
+        type: "iPad",
+        osVersions: [
+          "15_8_3",
+          "16_0",
+          "16_1",
+          "16_2",
+          "16_3",
+          "16_4",
+          "16_5",
+          "16_6",
+          "16_7",
+          "17_0",
+          "17_1",
+          "17_2",
+          "17_3",
+          "17_4",
+          "17_5",
+          "17_6",
+          "18_0",
+          "18_1",
+        ],
+        safariVersions: [
+          "604.1",
+          "605.1.15",
+          "606.1.36",
+          "607.1.56",
+          "608.1.49",
+          "609.1.20",
+        ],
+        webkitVersions: [
+          "605.1.15",
+          "606.4.10",
+          "607.3.10",
+          "608.4.9",
+          "609.4.1",
+          "610.1.28",
+        ],
+        viewports: [
+          { width: 1024, height: 1366 }, // iPad Pro 12.9"
+          { width: 834, height: 1194 }, // iPad Pro 11"
+          { width: 820, height: 1180 }, // iPad Air
+          { width: 768, height: 1024 }, // iPad Mini/9.7"
+        ],
+        getUserAgent: (p: any) =>
+          `Mozilla/5.0 (iPad; CPU OS ${this.getRandom(p.osVersions)} like Mac OS X) AppleWebKit/${this.getRandom(p.webkitVersions)} (KHTML, like Gecko) Version/${this.getRandom(p.safariVersions)} Mobile/15E148 Safari/${this.getRandom(p.safariVersions)}`,
+      },
+      // Samsung Phones (Android)
+      {
+        type: "Samsung Phone",
+        androidVersions: ["13", "14", "15"],
+        chromeVersions: ["124.0.6367.113", "125.0.6422.112", "126.0.6478.71"],
+        models: [
+          "SM-S928B", // Galaxy S24 Ultra
+          "SM-S918U", // Galaxy S23 Ultra
+          "SM-G998B", // Galaxy S21 Ultra
+          "SM-F946B", // Galaxy Z Fold 5
+        ],
+        viewports: [
+          { width: 412, height: 915 },
+          { width: 384, height: 854 },
+          { width: 360, height: 740 },
+        ],
+        getUserAgent: (p: any) =>
+          `Mozilla/5.0 (Linux; Android ${this.getRandom(p.androidVersions)}; ${this.getRandom(p.models)}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${this.getRandom(p.chromeVersions)} Mobile Safari/537.36`,
+      },
+      // Google Pixel Phones (Android)
+      {
+        type: "Google Pixel",
+        androidVersions: ["12", "13", "14", "15"],
+        chromeVersions: [
+          "122.0.6261.119",
+          "123.0.6312.99",
+          "124.0.6367.113",
+          "125.0.6422.112",
+          "126.0.6478.71",
+          "127.0.6533.64",
+        ],
+        models: [
+          "Pixel 9 Pro XL",
+          "Pixel 9 Pro",
+          "Pixel 9",
+          "Pixel 8a",
+          "Pixel 8 Pro",
+          "Pixel 8",
+          "Pixel 7a",
+          "Pixel 7 Pro",
+          "Pixel 7",
+          "Pixel 6a",
+          "Pixel 6 Pro",
+          "Pixel 6",
+          "Pixel 5a",
+          "Pixel 5",
+          "Pixel 4a",
+          "Pixel 4",
+        ],
+        viewports: [
+          { width: 412, height: 915 }, // Pixel 9 Pro XL
+          { width: 384, height: 854 }, // Pixel 9 Pro
+          { width: 393, height: 851 }, // Pixel 9/8/7
+          { width: 412, height: 892 }, // Pixel 8a/7a/6a
+          { width: 412, height: 869 }, // Pixel 6 Pro
+          { width: 393, height: 786 }, // Pixel 5a/5
+          { width: 393, height: 851 }, // Pixel 4a/4
+        ],
+        getUserAgent: (p: any) =>
+          `Mozilla/5.0 (Linux; Android ${this.getRandom(p.androidVersions)}; ${this.getRandom(p.models)}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${this.getRandom(p.chromeVersions)} Mobile Safari/537.36`,
+      },
+      // Microsoft Surface (Windows Tablet)
+      {
+        type: "Microsoft Surface",
+        edgeVersions: ["124.0.2478.80", "125.0.2535.51", "126.0.2592.56"],
+        chromeVersions: ["124.0.6367.113", "125.0.6422.112", "126.0.6478.71"],
+        viewports: [
+          { width: 915, height: 1368 }, // Surface Pro
+          { width: 810, height: 1080 }, // Surface Go
+        ],
+        getUserAgent: (p: any) =>
+          `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${this.getRandom(p.chromeVersions)} Safari/537.36 Edg/${this.getRandom(p.edgeVersions)}`,
+      },
     ];
 
-    const safariVersions = [
-      "604.1",
-      "605.1.15",
-      "606.1.36",
-      "607.1.56",
-      "608.1.49",
-      "609.1.20",
-    ];
+    // Select a random device profile
+    const profile = this.getRandom(deviceProfiles);
 
-    const webkitVersions = [
-      "605.1.15",
-      "606.4.10",
-      "607.3.10",
-      "608.4.9",
-      "609.4.1",
-      "610.1.28",
-    ];
+    // Generate user agent and viewport from the selected profile
+    const userAgent = profile.getUserAgent(profile);
+    const viewport = this.getRandom(profile.viewports);
 
-    const viewports = [
-      { width: 430, height: 932 }, // iPhone 16
-      { width: 428, height: 926 }, // iPhone 15 Pro Max
-      { width: 414, height: 896 }, // iPhone 14
-      { width: 390, height: 844 }, // iPhone 13
-      { width: 375, height: 812 }, // iPhone 12 mini
-      { width: 414, height: 736 }, // iPhone 8 Plus
-    ];
+    return { userAgent, viewport, deviceType: profile.type };
+  }
 
-    const randomiPhoneVersion =
-      iPhoneVersions[Math.floor(Math.random() * iPhoneVersions.length)];
-    const randomSafariVersion =
-      safariVersions[Math.floor(Math.random() * safariVersions.length)];
-    const randomWebkitVersion =
-      webkitVersions[Math.floor(Math.random() * webkitVersions.length)];
-    const randomViewport =
-      viewports[Math.floor(Math.random() * viewports.length)];
-
-    return {
-      userAgent: `Mozilla/5.0 (iPhone; CPU iPhone OS ${randomiPhoneVersion} like Mac OS X) AppleWebKit/${randomWebkitVersion} (KHTML, like Gecko) Version/${randomSafariVersion} Mobile/15E148 Safari/${randomSafariVersion}`,
-      viewport: randomViewport,
-    };
+  // Helper to get a random element from an array
+  private getRandom(arr: any[]) {
+    return arr[Math.floor(Math.random() * arr.length)];
   }
 
   private async submitCredentials(
