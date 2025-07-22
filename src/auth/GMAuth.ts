@@ -12,6 +12,7 @@ import path from "path";
 import jwt from "jsonwebtoken";
 import { chromium, Browser, BrowserContext, Page } from "patchright";
 import { randomInt } from "crypto";
+import { execSync } from "child_process";
 
 // Import xvfb with explicit any type to avoid TypeScript issues
 const Xvfb = require("xvfb") as any;
@@ -83,6 +84,7 @@ export class GMAuth {
   private currentGMAPIToken: GMAPITokenResponse | null = null;
   private debugMode: boolean = true; // Default to visible mode for reliability
   private xvfb: any = null; // Xvfb instance for Linux virtual display
+  private xvfbDisplay: string | null = null; // Store the DISPLAY value for Xvfb
 
   constructor(config: GMAuthConfig) {
     this.config = config;
@@ -160,9 +162,42 @@ export class GMAuth {
     return false;
   }
   // Browser management methods
-  private async initBrowser(): Promise<void> {
+  private async initBrowser(
+    useRandomFingerprint: boolean = false,
+  ): Promise<void> {
+    // Detect platform early to check Xvfb state
+    const isLinux = process.platform === "linux";
+    const hasDisplay = isLinux && process.env.DISPLAY;
+
+    // If browser is already running, no need to reinitialize
     if (this.browser) {
-      return; // Browser already initialized
+      return;
+    }
+
+    // Generate random fingerprint if requested
+    const fingerprint = useRandomFingerprint
+      ? this.generateRandomFingerprint()
+      : {
+          userAgent:
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.6 Mobile/15E148 Safari/604.1",
+          viewport: { width: 430, height: 932 },
+          deviceType: "iPhone (default)",
+        };
+
+    if (useRandomFingerprint) {
+      console.log(
+        `🎭 Using randomized fingerprint (${fingerprint.deviceType}): ${fingerprint.userAgent.substring(0, 80)}...`,
+      );
+      console.log(
+        `🎭 Using randomized viewport: ${fingerprint.viewport.width}x${fingerprint.viewport.height}`,
+      );
+    } else {
+      console.log(
+        `🎭 Using default fingerprint (${fingerprint.deviceType}): ${fingerprint.userAgent.substring(0, 80)}...`,
+      );
+      console.log(
+        `🎭 Using default viewport: ${fingerprint.viewport.width}x${fingerprint.viewport.height}`,
+      );
     }
 
     // delete ./temp-browser-profile if it exists
@@ -171,30 +206,115 @@ export class GMAuth {
       console.log("🗑️ Deleted existing temp browser profile");
     }
 
-    // Detect platform
-    const isLinux = process.platform === "linux";
+    // Detect platform (isLinux and hasDisplay already declared above)
     const isWindows = process.platform === "win32";
-    const hasDisplay = isLinux && process.env.DISPLAY;
 
-    // Start Xvfb on Linux if no display is available
-    if (isLinux && !hasDisplay) {
+    // Check if Xvfb is already running on Linux
+    if (isLinux && !hasDisplay && this.xvfb) {
+      console.log("🖥️ Xvfb already running, reusing existing virtual display");
+      // Restore the DISPLAY environment variable
+      if (this.xvfbDisplay) {
+        process.env.DISPLAY = this.xvfbDisplay;
+        console.log(`🖥️ Restored DISPLAY: ${process.env.DISPLAY}`);
+      } else {
+        console.log(`🖥️ Current DISPLAY: ${process.env.DISPLAY}`);
+      }
+    }
+
+    // Start Xvfb on Linux if no display is available and Xvfb is not already running
+    if (isLinux && !hasDisplay && !this.xvfb) {
       console.log("🖥️ Starting Xvfb for virtual display...");
       try {
-        this.xvfb = new Xvfb({
-          silent: true,
-          xvfb_args: [
-            "-screen",
-            "0",
-            "1280x720x24",
-            "-ac",
-            "+extension",
-            "GLX",
-          ],
-        });
-        this.xvfb.startSync();
-        console.log(
-          `🖥️ Xvfb started successfully on display ${process.env.DISPLAY}`,
-        );
+        // First check if Xvfb binary is available
+        try {
+          execSync("which Xvfb", { stdio: "ignore" });
+        } catch (e) {
+          console.error("❌ Xvfb binary not found in PATH");
+          throw new Error(
+            "Xvfb is not installed. Please install it with: sudo apt-get install xvfb",
+          );
+        }
+
+        // Also check for xvfb-run as a secondary check
+        try {
+          execSync("which xvfb-run", { stdio: "ignore" });
+        } catch (e) {
+          console.warn("⚠️ xvfb-run not found, but Xvfb binary is available");
+        }
+
+        // Kill any existing Xvfb processes that might be stuck
+        try {
+          execSync('pkill -f "Xvfb.*:99"', { stdio: "ignore" });
+          console.log("🧹 Cleaned up any existing Xvfb processes");
+        } catch (e) {
+          // Ignore errors - no existing processes to clean up
+        }
+
+        // Try multiple display numbers to find an available one
+        const maxAttempts = 5;
+        let displayNum = 99;
+        let xvfbStarted = false;
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          try {
+            console.log(
+              `🖥️ Attempting to start Xvfb on display :${displayNum}...`,
+            );
+
+            this.xvfb = new Xvfb({
+              silent: true,
+              displayNum: displayNum,
+              reuse: false,
+              timeout: 10000, // Increased timeout to 10 seconds
+              xvfb_args: [
+                "-screen",
+                "0",
+                "1280x720x24",
+                "-ac",
+                "+extension",
+                "GLX",
+                "-nolisten",
+                "tcp",
+                "-dpi",
+                "96",
+                "-noreset",
+                "+extension",
+                "RANDR",
+              ],
+            });
+
+            this.xvfb.startSync();
+            xvfbStarted = true;
+            this.xvfbDisplay = process.env.DISPLAY || null; // Store the DISPLAY value
+            console.log(
+              `🖥️ Xvfb started successfully on display :${displayNum} (${process.env.DISPLAY})`,
+            );
+            break;
+          } catch (displayError: any) {
+            console.warn(
+              `⚠️ Failed to start Xvfb on display :${displayNum}: ${displayError.message}`,
+            );
+            displayNum++;
+
+            // Clean up the failed xvfb instance
+            if (this.xvfb) {
+              try {
+                this.xvfb.stopSync();
+              } catch (cleanupError) {
+                // Ignore cleanup errors
+              }
+              this.xvfb = null;
+            }
+
+            if (attempt === maxAttempts - 1) {
+              throw displayError;
+            }
+          }
+        }
+
+        if (!xvfbStarted) {
+          throw new Error(`Failed to start Xvfb after ${maxAttempts} attempts`);
+        }
       } catch (error) {
         console.error("❌ Failed to start Xvfb:", error);
         console.error("💡 To fix this issue, either:");
@@ -203,8 +323,14 @@ export class GMAuth {
         console.error(
           "   3. Set a DISPLAY environment variable if you have a GUI",
         );
+        console.error(
+          "   4. Try running in a container with proper display setup",
+        );
+        console.error(
+          "   5. Ensure no other Xvfb processes are running: pkill Xvfb",
+        );
         throw new Error(
-          "Cannot run browser automation on Linux without a display server. Xvfb is required for headless operation.",
+          "Cannot run browser automation on Linux without a display server. Xvfb is required for headful operation - headless mode is not supported.",
         );
       }
     }
@@ -214,6 +340,16 @@ export class GMAuth {
       "--disable-blink-features=AutomationControlled",
       "--no-first-run",
       "--disable-default-browser-check",
+      "--disable-password-generation",
+      "--disable-save-password-bubble",
+      "--disable-password-manager-reauthentication",
+      "--password-store=basic",
+      "--disable-features=PasswordManager",
+      "--disable-features=VizDisplayCompositor",
+      "--disable-password-manager",
+      "--disable-save-password",
+      "--disable-background-timer-throttling", // Prevent throttling
+      "--disable-backgrounding-occluded-windows", // Prevent backgrounding
     ];
 
     // Add platform-specific args
@@ -237,10 +373,8 @@ export class GMAuth {
         headless: false, // Always headful for better compatibility
         hasTouch: true, // Simulate touch support
         isMobile: true, // Simulate mobile device
-        userAgent:
-          "Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.6 Mobile/15E148 Safari/604.1",
-        //simulate iphone 16 resolution
-        viewport: { width: 430, height: 932 }, // iPhone 16 resolution
+        userAgent: fingerprint.userAgent,
+        viewport: fingerprint.viewport,
         args: browserArgs,
       },
     );
@@ -280,20 +414,26 @@ export class GMAuth {
       this.browser = null;
     }
 
-    // Stop Xvfb if we started it
+    // DON'T stop Xvfb here - we want to reuse it for retries
+    // Xvfb will be stopped in cleanup methods or when the class is destroyed
+
+    // Reset captured auth code when closing browser
+    this.capturedAuthCode = null;
+  }
+
+  // Stop Xvfb when completely done (success or final failure)
+  private async stopXvfb(): Promise<void> {
     if (this.xvfb) {
       try {
         console.log("🖥️ Stopping Xvfb...");
         this.xvfb.stopSync();
         this.xvfb = null;
+        this.xvfbDisplay = null; // Clear stored display value
         console.log("🖥️ Xvfb stopped successfully");
       } catch (error) {
         console.warn("⚠️ Failed to stop Xvfb:", error);
       }
     }
-
-    // Reset captured auth code when closing browser
-    this.capturedAuthCode = null;
   }
 
   // Enable debug mode to show browser and detailed logging
@@ -303,6 +443,16 @@ export class GMAuth {
 
   public disableDebugMode(): void {
     this.debugMode = false;
+  }
+
+  // Public cleanup method to properly stop Xvfb and close browser
+  public async cleanup(): Promise<void> {
+    try {
+      await this.closeBrowser();
+      await this.stopXvfb();
+    } catch (error) {
+      console.warn("Warning: Cleanup failed:", error);
+    }
   }
 
   async authenticate(): Promise<GMAPITokenResponse> {
@@ -327,39 +477,127 @@ export class GMAuth {
       } else {
         console.error("Authentication failed:", error);
       }
+
+      // Ensure cleanup happens on any authentication error
+      try {
+        await this.stopXvfb();
+      } catch (cleanupError) {
+        console.warn(
+          "Warning: Xvfb cleanup failed in authenticate error handler:",
+          cleanupError,
+        );
+      }
+
       throw error;
     }
   }
   async doFullAuthSequence(): Promise<TokenSet> {
-    try {
-      // Reset any previously captured authorization code
-      this.capturedAuthCode = null;
+    const maxRetries = 2;
+    let lastError: Error | null = null;
+    let useRandomFingerprint = true; // Always use randomized fingerprint for better evasion
 
-      const { authorizationUrl, code_verifier } =
-        await this.startMSAuthorizationFlow();
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        if (attempt > 0) {
+          console.log(
+            `🔄 Authentication attempt ${attempt + 1}/${maxRetries + 1} (retry ${attempt})`,
+          );
 
-      // Use browser automation for the initial auth flow
-      await this.submitCredentials(authorizationUrl);
+          // Wait a bit before retrying to avoid rate limiting
+          const delayMs =
+            lastError && lastError.message.includes("Access Denied")
+              ? 5000 + Math.random() * 5000 // 5-10 seconds for access denied
+              : 2000 * attempt; // Standard exponential backoff
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
 
-      // Only call handleMFA if the auth code wasn't captured by submitCredentials
-      if (!this.capturedAuthCode) {
-        await this.handleMFA();
-      }
+        // Reset any previously captured authorization code
+        this.capturedAuthCode = null;
 
-      const authCode = await this.getAuthorizationCode();
-      if (!authCode)
-        throw new Error(
-          "🚫 Failed to get authorization code after all attempts. Possible incorrect credentials, MFA issue, or unexpected page flow.",
+        const { authorizationUrl, code_verifier } =
+          await this.startMSAuthorizationFlow();
+
+        // Use browser automation with randomized fingerprint for better evasion
+        if (attempt === 0) {
+          console.log(
+            "🎭 Using randomized browser fingerprint for authentication",
+          );
+        }
+        await this.submitCredentials(authorizationUrl, useRandomFingerprint);
+
+        // Only call handleMFA if the auth code wasn't captured by submitCredentials
+        if (!this.capturedAuthCode) {
+          await this.handleMFA();
+        }
+
+        const authCode = await this.getAuthorizationCode();
+        if (!authCode) {
+          throw new Error(
+            "🚫 Failed to get authorization code after all attempts. Possible incorrect credentials, MFA issue, or unexpected page flow.",
+          );
+        }
+
+        const tokenSet = await this.getMSToken(authCode, code_verifier);
+        await this.saveTokens(tokenSet);
+
+        if (attempt > 0) {
+          console.log(`✅ Authentication succeeded on attempt ${attempt + 1}`);
+        }
+
+        // Always clean up browser resources after successful authentication
+        try {
+          await this.closeBrowser();
+          await this.stopXvfb(); // Stop Xvfb on successful completion
+        } catch (cleanupError) {
+          console.warn(
+            "Warning: Browser cleanup failed after success:",
+            cleanupError,
+          );
+        }
+
+        return tokenSet;
+      } catch (error) {
+        lastError = error as Error;
+        console.error(
+          `❌ Authentication attempt ${attempt + 1} failed:`,
+          error,
         );
 
-      const tokenSet = await this.getMSToken(authCode, code_verifier);
-      await this.saveTokens(tokenSet);
+        // Always clean up browser resources after each attempt
+        try {
+          await this.closeBrowser();
+        } catch (cleanupError) {
+          console.warn("Warning: Browser cleanup failed:", cleanupError);
+        }
 
-      return tokenSet;
-    } finally {
-      // Always clean up browser resources
-      await this.closeBrowser();
+        // If this is not the last attempt, continue to retry
+        if (attempt < maxRetries) {
+          const isAccessDenied = lastError.message.includes("Access Denied");
+          const delayTime = isAccessDenied ? "5-10" : `${2 * (attempt + 1)}`;
+          console.log(
+            `⏳ Will retry authentication in ${delayTime} seconds...`,
+          );
+          continue;
+        }
+      }
     }
+
+    // If we get here, all retries failed
+    console.error(`🚫 Authentication failed after ${maxRetries + 1} attempts`);
+
+    // Clean up Xvfb on final failure
+    try {
+      await this.stopXvfb();
+    } catch (cleanupError) {
+      console.warn(
+        "Warning: Xvfb cleanup failed after final failure:",
+        cleanupError,
+      );
+    }
+
+    throw (
+      lastError || new Error("Authentication failed after all retry attempts")
+    );
   }
 
   private async saveTokens(tokenSet: TokenSet): Promise<void> {
@@ -398,9 +636,6 @@ export class GMAuth {
     try {
       // Wait for MFA page to load
       await page.waitForLoadState("networkidle");
-
-      // Check for Cloudflare protection on MFA page
-      await this.checkAndHandleCloudflare(page, "MFA page load");
 
       // Look for MFA elements
       await page.waitForSelector(
@@ -553,17 +788,11 @@ export class GMAuth {
         .first();
       await submitMfaButton.waitFor({ timeout: 60000 });
 
-      // Check for Cloudflare protection before MFA submission
-      await this.checkAndHandleCloudflare(page, "before MFA submission");
-
       await submitMfaButton.click();
 
       if (this.debugMode)
         console.log("⌛ Waiting for redirect after MFA submission...");
       await page.waitForLoadState("networkidle", { timeout: 60000 }); // Wait for potential redirects or network activity
-
-      // Check for Cloudflare protection after MFA submission
-      await this.checkAndHandleCloudflare(page, "after MFA submission");
 
       try {
         // Wait for the auth code to be captured by CDP listeners
@@ -590,12 +819,6 @@ export class GMAuth {
       if (this.debugMode)
         console.log("⌛ Waiting for redirect after MFA submission...");
       await page.waitForLoadState("networkidle");
-
-      // Check for Cloudflare protection before final check
-      await this.checkAndHandleCloudflare(
-        page,
-        "before final authorization code check",
-      );
 
       if (this.capturedAuthCode) {
         console.log("Successfully captured authorization code");
@@ -627,32 +850,225 @@ export class GMAuth {
       }
     }
   }
-  private async submitCredentials(authorizationUrl: string): Promise<void> {
+
+  // Generate randomized browser fingerprint to avoid detection
+  private generateRandomFingerprint() {
+    const deviceProfiles = [
+      // iPhones
+      {
+        type: "iPhone",
+        osVersions: [
+          "15_8_3",
+          "16_0",
+          "16_1",
+          "16_2",
+          "16_3",
+          "16_4",
+          "16_5",
+          "16_6",
+          "16_7",
+          "17_0",
+          "17_1",
+          "17_2",
+          "17_3",
+          "17_4",
+          "17_5",
+          "17_6",
+          "18_0",
+          "18_1",
+          "18_2",
+          "18_3",
+        ],
+        safariVersions: [
+          "604.1",
+          "605.1.15",
+          "606.1.36",
+          "607.1.56",
+          "608.1.49",
+          "609.1.20",
+          "610.4.3",
+          "611.2.7",
+        ],
+        webkitVersions: [
+          "605.1.15",
+          "606.4.10",
+          "607.3.10",
+          "608.4.9",
+          "609.4.1",
+          "610.1.28",
+          "611.3.10",
+          "612.1.6",
+        ],
+        viewports: [
+          { width: 430, height: 932 }, // iPhone 15 Pro Max
+          { width: 393, height: 852 }, // iPhone 15 Pro
+          { width: 390, height: 844 }, // iPhone 15/15 Plus
+          { width: 428, height: 926 }, // iPhone 14 Pro Max
+          { width: 393, height: 852 }, // iPhone 14 Pro
+          { width: 390, height: 844 }, // iPhone 14/14 Plus
+          { width: 428, height: 926 }, // iPhone 13 Pro Max
+          { width: 390, height: 844 }, // iPhone 13/13 Pro/13 Mini
+          { width: 375, height: 812 }, // iPhone 12/12 Pro/12 Mini
+          { width: 414, height: 896 }, // iPhone 11/11 Pro Max/XR/XS Max
+          { width: 375, height: 812 }, // iPhone X/XS/11 Pro
+          { width: 414, height: 736 }, // iPhone 8 Plus/7 Plus/6s Plus
+          { width: 375, height: 667 }, // iPhone 8/7/6s/6/SE
+        ],
+        getUserAgent: (p: any) =>
+          `Mozilla/5.0 (iPhone; CPU iPhone OS ${this.getRandom(p.osVersions)} like Mac OS X) AppleWebKit/${this.getRandom(p.webkitVersions)} (KHTML, like Gecko) Version/${this.getRandom(p.safariVersions)} Mobile/15E148 Safari/${this.getRandom(p.safariVersions)}`,
+      },
+      // iPads
+      {
+        type: "iPad",
+        osVersions: [
+          "15_8_3",
+          "16_0",
+          "16_1",
+          "16_2",
+          "16_3",
+          "16_4",
+          "16_5",
+          "16_6",
+          "16_7",
+          "17_0",
+          "17_1",
+          "17_2",
+          "17_3",
+          "17_4",
+          "17_5",
+          "17_6",
+          "18_0",
+          "18_1",
+        ],
+        safariVersions: [
+          "604.1",
+          "605.1.15",
+          "606.1.36",
+          "607.1.56",
+          "608.1.49",
+          "609.1.20",
+        ],
+        webkitVersions: [
+          "605.1.15",
+          "606.4.10",
+          "607.3.10",
+          "608.4.9",
+          "609.4.1",
+          "610.1.28",
+        ],
+        viewports: [
+          { width: 1024, height: 1366 }, // iPad Pro 12.9"
+          { width: 834, height: 1194 }, // iPad Pro 11"
+          { width: 820, height: 1180 }, // iPad Air
+          { width: 768, height: 1024 }, // iPad Mini/9.7"
+        ],
+        getUserAgent: (p: any) =>
+          `Mozilla/5.0 (iPad; CPU OS ${this.getRandom(p.osVersions)} like Mac OS X) AppleWebKit/${this.getRandom(p.webkitVersions)} (KHTML, like Gecko) Version/${this.getRandom(p.safariVersions)} Mobile/15E148 Safari/${this.getRandom(p.safariVersions)}`,
+      },
+      // Samsung Phones (Android)
+      {
+        type: "Samsung Phone",
+        androidVersions: ["13", "14", "15"],
+        chromeVersions: ["124.0.6367.113", "125.0.6422.112", "126.0.6478.71"],
+        models: [
+          "SM-S928B", // Galaxy S24 Ultra
+          "SM-S918U", // Galaxy S23 Ultra
+          "SM-G998B", // Galaxy S21 Ultra
+          "SM-F946B", // Galaxy Z Fold 5
+        ],
+        viewports: [
+          { width: 412, height: 915 },
+          { width: 384, height: 854 },
+          { width: 360, height: 740 },
+        ],
+        getUserAgent: (p: any) =>
+          `Mozilla/5.0 (Linux; Android ${this.getRandom(p.androidVersions)}; ${this.getRandom(p.models)}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${this.getRandom(p.chromeVersions)} Mobile Safari/537.36`,
+      },
+      // Google Pixel Phones (Android)
+      {
+        type: "Google Pixel",
+        androidVersions: ["12", "13", "14", "15"],
+        chromeVersions: [
+          "122.0.6261.119",
+          "123.0.6312.99",
+          "124.0.6367.113",
+          "125.0.6422.112",
+          "126.0.6478.71",
+          "127.0.6533.64",
+        ],
+        models: [
+          "Pixel 9 Pro XL",
+          "Pixel 9 Pro",
+          "Pixel 9",
+          "Pixel 8a",
+          "Pixel 8 Pro",
+          "Pixel 8",
+          "Pixel 7a",
+          "Pixel 7 Pro",
+          "Pixel 7",
+          "Pixel 6a",
+          "Pixel 6 Pro",
+          "Pixel 6",
+          "Pixel 5a",
+          "Pixel 5",
+          "Pixel 4a",
+          "Pixel 4",
+        ],
+        viewports: [
+          { width: 412, height: 915 }, // Pixel 9 Pro XL
+          { width: 384, height: 854 }, // Pixel 9 Pro
+          { width: 393, height: 851 }, // Pixel 9/8/7
+          { width: 412, height: 892 }, // Pixel 8a/7a/6a
+          { width: 412, height: 869 }, // Pixel 6 Pro
+          { width: 393, height: 786 }, // Pixel 5a/5
+          { width: 393, height: 851 }, // Pixel 4a/4
+        ],
+        getUserAgent: (p: any) =>
+          `Mozilla/5.0 (Linux; Android ${this.getRandom(p.androidVersions)}; ${this.getRandom(p.models)}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${this.getRandom(p.chromeVersions)} Mobile Safari/537.36`,
+      },
+      // Microsoft Surface (Windows Tablet)
+      {
+        type: "Microsoft Surface",
+        edgeVersions: ["124.0.2478.80", "125.0.2535.51", "126.0.2592.56"],
+        chromeVersions: ["124.0.6367.113", "125.0.6422.112", "126.0.6478.71"],
+        viewports: [
+          { width: 915, height: 1368 }, // Surface Pro
+          { width: 810, height: 1080 }, // Surface Go
+        ],
+        getUserAgent: (p: any) =>
+          `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${this.getRandom(p.chromeVersions)} Safari/537.36 Edg/${this.getRandom(p.edgeVersions)}`,
+      },
+    ];
+
+    // Select a random device profile
+    const profile = this.getRandom(deviceProfiles);
+
+    // Generate user agent and viewport from the selected profile
+    const userAgent = profile.getUserAgent(profile);
+    const viewport = this.getRandom(profile.viewports);
+
+    return { userAgent, viewport, deviceType: profile.type };
+  }
+
+  // Helper to get a random element from an array
+  private getRandom(arr: any[]) {
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
+
+  private async submitCredentials(
+    authorizationUrl: string,
+    useRandomFingerprint: boolean = false,
+  ): Promise<void> {
     console.log("Starting browser-based authentication");
 
     // Initialize browser if not already done
-    await this.initBrowser();
+    await this.initBrowser(useRandomFingerprint);
     if (!this.context) {
       throw new Error("Browser context not initialized");
     }
 
     const page = await this.context.newPage();
     this.currentPage = page;
-
-    // Add a general page load listener to detect Cloudflare on any navigation
-    page.on("load", async () => {
-      try {
-        const hasCloudflare = await this.detectCloudflare(page);
-        if (hasCloudflare && this.debugMode) {
-          console.log("Cloudflare detected on page load:", page.url());
-        }
-      } catch (error) {
-        // Ignore errors in the load listener to not break the main flow
-        if (this.debugMode) {
-          console.warn("Error checking Cloudflare on page load:", error);
-        }
-      }
-    });
 
     try {
       // Navigate to the authorization URL
@@ -682,9 +1098,6 @@ export class GMAuth {
       console.log("Page loaded, current URL:", page.url());
       console.log("Page title:", await page.title());
 
-      // Check for Cloudflare protection after page loads
-      await this.checkAndHandleCloudflare(page, "initial page load");
-
       // Check if we're stuck on a loading page
       const title = await page.title();
       if (
@@ -706,18 +1119,9 @@ export class GMAuth {
 
         const newTitle = await page.title();
         console.log("Page title after refresh:", newTitle);
-
-        // Check for Cloudflare protection after page refresh
-        await this.checkAndHandleCloudflare(page, "page refresh");
       }
 
       console.log("Looking for email field...");
-
-      // Check for Cloudflare protection before attempting to find email field
-      await this.checkAndHandleCloudflare(
-        page,
-        "before email field interaction",
-      );
 
       // Find and fill email field
       const emailField = page
@@ -744,9 +1148,6 @@ export class GMAuth {
       // Wait for password page and fill password
       await page.waitForLoadState("networkidle", { timeout: 60000 });
 
-      // Check for Cloudflare protection on password page
-      await this.checkAndHandleCloudflare(page, "password page");
-
       const passwordField = page
         .locator(
           'input[type="password"], input[name="password"], [aria-label*="Password"i], [placeholder*="Password"i]',
@@ -761,6 +1162,9 @@ export class GMAuth {
       // Enable CDP Network domain for low-level network monitoring
       const client = await page.context().newCDPSession(page);
       await client.send("Network.enable");
+
+      // Flag to track if access is denied
+      let accessDenied = false;
 
       // Set up CDP network listener to catch everything that appears in DevTools
       client.on("Network.requestWillBeSent", (params: any) => {
@@ -795,45 +1199,66 @@ export class GMAuth {
         }
       });
 
-      // // Also listen for redirects at CDP level
-      // client.on("Network.responseReceived", (params: any) => {
-      //   const response = params.response;
-      //   if (
-      //     (response.status === 301 || response.status === 302) &&
-      //     response.headers &&
-      //     response.headers.location
-      //   ) {
-      //     const location = response.headers.location;
-      //     if (this.debugMode) {
-      //       console.log(
-      //         `[DEBUG CDP responseReceived] Redirect from ${response.url} to: ${location}`,
-      //       );
-      //     }
+      // Listen for responses to check for Access Denied
+      client.on("Network.responseReceived", async (params: any) => {
+        const response = params.response;
 
-      //     if (
-      //       location
-      //         .toLowerCase()
-      //         .startsWith("msauth.com.gm.mychevrolet://auth")
-      //     ) {
-      //       console.log(
-      //         `[SUCCESS CDP responseReceived] Captured msauth redirect via CDP response. Location: ${location}`,
-      //       );
-      //       this.capturedAuthCode = this.getRegexMatch(
-      //         location,
-      //         `[?&]code=([^&]*)`,
-      //       );
-      //       if (this.capturedAuthCode) {
-      //         console.log(
-      //           `[SUCCESS CDP responseReceived] Extracted authorization code: ${this.capturedAuthCode}`,
-      //         );
-      //       } else {
-      //         console.error(
-      //           `[ERROR CDP responseReceived] msauth redirect found, but FAILED to extract code from: ${location}`,
-      //         );
-      //       }
-      //     }
-      //   }
-      // });
+        try {
+          // Get the response body to check for access denied
+          const responseBody = await client.send("Network.getResponseBody", {
+            requestId: params.requestId,
+          });
+
+          if (
+            responseBody.body &&
+            responseBody.body.includes("<TITLE>Access Denied</TITLE>")
+          ) {
+            console.log(
+              `[ACCESS DENIED] Detected access denied response from: ${response.url}`,
+            );
+            accessDenied = true;
+          }
+        } catch (error) {
+          // Ignore errors when getting response body (some responses may not be available)
+        }
+
+        // Also check redirects at CDP level for auth codes
+        if (
+          (response.status === 301 || response.status === 302) &&
+          response.headers &&
+          response.headers.location
+        ) {
+          const location = response.headers.location;
+          if (this.debugMode) {
+            console.log(
+              `[DEBUG CDP responseReceived] Redirect from ${response.url} to: ${location}`,
+            );
+          }
+
+          if (
+            location
+              .toLowerCase()
+              .startsWith("msauth.com.gm.mychevrolet://auth")
+          ) {
+            console.log(
+              `[SUCCESS CDP responseReceived] Captured msauth redirect via CDP response. Location: ${location}`,
+            );
+            this.capturedAuthCode = this.getRegexMatch(
+              location,
+              `[?&]code=([^&]*)`,
+            );
+            if (this.capturedAuthCode) {
+              console.log(
+                `[SUCCESS CDP responseReceived] Extracted authorization code: ${this.capturedAuthCode}`,
+              );
+            } else {
+              console.error(
+                `[ERROR CDP responseReceived] msauth redirect found, but FAILED to extract code from: ${location}`,
+              );
+            }
+          }
+        }
+      });
 
       // Click the sign-in button
       const submitButton = page
@@ -849,8 +1274,12 @@ export class GMAuth {
       await page.waitForTimeout(3000);
       var postSubmitTitle = await page.title();
 
-      // Check for Cloudflare protection after credential submission
-      await this.checkAndHandleCloudflare(page, "after credential submission");
+      // Check for access denied response detected by CDP
+      if (accessDenied) {
+        throw new Error(
+          "🚫 Access Denied: Authentication blocked. This could be due to rate limiting, IP blocking, or security restrictions. Please wait before retrying or check if your IP is blocked.",
+        );
+      }
 
       // Wait for network to be idle in case other things are happening,
       // or if MFA is indeed the next step.
@@ -865,8 +1294,6 @@ export class GMAuth {
       await page.waitForLoadState("networkidle", { timeout: 60000 });
 
       postSubmitTitle = await page.title();
-      // Check for Cloudflare protection after network idle
-      await this.checkAndHandleCloudflare(page, "after network idle");
 
       // Check if we're still on the sign-in page (credential submission failed)
       if (postSubmitTitle.toLowerCase().includes("sign in")) {
@@ -892,10 +1319,6 @@ export class GMAuth {
           "🔄 Attempting to refresh page and retry credential submission...",
         );
         await page.reload({ waitUntil: "networkidle" });
-        await this.checkAndHandleCloudflare(
-          page,
-          "after page reload for retry",
-        );
 
         // Re-find and fill email field
         const retryEmailField = page
@@ -916,7 +1339,6 @@ export class GMAuth {
 
         // Wait for password page
         await page.waitForLoadState("networkidle", { timeout: 30000 });
-        await this.checkAndHandleCloudflare(page, "password page retry");
 
         // Re-find and fill password field
         const retryPasswordField = page
@@ -943,17 +1365,17 @@ export class GMAuth {
         const retryTitle = await page.title();
         console.log(`Page title after retry: "${retryTitle}"`);
 
-        // If still stuck on sign-in page after retry, something is seriously wrong
-        if (retryTitle.toLowerCase().includes("sign in")) {
-          // Save a screenshot
-          await page.screenshot({
-            path: "debug-retry-failed.png",
-            fullPage: true,
-          });
-          throw new Error(
-            `Credentials repeatedly rejected. Page title after retry: "${retryTitle}". Please check your username and password.`,
-          );
-        }
+        // // If still stuck on sign-in page after retry, something is seriously wrong
+        // if (retryTitle.toLowerCase().includes("sign in")) {
+        //   // Save a screenshot
+        //   await page.screenshot({
+        //     path: "debug-retry-failed.png",
+        //     fullPage: true,
+        //   });
+        //   throw new Error(
+        //     `Credentials repeatedly rejected. Page title after retry: "${retryTitle}". Please check your username and password.`,
+        //   );
+        // }
 
         // Update postSubmitTitle for subsequent checks
         postSubmitTitle = retryTitle;
@@ -1630,144 +2052,6 @@ export class GMAuth {
     }
 
     return false;
-  }
-
-  private async detectCloudflare(page: Page): Promise<boolean> {
-    try {
-      // Check for Cloudflare text indicators (case insensitive)
-      const cloudflareTextVisible = await page
-        .getByText("cloudflare", { exact: false })
-        .isVisible();
-      const checkingBrowserVisible = await page
-        .getByText("checking your browser", { exact: false })
-        .isVisible();
-      const ddosProtectionVisible = await page
-        .getByText("ddos protection", { exact: false })
-        .isVisible();
-      const verifyingVisible = await page
-        .getByText("verifying you are human", { exact: false })
-        .isVisible();
-      const pleaseWaitVisible = await page
-        .getByText("please wait", { exact: false })
-        .isVisible();
-
-      // Check for Cloudflare-specific elements and IDs
-      const rayIdVisible = await page
-        .locator("[data-ray], .cf-ray, #cf-ray, [id*='ray']")
-        .isVisible();
-
-      // Check for Cloudflare-specific classes and elements
-      const cloudflareElements = await page
-        .locator(
-          ".cf-browser-verification, .cf-challenge-running, .cf-checking-browser, .cf-wrapper, .cf-column, .cf-section, .cf-header, #cf-content, .challenge-running, .challenge-stage",
-        )
-        .count();
-
-      // Check for typical Cloudflare challenge page structure
-      const challengeForm = await page
-        .locator(
-          'form[action*="__cf_chl_jschl_tk__"], form[action*="cf_chl_jschl_tk"], form[id*="challenge"], form[class*="challenge"]',
-        )
-        .count();
-
-      // Check page title for Cloudflare indicators
-      const pageTitle = await page.title();
-      const titleHasCloudflare =
-        pageTitle.toLowerCase().includes("cloudflare") ||
-        pageTitle.toLowerCase().includes("checking your browser") ||
-        pageTitle.toLowerCase().includes("ddos protection") ||
-        pageTitle.toLowerCase().includes("security check");
-
-      // Check for Cloudflare scripts
-      const cloudflareScripts = await page
-        .locator('script[src*="cloudflare"], script[src*="cf-"]')
-        .count();
-
-      // Check page content for Cloudflare indicators
-      const pageContent = await page.content();
-      const contentHasCloudflare =
-        pageContent.toLowerCase().includes("cloudflare") ||
-        pageContent.toLowerCase().includes("cf-ray") ||
-        pageContent.toLowerCase().includes("checking your browser") ||
-        pageContent.toLowerCase().includes("ddos protection");
-
-      const isCloudflare =
-        cloudflareTextVisible ||
-        checkingBrowserVisible ||
-        ddosProtectionVisible ||
-        verifyingVisible ||
-        pleaseWaitVisible ||
-        rayIdVisible ||
-        cloudflareElements > 0 ||
-        challengeForm > 0 ||
-        titleHasCloudflare ||
-        cloudflareScripts > 0 ||
-        contentHasCloudflare;
-
-      if (isCloudflare && this.debugMode) {
-        console.log("Cloudflare detection results:", {
-          cloudflareTextVisible,
-          checkingBrowserVisible,
-          ddosProtectionVisible,
-          verifyingVisible,
-          pleaseWaitVisible,
-          rayIdVisible,
-          cloudflareElements,
-          challengeForm,
-          titleHasCloudflare,
-          cloudflareScripts,
-          contentHasCloudflare,
-          pageTitle,
-          currentUrl: page.url(),
-        });
-      }
-
-      return isCloudflare;
-    } catch (error) {
-      // If any check fails, assume no Cloudflare (better to proceed than fail)
-      console.warn("Error checking for Cloudflare:", error);
-      return false;
-    }
-  }
-
-  private async handleCloudflareDetection(page: Page): Promise<void> {
-    console.log("*** CLOUDFLARE DETECTED ***");
-
-    console.log(
-      "Cloudflare protection detected. This may interfere with authentication.",
-    );
-
-    // Wait a bit to see if Cloudflare challenge completes automatically
-    console.log(
-      "Waiting 10 seconds to see if Cloudflare challenge completes...",
-    );
-    await page.waitForTimeout(10000);
-
-    // Check again if we're still on Cloudflare page
-    const stillHasCloudflare = await this.detectCloudflare(page);
-    if (stillHasCloudflare) {
-      throw new Error(
-        "Cloudflare protection is blocking authentication. Please try again later or use a different network.",
-      );
-    } else {
-      console.log(
-        "Cloudflare challenge appears to have completed. Continuing...",
-      );
-    }
-  }
-
-  // Helper method to check for Cloudflare and handle it in one call
-  private async checkAndHandleCloudflare(
-    page: Page,
-    context: string,
-  ): Promise<void> {
-    const hasCloudflare = await this.detectCloudflare(page);
-    if (hasCloudflare) {
-      if (this.debugMode) {
-        console.log(`Cloudflare detected at ${context}`);
-      }
-      await this.handleCloudflareDetection(page);
-    }
   }
 }
 
