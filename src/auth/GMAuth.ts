@@ -12,6 +12,7 @@ import path from "path";
 import jwt from "jsonwebtoken";
 import { chromium, Browser, BrowserContext, Page } from "patchright";
 import { randomInt } from "crypto";
+import { execSync } from "child_process";
 
 // Import xvfb with explicit any type to avoid TypeScript issues
 const Xvfb = require("xvfb") as any;
@@ -213,21 +214,95 @@ export class GMAuth {
     if (isLinux && !hasDisplay) {
       console.log("🖥️ Starting Xvfb for virtual display...");
       try {
-        this.xvfb = new Xvfb({
-          silent: true,
-          xvfb_args: [
-            "-screen",
-            "0",
-            "1280x720x24",
-            "-ac",
-            "+extension",
-            "GLX",
-          ],
-        });
-        this.xvfb.startSync();
-        console.log(
-          `🖥️ Xvfb started successfully on display ${process.env.DISPLAY}`,
-        );
+        // First check if Xvfb binary is available
+        try {
+          execSync("which Xvfb", { stdio: "ignore" });
+        } catch (e) {
+          console.error("❌ Xvfb binary not found in PATH");
+          throw new Error(
+            "Xvfb is not installed. Please install it with: sudo apt-get install xvfb",
+          );
+        }
+
+        // Also check for xvfb-run as a secondary check
+        try {
+          execSync("which xvfb-run", { stdio: "ignore" });
+        } catch (e) {
+          console.warn("⚠️ xvfb-run not found, but Xvfb binary is available");
+        }
+
+        // Kill any existing Xvfb processes that might be stuck
+        try {
+          execSync('pkill -f "Xvfb.*:99"', { stdio: "ignore" });
+          console.log("🧹 Cleaned up any existing Xvfb processes");
+        } catch (e) {
+          // Ignore errors - no existing processes to clean up
+        }
+
+        // Try multiple display numbers to find an available one
+        const maxAttempts = 5;
+        let displayNum = 99;
+        let xvfbStarted = false;
+
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          try {
+            console.log(
+              `🖥️ Attempting to start Xvfb on display :${displayNum}...`,
+            );
+
+            this.xvfb = new Xvfb({
+              silent: true,
+              displayNum: displayNum,
+              reuse: false,
+              timeout: 10000, // Increased timeout to 10 seconds
+              xvfb_args: [
+                "-screen",
+                "0",
+                "1280x720x24",
+                "-ac",
+                "+extension",
+                "GLX",
+                "-nolisten",
+                "tcp",
+                "-dpi",
+                "96",
+                "-noreset",
+                "+extension",
+                "RANDR",
+              ],
+            });
+
+            this.xvfb.startSync();
+            xvfbStarted = true;
+            console.log(
+              `🖥️ Xvfb started successfully on display :${displayNum} (${process.env.DISPLAY})`,
+            );
+            break;
+          } catch (displayError: any) {
+            console.warn(
+              `⚠️ Failed to start Xvfb on display :${displayNum}: ${displayError.message}`,
+            );
+            displayNum++;
+
+            // Clean up the failed xvfb instance
+            if (this.xvfb) {
+              try {
+                this.xvfb.stopSync();
+              } catch (cleanupError) {
+                // Ignore cleanup errors
+              }
+              this.xvfb = null;
+            }
+
+            if (attempt === maxAttempts - 1) {
+              throw displayError;
+            }
+          }
+        }
+
+        if (!xvfbStarted) {
+          throw new Error(`Failed to start Xvfb after ${maxAttempts} attempts`);
+        }
       } catch (error) {
         console.error("❌ Failed to start Xvfb:", error);
         console.error("💡 To fix this issue, either:");
@@ -236,8 +311,14 @@ export class GMAuth {
         console.error(
           "   3. Set a DISPLAY environment variable if you have a GUI",
         );
+        console.error(
+          "   4. Try running in a container with proper display setup",
+        );
+        console.error(
+          "   5. Ensure no other Xvfb processes are running: pkill Xvfb",
+        );
         throw new Error(
-          "Cannot run browser automation on Linux without a display server. Xvfb is required for headless operation.",
+          "Cannot run browser automation on Linux without a display server. Xvfb is required for headful operation - headless mode is not supported.",
         );
       }
     }
