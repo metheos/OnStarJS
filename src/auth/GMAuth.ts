@@ -366,7 +366,7 @@ export class GMAuth {
   async doFullAuthSequence(): Promise<TokenSet> {
     const maxRetries = 2;
     let lastError: Error | null = null;
-    let useRandomFingerprint = false;
+    let useRandomFingerprint = true; // Always use randomized fingerprint for better evasion
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
@@ -374,14 +374,6 @@ export class GMAuth {
           console.log(
             `🔄 Authentication attempt ${attempt + 1}/${maxRetries + 1} (retry ${attempt})`,
           );
-
-          // Check if the last error was access denied
-          if (lastError && lastError.message.includes("Access Denied")) {
-            console.log(
-              "🎭 Access denied detected - using randomized browser fingerprint for retry",
-            );
-            useRandomFingerprint = true;
-          }
 
           // Wait a bit before retrying to avoid rate limiting
           const delayMs =
@@ -397,7 +389,12 @@ export class GMAuth {
         const { authorizationUrl, code_verifier } =
           await this.startMSAuthorizationFlow();
 
-        // Use browser automation for the initial auth flow with optional fingerprint randomization
+        // Use browser automation with randomized fingerprint for better evasion
+        if (attempt === 0) {
+          console.log(
+            "🎭 Using randomized browser fingerprint for authentication",
+          );
+        }
         await this.submitCredentials(authorizationUrl, useRandomFingerprint);
 
         // Only call handleMFA if the auth code wasn't captured by submitCredentials
@@ -449,7 +446,7 @@ export class GMAuth {
           const isAccessDenied = lastError.message.includes("Access Denied");
           const delayTime = isAccessDenied ? "5-10" : `${2 * (attempt + 1)}`;
           console.log(
-            `⏳ Will retry authentication in ${delayTime} seconds${isAccessDenied ? " with randomized fingerprint" : ""}...`,
+            `⏳ Will retry authentication in ${delayTime} seconds...`,
           );
           continue;
         }
