@@ -163,8 +163,15 @@ export class GMAuth {
   private async initBrowser(
     useRandomFingerprint: boolean = false,
   ): Promise<void> {
-    if (this.browser) {
-      return; // Browser already initialized
+    // Detect platform early to check Xvfb state
+    const isLinux = process.platform === "linux";
+    const hasDisplay = isLinux && process.env.DISPLAY;
+
+    // Check if we need to restart Xvfb (Linux without display and no running Xvfb)
+    const needsXvfb = isLinux && !hasDisplay && !this.xvfb;
+
+    if (this.browser && !needsXvfb) {
+      return; // Browser already initialized and Xvfb is running if needed
     }
 
     // Generate random fingerprint if requested
@@ -191,10 +198,8 @@ export class GMAuth {
       console.log("🗑️ Deleted existing temp browser profile");
     }
 
-    // Detect platform
-    const isLinux = process.platform === "linux";
+    // Detect platform (isLinux and hasDisplay already declared above)
     const isWindows = process.platform === "win32";
-    const hasDisplay = isLinux && process.env.DISPLAY;
 
     // Start Xvfb on Linux if no display is available
     if (isLinux && !hasDisplay) {
