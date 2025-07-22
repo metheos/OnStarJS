@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.8.0](https://github.com/BigThunderSR/OnStarJS/compare/v2.7.0...v2.8.0) (2025-07-22)
+
+
+### Features
+
+* **tests:** adjust test timeout settings for improved reliability ([#400](https://github.com/BigThunderSR/OnStarJS/issues/400)) ([7c508c2](https://github.com/BigThunderSR/OnStarJS/commit/7c508c22e9ab989b74c27d26b6499538e5b8ede7))
+
+
+### Bug Fixes
+
+* **deps:** bump chromium-bidi from 7.1.1 to 7.2.0 ([#398](https://github.com/BigThunderSR/OnStarJS/issues/398)) ([ae5cd2e](https://github.com/BigThunderSR/OnStarJS/commit/ae5cd2eb32ff6f906364a239345fbecaafe25cc5))
+
 ## [2.7.0](https://github.com/BigThunderSR/OnStarJS/compare/v2.6.7...v2.7.0) (2025-07-17)
 
 
