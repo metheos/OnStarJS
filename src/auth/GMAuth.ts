@@ -87,6 +87,7 @@ export class GMAuth {
   private xvfbDisplay: string | null = null; // Store the DISPLAY value for Xvfb
   private cleanupInProgress: boolean = false; // Flag to prevent concurrent cleanup
   private browserWarmedUp: boolean = false; // Flag to track if browser has been warmed up for current profile
+  private usingFallbackLaunch: boolean = false; // Flag to track if we're using fallback browser launch method
 
   constructor(config: GMAuthConfig) {
     this.config = config;
@@ -575,9 +576,27 @@ export class GMAuth {
           console.log("✅ Persistent context launched with minimal args");
         } catch (retryError) {
           console.error("❌ Failed even with minimal args:", retryError);
-          throw new Error(
-            `Failed to launch browser persistent context: ${retryError}`,
-          );
+
+          // Final fallback: try regular browser launch with newContext
+          console.log("🔄 Falling back to regular browser launch...");
+          try {
+            this.browser = await chromium.launch({
+              headless: false,
+              args: minimalArgs,
+            });
+            this.context = await this.browser.newContext({
+              userAgent: fingerprint.userAgent,
+              viewport: fingerprint.viewport,
+            });
+            this.usingFallbackLaunch = true;
+            console.log("✅ Fallback browser launch succeeded");
+          } catch (fallbackError) {
+            console.error(
+              "❌ All browser launch methods failed:",
+              fallbackError,
+            );
+            throw new Error(`Failed to launch browser: ${fallbackError}`);
+          }
         }
       } else {
         throw new Error(
@@ -586,8 +605,10 @@ export class GMAuth {
       }
     }
 
-    // The browser is part of the persistent context
-    this.browser = this.context.browser();
+    // The browser is part of the persistent context (or explicitly launched in fallback)
+    if (!this.browser) {
+      this.browser = this.context.browser();
+    }
 
     // Wait a moment for browser to fully initialize
     await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -635,6 +656,9 @@ export class GMAuth {
     // Perform browser warmup if not already done for this profile
     if (!this.browserWarmedUp && useRandomFingerprint) {
       console.log("🔥 Warming up browser session...");
+      if (this.usingFallbackLaunch) {
+        console.log("🔧 Using fallback launch method - warmup will be limited");
+      }
       try {
         // Create a new page for warmup activities
         const warmupPage = await this.context.newPage();
@@ -765,6 +789,9 @@ export class GMAuth {
 
     // Reset warmup state when completely closing browser
     this.browserWarmedUp = false;
+
+    // Reset fallback launch flag
+    this.usingFallbackLaunch = false;
   }
 
   // Stop Xvfb when completely done (success or final failure)
