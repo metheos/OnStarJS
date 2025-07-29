@@ -2349,9 +2349,100 @@ export class GMAuth {
 
       // Check for access denied response detected by CDP
       if (accessDenied) {
-        throw new Error(
-          "🚫 Access Denied: Authentication blocked. This could be due to rate limiting, IP blocking, or security restrictions. Please wait before retrying or check if your IP is blocked.",
-        );
+        let retryCount = 0;
+        const maxRetries = 2;
+
+        while (accessDenied && retryCount < maxRetries) {
+          retryCount++;
+          console.log(
+            `🔄 Access denied detected. Retrying credential submission (attempt ${retryCount}/${maxRetries})...`,
+          );
+
+          // Reset the access denied flag for this retry
+          accessDenied = false;
+
+          // Wait a bit before retrying
+          await page.waitForTimeout(2000 + Math.random() * 3000);
+
+          try {
+            // Refresh the page to start over with credential submission
+            console.log("🔄 Refreshing authentication page for retry...");
+            await page.reload({ waitUntil: "networkidle", timeout: 60000 });
+
+            // Re-enter email
+            console.log(
+              "🔍 Re-locating email input field after page refresh...",
+            );
+            const retryEmailField = page
+              .locator(
+                'input[type="email"], input[name="logonIdentifier"], input#logonIdentifier, [aria-label*="Email"i], [placeholder*="Email"i]',
+              )
+              .first();
+            await retryEmailField.waitFor({ timeout: 60000 });
+
+            console.log("✅ Email field found - entering email address");
+            await retryEmailField.click({ delay: Math.random() * 200 + 50 });
+            await retryEmailField.fill(this.config.username);
+
+            // Click continue button
+            console.log("🔍 Locating Continue button...");
+            const retryContinueButton = page
+              .locator(
+                'button#continue[data-dtm="sign in"][aria-label="Continue"], button:has-text("Continue")[data-dtm="sign in"], [role="button"][aria-label*="Continue"i]',
+              )
+              .first();
+            await retryContinueButton.waitFor({ timeout: 60000 });
+            await retryContinueButton.click({
+              delay: Math.random() * 200 + 50,
+            });
+
+            // Wait for password page
+            console.log("⏳ Waiting for password page to load...");
+            await page.waitForLoadState("networkidle", { timeout: 60000 });
+
+            // Re-enter password
+            console.log("🔍 Re-locating password input field...");
+            const retryPasswordField = page
+              .locator(
+                'input[type="password"], input[name="password"], [aria-label*="Password"i], [placeholder*="Password"i]',
+              )
+              .first();
+            await retryPasswordField.waitFor({ timeout: 60000 });
+
+            console.log("✅ Password field found - entering password");
+            await retryPasswordField.click({ delay: Math.random() * 200 + 50 });
+            await retryPasswordField.fill(this.config.password);
+
+            // Re-submit credentials
+            console.log("🔍 Locating Sign In button for retry submission...");
+            const retrySubmitButton = page
+              .locator(
+                'button#continue[data-dtm="sign in"][aria-label="Sign in"], button:has-text("Log In")[data-dtm="sign in"], button:has-text("Sign in")[data-dtm="sign in"], [role="button"][aria-label*="Sign in"i], [role="button"][aria-label*="Log In"i]',
+              )
+              .first();
+            await retrySubmitButton.waitFor({ timeout: 60000 });
+            await retrySubmitButton.click({ delay: Math.random() * 200 + 50 });
+
+            // Wait for response
+            console.log(
+              "⏳ Waiting for authentication response after retry...",
+            );
+            await page.waitForTimeout(3000);
+            await page.waitForLoadState("networkidle", { timeout: 60000 });
+
+            console.log(`✅ Retry attempt ${retryCount} completed`);
+          } catch (retryError) {
+            console.error(`❌ Retry attempt ${retryCount} failed:`, retryError);
+            // Continue to next retry or exit loop if max retries reached
+          }
+        }
+
+        // If still access denied after all retries, throw the error
+        if (accessDenied) {
+          throw new Error(
+            `�🚫 Access Denied: Authentication blocked after ${maxRetries} retries. This could be due to rate limiting, IP blocking, or security restrictions. Please wait before retrying or check if your IP is blocked.`,
+          );
+        }
       }
 
       // Wait for network to be idle in case other things are happening,
