@@ -575,6 +575,48 @@ export class GMAuth {
       "--disable-image-animation-resync",
       "--aggressive-cache-discard",
       "--enable-surface-synchronization",
+      // Advanced anti-detection flags
+      "--disable-features=UserAgentClientHint",
+      "--disable-features=UserAgentReduction",
+      "--disable-features=WebRtcHideLocalIpsWithMdns",
+      "--disable-web-security",
+      "--disable-site-isolation-trials",
+      "--disable-features=VizServiceDisplay",
+      "--disable-features=VizHitTestSurfaceLayer",
+      "--disable-features=VizDisplayCompositor",
+      "--disable-logging",
+      "--silent",
+      "--disable-gpu-sandbox",
+      "--disable-software-rasterizer",
+      "--disable-zygote",
+      "--no-zygote",
+      "--disable-dev-tools",
+      "--remote-debugging-port=0",
+      "--disable-features=msSmartScreenProtection",
+      "--disable-background-mode",
+      "--disable-renderer-accessibility",
+      "--disable-extensions",
+      "--disable-plugins",
+      "--disable-prerender-local-predictor",
+      "--disable-sync-preferences",
+      "--disable-sync-app-list",
+      "--disable-speech-api",
+      "--disable-file-system",
+      "--disable-presentation-api",
+      "--disable-permissions-api",
+      "--disable-notification-content-image",
+      "--disable-new-profile-management",
+      "--disable-new-avatar-menu",
+      "--disable-search-engine-choice-screen",
+      "--simulate-outdated-no-au='Tue, 31 Dec 2099 23:59:59 GMT'",
+      "--force-fieldtrials=*BackgroundTracing/default/",
+      "--force-fieldtrial-params=BackgroundTracing.default:mode/preemptive",
+      "--disable-field-trial-config",
+      "--disable-background-tracing",
+      "--disable-ipc-security-tests",
+      "--allow-pre-commit-input",
+      "--disable-v8-idle-tasks",
+      "--max_old_space_size=4096",
     ];
 
     // Add platform-specific args
@@ -696,11 +738,61 @@ export class GMAuth {
       Object.defineProperty(navigator, "connection", {
         get: () => ({
           effectiveType: "4g",
-          rtt: 100,
-          downlink: 10,
+          rtt: 100 + Math.random() * 50,
+          downlink: 10 + Math.random() * 5,
           saveData: false,
+          onchange: null,
+          addEventListener: () => {},
+          removeEventListener: () => {},
+          dispatchEvent: () => true,
         }),
+        configurable: false,
       });
+
+      // Override Object.getOwnPropertyDescriptor to hide our spoofing
+      const originalGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+      Object.getOwnPropertyDescriptor = function (obj, prop) {
+        if (
+          obj === navigator &&
+          typeof prop === "string" &&
+          [
+            "webdriver",
+            "platform",
+            "languages",
+            "deviceMemory",
+            "hardwareConcurrency",
+            "maxTouchPoints",
+            "connection",
+          ].includes(prop)
+        ) {
+          return undefined; // Hide our modifications
+        }
+        return originalGetOwnPropertyDescriptor.call(this, obj, prop);
+      };
+
+      // Override Object.getOwnPropertyNames to hide automation properties
+      const originalGetOwnPropertyNames = Object.getOwnPropertyNames;
+      Object.getOwnPropertyNames = function (obj) {
+        const props = originalGetOwnPropertyNames.call(this, obj);
+        if (obj === navigator) {
+          return props.filter(
+            (prop) =>
+              ![
+                "webdriver",
+                "__webdriver_script_fn",
+                "__driver_evaluate",
+                "__webdriver_evaluate",
+                "__selenium_evaluate",
+                "__fxdriver_id",
+                "__fxdriver_unwrapped",
+                "__webdriver_script_func",
+                "__webdriver_script_function",
+                "__webdriver_unwrapped",
+              ].includes(prop),
+          );
+        }
+        return props;
+      };
 
       // Hide automation indicators
       try {
@@ -1255,21 +1347,41 @@ export class GMAuth {
             `🔄 Authentication attempt ${attempt + 1}/${maxRetries + 1} (retry ${attempt})`,
           );
 
-          // Exponential backoff with jitter to avoid thundering herd
+          // More sophisticated backoff with human-like patterns
           const baseDelayMs =
             lastError && lastError.message.includes("Access Denied")
-              ? 12000 // Increased base delay for access denied (12 seconds)
-              : 5000; // Increased base delay for other errors (5 seconds)
+              ? 20000 + Math.random() * 10000 // 20-30 seconds for access denied with randomization
+              : 8000 + Math.random() * 4000; // 8-12 seconds for other errors
 
-          const exponentialDelay = baseDelayMs * Math.pow(2, attempt - 1);
-          const jitter = Math.random() * 0.4 * exponentialDelay; // Increased jitter to 40%
+          const exponentialDelay = baseDelayMs * Math.pow(1.5, attempt - 1); // Reduced exponential factor
+          const jitter = Math.random() * 0.5 * exponentialDelay; // 50% jitter for unpredictability
           const delayMs = Math.floor(exponentialDelay + jitter);
 
           const delaySeconds = (delayMs / 1000).toFixed(1);
           console.log(
             `⏳ Will retry authentication in ${delaySeconds} seconds...`,
           );
-          await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+          // Add random micro-breaks during long delays to simulate human behavior
+          let remainingDelay = delayMs;
+          while (remainingDelay > 5000) {
+            const microBreak = Math.min(5000, remainingDelay);
+            await new Promise((resolve) => setTimeout(resolve, microBreak));
+            remainingDelay -= microBreak;
+
+            // Occasional longer pause (like human getting distracted)
+            if (Math.random() < 0.1) {
+              const extraPause = Math.random() * 3000 + 1000;
+              console.log(
+                `🤔 Taking a brief pause... (${(extraPause / 1000).toFixed(1)}s)`,
+              );
+              await new Promise((resolve) => setTimeout(resolve, extraPause));
+            }
+          }
+
+          if (remainingDelay > 0) {
+            await new Promise((resolve) => setTimeout(resolve, remainingDelay));
+          }
         }
 
         // Reset any previously captured authorization code
@@ -1283,6 +1395,59 @@ export class GMAuth {
           console.log(
             "🎭 Using randomized browser fingerprint for authentication",
           );
+
+          // Pre-warm the browser session with Microsoft domains to establish legitimacy
+          console.log(
+            "🔥 Pre-warming browser session with Microsoft domains...",
+          );
+          try {
+            if (!this.context) {
+              throw new Error("Browser context not available for pre-warming");
+            }
+
+            const warmupPage = await this.context.newPage();
+
+            // Visit Microsoft login page without credentials to establish session
+            await warmupPage.goto("https://login.microsoftonline.com", {
+              waitUntil: "domcontentloaded",
+              timeout: 15000,
+            });
+
+            // Simulate light browsing behavior
+            await warmupPage.waitForTimeout(2000 + Math.random() * 3000);
+
+            // Scroll around like a real user
+            if (Math.random() > 0.3) {
+              await warmupPage.mouse.wheel(0, Math.random() * 300 + 100);
+              await warmupPage.waitForTimeout(1000 + Math.random() * 2000);
+            }
+
+            // Move mouse around naturally
+            const viewport = warmupPage.viewportSize();
+            if (viewport) {
+              for (let i = 0; i < 2; i++) {
+                await warmupPage.mouse.move(
+                  Math.random() * viewport.width,
+                  Math.random() * viewport.height,
+                  { steps: Math.floor(Math.random() * 8) + 3 },
+                );
+                await warmupPage.waitForTimeout(500 + Math.random() * 1000);
+              }
+            }
+
+            await warmupPage.close();
+            console.log("✅ Pre-warming completed successfully");
+
+            // Small delay after warmup
+            await new Promise((resolve) =>
+              setTimeout(resolve, 1000 + Math.random() * 2000),
+            );
+          } catch (warmupError) {
+            console.warn(
+              "⚠️ Pre-warming failed, continuing anyway:",
+              warmupError,
+            );
+          }
         }
         await this.submitCredentials(authorizationUrl, useRandomFingerprint);
 
