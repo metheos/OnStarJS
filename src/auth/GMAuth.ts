@@ -239,151 +239,150 @@ export class GMAuth {
     // Detect platform (isLinux and hasDisplay already declared above)
     const isWindows = process.platform === "win32";
 
-    // Check if Xvfb is already running on Linux
-    if (isLinux && !hasDisplay && this.xvfb) {
-      console.log("🖥️ Xvfb already running, reusing existing virtual display");
-      // Restore the DISPLAY environment variable
-      if (this.xvfbDisplay) {
-        process.env.DISPLAY = this.xvfbDisplay;
-        console.log(`🖥️ Restored DISPLAY: ${process.env.DISPLAY}`);
-      } else {
-        console.log(`🖥️ Current DISPLAY: ${process.env.DISPLAY}`);
-      }
-
-      // Verify Xvfb is actually still running
-      try {
-        // Check if the Xvfb process is still alive
-        const displayNum = this.xvfbDisplay
-          ? this.xvfbDisplay.replace(":", "")
-          : "99";
-        execSync(`pgrep -f "Xvfb.*:${displayNum}"`, { stdio: "ignore" });
-        console.log(
-          `🖥️ Verified Xvfb process is running on display ${this.xvfbDisplay}`,
-        );
-      } catch (e) {
-        console.warn(
-          `⚠️ Xvfb process not found for display ${this.xvfbDisplay}, will restart it`,
-        );
-        this.xvfb = null;
-        this.xvfbDisplay = null;
-        // Clear DISPLAY environment variable since Xvfb is dead
-        if (process.env.DISPLAY === this.xvfbDisplay) {
-          delete process.env.DISPLAY;
-        }
-      }
-    }
-
-    // Start Xvfb on Linux if no display is available and Xvfb is not already running
-    if (isLinux && !hasDisplay && !this.xvfb) {
-      console.log("🖥️ Starting Xvfb for virtual display...");
-      try {
-        // First check if Xvfb binary is available
+    // On Linux without a display, always check if we need Xvfb
+    if (isLinux && !hasDisplay) {
+      // First, check if we have an existing Xvfb reference and verify it's still running
+      if (this.xvfb && this.xvfbDisplay) {
+        console.log("🖥️ Checking existing Xvfb instance...");
         try {
-          execSync("which Xvfb", { stdio: "ignore" });
-        } catch (e) {
-          console.error("❌ Xvfb binary not found in PATH");
-          throw new Error(
-            "Xvfb is not installed. Please install it with: sudo apt-get install xvfb",
+          // Check if the Xvfb process is still alive
+          const displayNum = this.xvfbDisplay.replace(":", "");
+          execSync(`pgrep -f "Xvfb.*:${displayNum}"`, { stdio: "ignore" });
+          console.log(
+            `🖥️ Verified Xvfb process is running on display ${this.xvfbDisplay}`,
           );
-        }
-
-        // Also check for xvfb-run as a secondary check
-        try {
-          execSync("which xvfb-run", { stdio: "ignore" });
+          // Restore the DISPLAY environment variable
+          process.env.DISPLAY = this.xvfbDisplay;
+          console.log(`🖥️ Restored DISPLAY: ${process.env.DISPLAY}`);
         } catch (e) {
-          console.warn("⚠️ xvfb-run not found, but Xvfb binary is available");
-        }
-
-        // Kill any existing Xvfb processes that might be stuck
-        try {
-          execSync('pkill -f "Xvfb.*:99"', { stdio: "ignore" });
-          console.log("🧹 Cleaned up any existing Xvfb processes");
-        } catch (e) {
-          // Ignore errors - no existing processes to clean up
-        }
-
-        // Try multiple display numbers to find an available one
-        const maxAttempts = 5;
-        let displayNum = 99;
-        let xvfbStarted = false;
-
-        for (let attempt = 0; attempt < maxAttempts; attempt++) {
-          try {
-            console.log(
-              `🖥️ Attempting to start Xvfb on display :${displayNum}...`,
-            );
-
-            this.xvfb = new Xvfb({
-              silent: true,
-              displayNum: displayNum,
-              reuse: false,
-              timeout: 10000, // Increased timeout to 10 seconds
-              xvfb_args: [
-                "-screen",
-                "0",
-                "1280x720x24",
-                "-ac",
-                "+extension",
-                "GLX",
-                "-nolisten",
-                "tcp",
-                "-dpi",
-                "96",
-                "-noreset",
-                "+extension",
-                "RANDR",
-              ],
-            });
-
-            this.xvfb.startSync();
-            xvfbStarted = true;
-            this.xvfbDisplay = process.env.DISPLAY || null; // Store the DISPLAY value
-            console.log(
-              `🖥️ Xvfb started successfully on display :${displayNum} (${process.env.DISPLAY})`,
-            );
-            break;
-          } catch (displayError: any) {
-            console.warn(
-              `⚠️ Failed to start Xvfb on display :${displayNum}: ${displayError.message}`,
-            );
-            displayNum++;
-
-            // Clean up the failed xvfb instance
-            if (this.xvfb) {
-              try {
-                this.xvfb.stopSync();
-              } catch (cleanupError) {
-                // Ignore cleanup errors
-              }
-              this.xvfb = null;
-            }
-
-            if (attempt === maxAttempts - 1) {
-              throw displayError;
-            }
+          console.warn(
+            `⚠️ Xvfb process not found for display ${this.xvfbDisplay}, will restart it`,
+          );
+          this.xvfb = null;
+          this.xvfbDisplay = null;
+          // Clear DISPLAY environment variable since Xvfb is dead
+          if (process.env.DISPLAY === this.xvfbDisplay) {
+            delete process.env.DISPLAY;
           }
         }
+      }
 
-        if (!xvfbStarted) {
-          throw new Error(`Failed to start Xvfb after ${maxAttempts} attempts`);
+      // If we don't have a working Xvfb instance, start one
+      if (!this.xvfb) {
+        console.log("🖥️ Starting Xvfb for virtual display...");
+        try {
+          // First check if Xvfb binary is available
+          try {
+            execSync("which Xvfb", { stdio: "ignore" });
+          } catch (e) {
+            console.error("❌ Xvfb binary not found in PATH");
+            throw new Error(
+              "Xvfb is not installed. Please install it with: sudo apt-get install xvfb",
+            );
+          }
+
+          // Also check for xvfb-run as a secondary check
+          try {
+            execSync("which xvfb-run", { stdio: "ignore" });
+          } catch (e) {
+            console.warn("⚠️ xvfb-run not found, but Xvfb binary is available");
+          }
+
+          // Kill any existing Xvfb processes that might be stuck
+          try {
+            execSync('pkill -f "Xvfb.*:99"', { stdio: "ignore" });
+            console.log("🧹 Cleaned up any existing Xvfb processes");
+          } catch (e) {
+            // Ignore errors - no existing processes to clean up
+          }
+
+          // Try multiple display numbers to find an available one
+          const maxAttempts = 5;
+          let displayNum = 99;
+          let xvfbStarted = false;
+
+          for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            try {
+              console.log(
+                `🖥️ Attempting to start Xvfb on display :${displayNum}...`,
+              );
+
+              this.xvfb = new Xvfb({
+                silent: true,
+                displayNum: displayNum,
+                reuse: false,
+                timeout: 10000, // Increased timeout to 10 seconds
+                xvfb_args: [
+                  "-screen",
+                  "0",
+                  "1280x720x24",
+                  "-ac",
+                  "+extension",
+                  "GLX",
+                  "-nolisten",
+                  "tcp",
+                  "-dpi",
+                  "96",
+                  "-noreset",
+                  "+extension",
+                  "RANDR",
+                ],
+              });
+
+              this.xvfb.startSync();
+              xvfbStarted = true;
+              this.xvfbDisplay = process.env.DISPLAY || null; // Store the DISPLAY value
+              console.log(
+                `🖥️ Xvfb started successfully on display :${displayNum} (${process.env.DISPLAY})`,
+              );
+              break;
+            } catch (displayError: any) {
+              console.warn(
+                `⚠️ Failed to start Xvfb on display :${displayNum}: ${displayError.message}`,
+              );
+              displayNum++;
+
+              // Clean up the failed xvfb instance
+              if (this.xvfb) {
+                try {
+                  this.xvfb.stopSync();
+                } catch (cleanupError) {
+                  // Ignore cleanup errors
+                }
+                this.xvfb = null;
+              }
+
+              if (attempt === maxAttempts - 1) {
+                throw displayError;
+              }
+            }
+          }
+
+          if (!xvfbStarted) {
+            throw new Error(
+              `Failed to start Xvfb after ${maxAttempts} attempts`,
+            );
+          }
+        } catch (error) {
+          console.error("❌ Failed to start Xvfb:", error);
+          console.error("💡 To fix this issue, either:");
+          console.error("   1. Install Xvfb: sudo apt-get install xvfb");
+          console.error(
+            "   2. Run with xvfb-run: xvfb-run -a node your-app.js",
+          );
+          console.error(
+            "   3. Set a DISPLAY environment variable if you have a GUI",
+          );
+          console.error(
+            "   4. Try running in a container with proper display setup",
+          );
+          console.error(
+            "   5. Ensure no other Xvfb processes are running: pkill Xvfb",
+          );
+          throw new Error(
+            "Cannot run browser automation on Linux without a display server. Xvfb is required for headful operation - headless mode is not supported.",
+          );
         }
-      } catch (error) {
-        console.error("❌ Failed to start Xvfb:", error);
-        console.error("💡 To fix this issue, either:");
-        console.error("   1. Install Xvfb: sudo apt-get install xvfb");
-        console.error("   2. Run with xvfb-run: xvfb-run -a node your-app.js");
-        console.error(
-          "   3. Set a DISPLAY environment variable if you have a GUI",
-        );
-        console.error(
-          "   4. Try running in a container with proper display setup",
-        );
-        console.error(
-          "   5. Ensure no other Xvfb processes are running: pkill Xvfb",
-        );
-        throw new Error(
-          "Cannot run browser automation on Linux without a display server. Xvfb is required for headful operation - headless mode is not supported.",
-        );
       }
     }
 
