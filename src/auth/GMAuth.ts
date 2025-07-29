@@ -87,7 +87,6 @@ export class GMAuth {
   private xvfbDisplay: string | null = null; // Store the DISPLAY value for Xvfb
   private cleanupInProgress: boolean = false; // Flag to prevent concurrent cleanup
   private browserWarmedUp: boolean = false; // Flag to track if browser has been warmed up for current profile
-  private usingFallbackLaunch: boolean = false; // Flag to track if we're using fallback browser launch method
 
   constructor(config: GMAuthConfig) {
     this.config = config;
@@ -180,44 +179,60 @@ export class GMAuth {
     );
 
     if (this.context) {
-      // We have a context, check if we can get a valid browser from it
-      if (!this.browser) {
-        // Try to get the browser from the context
-        this.browser = this.context.browser();
-        console.log(`🔍 Trying to get browser from context: ${!!this.browser}`);
-      }
+      // We have a context, check if it's still usable
+      try {
+        const pages = this.context.pages();
+        console.log(
+          `🔍 Context usability: pages=${pages ? pages.length : "null"}`,
+        );
 
-      if (this.browser) {
-        try {
-          // Try to check if the browser is still connected
-          const isConnected = this.browser.isConnected();
-          const pages = this.context.pages();
-          console.log(
-            `🔍 Browser usability: isConnected=${isConnected}, pages=${pages ? pages.length : "null"}`,
-          );
-          browserUsable = isConnected && pages !== null;
-
-          if (browserUsable) {
-            console.log("🌐 Reusing existing browser instance");
-            return; // Early return - don't continue with initialization
-          } else {
+        // Check if context is still usable by testing pages access
+        if (pages !== null && pages !== undefined) {
+          // Context is usable, try to get browser reference (but don't require it)
+          if (!this.browser) {
+            this.browser = this.context.browser();
             console.log(
-              "🔄 Browser instance exists but not usable (disconnected or invalid), reinitializing...",
+              `🔍 Trying to get browser from context: ${!!this.browser}`,
             );
           }
-        } catch (error) {
-          // Browser/context is not usable, proceed with reinitialization
+
+          // For persistent contexts, we can work with just the context
+          // Browser reference may be null in containerized environments
+          if (this.browser) {
+            try {
+              const isConnected = this.browser.isConnected();
+              console.log(`🔍 Browser connection status: ${isConnected}`);
+              browserUsable = isConnected;
+            } catch (error) {
+              console.log(
+                "🔍 Browser reference exists but not connected:",
+                error,
+              );
+              browserUsable = true; // Context is still usable even if browser ref fails
+            }
+          } else {
+            console.log(
+              "� Browser reference is null, but context appears usable",
+            );
+            browserUsable = true; // Context can work without browser reference
+          }
+
+          if (browserUsable) {
+            console.log("🌐 Reusing existing browser context");
+            return; // Early return - don't continue with initialization
+          }
+        } else {
           console.log(
-            "🔄 Existing browser instance not usable, reinitializing...",
-            error,
+            "🔄 Context exists but pages access failed, reinitializing...",
           );
         }
-      } else {
+      } catch (error) {
         console.log(
-          "🔄 Context exists but no valid browser reference, reinitializing...",
+          "🔄 Context exists but not usable, reinitializing...",
+          error,
         );
       }
-      // If we reach here, context exists but browser is not usable
+      // If we reach here, context exists but is not usable
       browserUsable = false;
     } else if (this.browser) {
       // We have a browser but no context - this shouldn't happen with persistent contexts
@@ -540,72 +555,22 @@ export class GMAuth {
 
     // Use persistent context instead of launch + newContext for more realistic browser behavior
     console.log("🌐 Launching persistent context with args:", browserArgs);
-    try {
-      this.context = await chromium.launchPersistentContext(
-        "./temp-browser-profile",
-        {
-          channel: "chromium", // Use chromium
-          headless: false, // Always headful for better compatibility
-          hasTouch: true, // Simulate touch support
-          isMobile: true, // Simulate mobile device
-          userAgent: fingerprint.userAgent,
-          viewport: fingerprint.viewport,
-          args: browserArgs,
-        },
-      );
-    } catch (error) {
-      console.error("❌ Failed to launch persistent context:", error);
+    this.context = await chromium.launchPersistentContext(
+      "./temp-browser-profile",
+      {
+        channel: "chromium", // Use chromium
+        headless: false, // Always headful for better compatibility
+        hasTouch: true, // Simulate touch support
+        isMobile: true, // Simulate mobile device
+        userAgent: fingerprint.userAgent,
+        viewport: fingerprint.viewport,
+        args: browserArgs,
+      },
+    );
 
-      // Try with a simpler set of args for debugging
-      if (isLinux) {
-        console.log("🔄 Retrying with minimal browser args on Linux...");
-        const minimalArgs = [
-          "--no-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-features=VizDisplayCompositor",
-        ];
-
-        try {
-          this.context = await chromium.launchPersistentContext(
-            "./temp-browser-profile",
-            {
-              headless: false,
-              args: minimalArgs,
-            },
-          );
-          console.log("✅ Persistent context launched with minimal args");
-        } catch (retryError) {
-          console.error("❌ Failed even with minimal args:", retryError);
-
-          // Final fallback: try regular browser launch with newContext
-          console.log("🔄 Falling back to regular browser launch...");
-          try {
-            this.browser = await chromium.launch({
-              headless: false,
-              args: minimalArgs,
-            });
-            this.context = await this.browser.newContext({
-              userAgent: fingerprint.userAgent,
-              viewport: fingerprint.viewport,
-            });
-            this.usingFallbackLaunch = true;
-            console.log("✅ Fallback browser launch succeeded");
-          } catch (fallbackError) {
-            console.error(
-              "❌ All browser launch methods failed:",
-              fallbackError,
-            );
-            throw new Error(`Failed to launch browser: ${fallbackError}`);
-          }
-        }
-      } else {
-        throw new Error(
-          `Failed to launch browser persistent context: ${error}`,
-        );
-      }
-    }
-
-    // The browser is part of the persistent context (or explicitly launched in fallback)
+    // Try to get the browser reference from the persistent context
+    // Note: In some containerized environments, context.browser() may return null
+    // even when the context is working perfectly fine
     if (!this.browser) {
       this.browser = this.context.browser();
     }
@@ -615,27 +580,29 @@ export class GMAuth {
 
     // Try again if browser is still null
     if (!this.browser) {
-      console.log("🔄 Browser still null, retrying to get browser instance...");
+      console.log(
+        "🔄 Browser reference is null, retrying to get browser instance...",
+      );
       await new Promise((resolve) => setTimeout(resolve, 2000));
       this.browser = this.context.browser();
     }
 
-    // Ensure we have a valid browser reference
+    // Log browser reference status but don't fail if it's null
+    // The persistent context can work fine without an explicit browser reference
     if (!this.browser) {
-      console.error(
-        "❌ Browser instance is null after context creation and retries",
+      console.warn(
+        "⚠️ Browser reference is null, but persistent context is working",
       );
-      console.error("Context details:", {
+      console.log("Context details:", {
         contextExists: !!this.context,
         contextPages: this.context ? this.context.pages().length : "N/A",
       });
-
-      throw new Error(
-        "Failed to get browser instance from persistent context - browser process may have failed to start",
+      console.log(
+        "✅ Continuing with null browser reference (persistent context handles browser lifecycle)",
       );
-    }
-
-    console.log("✅ Browser instance obtained successfully"); // Minimal stealth - only hide the most obvious automation indicators
+    } else {
+      console.log("✅ Browser instance obtained successfully");
+    } // Minimal stealth - only hide the most obvious automation indicators
     await this.context.addInitScript(() => {
       Object.defineProperty(navigator, "webdriver", {
         get: () => undefined,
@@ -656,9 +623,6 @@ export class GMAuth {
     // Perform browser warmup if not already done for this profile
     if (!this.browserWarmedUp && useRandomFingerprint) {
       console.log("🔥 Warming up browser session...");
-      if (this.usingFallbackLaunch) {
-        console.log("🔧 Using fallback launch method - warmup will be limited");
-      }
       try {
         // Create a new page for warmup activities
         const warmupPage = await this.context.newPage();
@@ -789,9 +753,6 @@ export class GMAuth {
 
     // Reset warmup state when completely closing browser
     this.browserWarmedUp = false;
-
-    // Reset fallback launch flag
-    this.usingFallbackLaunch = false;
   }
 
   // Stop Xvfb when completely done (success or final failure)
