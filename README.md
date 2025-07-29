@@ -40,7 +40,7 @@ In the IOS Passwords app you can tap "Copy Setup URL" and obtain the secret from
 _If you cannot find the option to configure a "Third-Party Authenticator App" on your GM account page, try contacting OnStar to see if there is another way to enable it._
 
 If that fails, use:
-[this Windows exe](https://github.com/metheos/node-oauth2-gm/releases) or [this web app](https://github.com/joelvandal/onstar-token-gen?tab=readme-ov-file)
+[this Windows exe](https://github.com/metheos/node-oauth2-gm/releases) or [this web app](https://github.com/joelvandal/onstar-token-gen?tab=dme-ov-file)
 
 for email TOTP and then save the resulting token and provide the token location for use with <https://github.com/BigThunderSR/onstar2mqtt> and/or <https://github.com/BigThunderSR/homeassistant-addons-onstar2mqtt>.
 
@@ -307,9 +307,9 @@ Run both unit and functional tests
 
 `pnpm test:auth`
 
-### Reauthentication
+### Reauth
 
-Tests the reauthentication flow by simulating expired tokens and browser reinitialization scenarios. This is particularly useful testing for long-running applications that need to reauthenticate periodically.
+Tests the re-authentication flow by simulating expired tokens and browser reinitialization scenarios. This is particularly useful testing for long-running applications that need to re-authenticate periodically.
 
 `pnpm test:reauth`
 
