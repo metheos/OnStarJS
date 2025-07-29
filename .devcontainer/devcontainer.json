@@ -1,4 +1,4 @@
 {
   "name": "Codespace Environment",
-  "postCreateCommand": "sudo apt update && sudo DEBIAN_FRONTEND=noninteractive apt upgrade -y && sudo apt install xvfb -y && corepack enable && if [ \"$CODESPACES\" = \"true\" ]; then printf '\\n' | corepack install; else corepack install; fi && sudo pnpm exec patchright install-deps && pnpm install"
+  "postCreateCommand": "echo 'Updating package lists...' && sudo apt update && echo 'Upgrading packages...' && sudo DEBIAN_FRONTEND=noninteractive apt upgrade -y && echo 'Installing xvfb...' && sudo apt install xvfb -y && echo 'Enabling corepack...' && corepack enable && echo 'Installing corepack packages...' && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack install && echo 'Installing patchright dependencies...' && sudo pnpm exec patchright install-deps && echo 'Installing npm packages...' && pnpm install"
 }
