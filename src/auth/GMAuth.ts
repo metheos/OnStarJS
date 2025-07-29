@@ -584,7 +584,7 @@ export class GMAuth {
     }
   }
   async doFullAuthSequence(): Promise<TokenSet> {
-    const maxRetries = 2;
+    const maxRetries = 4; // Increased from 2 to 4 (5 total attempts)
     let lastError: Error | null = null;
     let useRandomFingerprint = true; // Always use randomized fingerprint for better evasion
 
@@ -595,11 +595,20 @@ export class GMAuth {
             `🔄 Authentication attempt ${attempt + 1}/${maxRetries + 1} (retry ${attempt})`,
           );
 
-          // Wait a bit before retrying to avoid rate limiting
-          const delayMs =
+          // Exponential backoff with jitter to avoid thundering herd
+          const baseDelayMs =
             lastError && lastError.message.includes("Access Denied")
-              ? 5000 + Math.random() * 5000 // 5-10 seconds for access denied
-              : 2000 * attempt; // Standard exponential backoff
+              ? 8000 // Base 8 seconds for access denied
+              : 3000; // Base 3 seconds for other errors
+
+          const exponentialDelay = baseDelayMs * Math.pow(2, attempt - 1);
+          const jitter = Math.random() * 0.3 * exponentialDelay; // Add up to 30% jitter
+          const delayMs = Math.floor(exponentialDelay + jitter);
+
+          const delaySeconds = (delayMs / 1000).toFixed(1);
+          console.log(
+            `⏳ Will retry authentication in ${delaySeconds} seconds...`,
+          );
           await new Promise((resolve) => setTimeout(resolve, delayMs));
         }
 
@@ -664,9 +673,11 @@ export class GMAuth {
         // If this is not the last attempt, continue to retry
         if (attempt < maxRetries) {
           const isAccessDenied = lastError.message.includes("Access Denied");
-          const delayTime = isAccessDenied ? "5-10" : `${2 * (attempt + 1)}`;
+          const nextDelaySeconds = isAccessDenied
+            ? `${((8000 * Math.pow(2, attempt)) / 1000).toFixed(1)}-${((8000 * Math.pow(2, attempt) * 1.3) / 1000).toFixed(1)}`
+            : `${((3000 * Math.pow(2, attempt)) / 1000).toFixed(1)}-${((3000 * Math.pow(2, attempt) * 1.3) / 1000).toFixed(1)}`;
           console.log(
-            `⏳ Will retry authentication in ${delayTime} seconds...`,
+            `⏳ Will retry authentication in ~${nextDelaySeconds} seconds...`,
           );
           continue;
         }
