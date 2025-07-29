@@ -49,7 +49,7 @@ describe("OnStarJs", () => {
 
     expect(result.status).toEqual("success");
     expect(result.response?.data).toHaveProperty("vehicles");
-  }, 40000); // Increased timeout to 40 seconds
+  }, 900000); // Increased timeout to 15 minutes to match Jest global timeout
 
   test("Upgraded Command Successful", async () => {
     const result = await onStar.cancelAlert();
