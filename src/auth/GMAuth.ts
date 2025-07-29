@@ -593,12 +593,124 @@ export class GMAuth {
       );
     } else {
       console.log("✅ Browser instance obtained successfully");
-    } // Minimal stealth - only hide the most obvious automation indicators
-    await this.context.addInitScript(() => {
-      Object.defineProperty(navigator, "webdriver", {
-        get: () => undefined,
+    }
+    // Minimal stealth - only hide the most obvious automation indicators
+    await this.context.addInitScript((fingerprint) => {
+      // Spoof platform and languages
+      const ua = fingerprint.userAgent.toLowerCase();
+      let platform = "iPhone"; // Default
+      if (ua.includes("iphone")) {
+        platform = "iPhone";
+      } else if (ua.includes("ipad")) {
+        platform = "iPad";
+      } else if (ua.includes("android")) {
+        platform = "Linux armv8l";
+      } else if (ua.includes("win")) {
+        platform = "Win32";
+      }
+      Object.defineProperty(navigator, "platform", { get: () => platform });
+      Object.defineProperty(navigator, "languages", {
+        get: () => ["en-US", "en"],
       });
-    });
+      Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+      Object.defineProperty(navigator, "deviceMemory", { get: () => 8 });
+
+      // Additional stealth properties
+      Object.defineProperty(navigator, "hardwareConcurrency", { get: () => 4 });
+      Object.defineProperty(navigator, "maxTouchPoints", {
+        get: () =>
+          ua.includes("iphone") || ua.includes("ipad") || ua.includes("android")
+            ? 5
+            : 0,
+      });
+
+      // Hide automation indicators
+      try {
+        delete (window.navigator as any).webdriver;
+      } catch (e) {
+        // Ignore if property can't be deleted
+      }
+      Object.defineProperty(window, "chrome", {
+        get: () => ({
+          runtime: {},
+          loadTimes: function () {},
+          csi: function () {},
+          app: {},
+        }),
+      });
+
+      // Spoof screen properties to match viewport
+      const screenWidth = fingerprint.viewport.width;
+      const screenHeight = fingerprint.viewport.height;
+      Object.defineProperty(screen, "width", { get: () => screenWidth });
+      Object.defineProperty(screen, "height", { get: () => screenHeight });
+      Object.defineProperty(screen, "availWidth", { get: () => screenWidth });
+      Object.defineProperty(screen, "availHeight", { get: () => screenHeight });
+      Object.defineProperty(screen, "colorDepth", { get: () => 24 });
+      Object.defineProperty(screen, "pixelDepth", { get: () => 24 });
+
+      // Spoof plugins
+      const plugins = [
+        {
+          name: "Chrome PDF Plugin",
+          filename: "internal-pdf-viewer",
+          description: "Portable Document Format",
+        },
+        {
+          name: "Chrome PDF Viewer",
+          filename: "mhjfbmdgcfjbbpaeojofohoefgiehjai",
+          description: "",
+        },
+        {
+          name: "Native Client",
+          filename: "internal-nacl-plugin",
+          description: "",
+        },
+      ];
+      Object.defineProperty(navigator, "plugins", { get: () => plugins });
+
+      // Spoof WebGL vendor and renderer
+      try {
+        const getParameter = WebGLRenderingContext.prototype.getParameter;
+        WebGLRenderingContext.prototype.getParameter = function (
+          parameter: number,
+        ) {
+          if (parameter === 37445) {
+            // UNMASKED_VENDOR_WEBGL
+            return "Apple Inc.";
+          }
+          if (parameter === 37446) {
+            // UNMASKED_RENDERER_WEBGL
+            return "Apple GPU";
+          }
+          return getParameter.call(this, parameter);
+        };
+      } catch (e) {
+        console.warn("Failed to spoof WebGL:", e);
+      }
+
+      // Spoof permissions
+      try {
+        const originalQuery = navigator.permissions.query;
+        navigator.permissions.query = function (
+          parameters: PermissionDescriptor,
+        ) {
+          if (parameters.name === "notifications") {
+            return Promise.resolve({
+              state: "granted" as PermissionState,
+              name: parameters.name,
+              onchange: null,
+              addEventListener: () => {},
+              removeEventListener: () => {},
+              dispatchEvent: () => true,
+            } as PermissionStatus);
+          }
+          return originalQuery.call(navigator.permissions, parameters);
+        };
+      } catch (e) {
+        console.warn("Failed to spoof permissions:", e);
+      }
+    }, fingerprint);
 
     const displayMode = isWindows
       ? "headful (minimized)"
@@ -1488,6 +1600,10 @@ export class GMAuth {
         )
         .first();
       await emailField.waitFor({ timeout: 60000 });
+
+      // Add realistic human delay before interacting
+      await page.waitForTimeout(1000 + Math.random() * 2000);
+
       await emailField.click({ delay: Math.random() * 200 + 50 });
       await emailField.type(this.config.username, {
         delay: Math.random() * 150 + 50,
@@ -1518,6 +1634,10 @@ export class GMAuth {
         )
         .first();
       await passwordField.waitFor({ timeout: 60000 });
+
+      // Add realistic human delay before password entry
+      await page.waitForTimeout(800 + Math.random() * 1500);
+
       await passwordField.click({ delay: Math.random() * 200 + 50 });
       await passwordField.type(this.config.password, {
         delay: Math.random() * 150 + 50,
