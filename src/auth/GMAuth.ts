@@ -477,10 +477,16 @@ export class GMAuth {
         "https://www.bing.com",
         "https://outlook.com",
         "https://www.google.com",
+        "https://www.amazon.com",
+        "https://www.facebook.com",
+        "https://www.wikipedia.org",
+        "https://www.yahoo.com",
+        "https://www.ebay.com",
+        "https://www.reddit.com",
       ];
 
-      // Visit 2-3 sites randomly for warmup
-      const sitesToVisit = Math.floor(Math.random() * 2) + 2; // 2 or 3 sites
+      // Visit 3-4 sites randomly for warmup
+      const sitesToVisit = Math.floor(Math.random() * 2) + 3; // 3 or 4 sites
       const selectedSites: string[] = [];
 
       for (let i = 0; i < sitesToVisit; i++) {
@@ -497,20 +503,36 @@ export class GMAuth {
 
           await warmupPage.goto(site, {
             waitUntil: "domcontentloaded",
-            timeout: 15000,
+            timeout: 20000, // Increased timeout
           });
 
-          // Brief wait to simulate natural browsing
-          await warmupPage.waitForTimeout(1000 + Math.random() * 2000);
+          // Wait for a bit, simulating reading time
+          await warmupPage.waitForTimeout(2000 + Math.random() * 3000);
 
-          // Simulate some natural mouse movement
+          // Simulate scrolling
+          if (Math.random() > 0.3) {
+            const scrollAmount = Math.random() * 500 + 200;
+            await warmupPage.mouse.wheel(0, scrollAmount);
+            await warmupPage.waitForTimeout(500 + Math.random() * 1000);
+          }
+
+          // More scrolling
           if (Math.random() > 0.5) {
-            const viewport = warmupPage.viewportSize();
-            if (viewport) {
+            const scrollAmount2 = Math.random() * 800 + 300;
+            await warmupPage.mouse.wheel(0, scrollAmount2);
+            await warmupPage.waitForTimeout(1000 + Math.random() * 2000);
+          }
+
+          // Simulate some natural mouse movement over a few steps
+          const viewport = warmupPage.viewportSize();
+          if (viewport) {
+            for (let j = 0; j < Math.floor(Math.random() * 3) + 2; j++) {
               await warmupPage.mouse.move(
                 Math.random() * viewport.width,
                 Math.random() * viewport.height,
+                { steps: 10 }, // Move in steps to look more human
               );
+              await warmupPage.waitForTimeout(200 + Math.random() * 500);
             }
           }
         } catch (error) {
@@ -886,7 +908,9 @@ export class GMAuth {
           'input[name="otpCode"], [aria-label*="One-Time Passcode"i], [aria-label*="OTP"i]',
         )
         .first();
-      await otpField.fill(otp);
+      await otpField.click({ delay: Math.random() * 200 + 50 });
+      await otpField.type(otp, { delay: Math.random() * 150 + 50 });
+      await page.waitForTimeout(500 + Math.random() * 500); // Pause before clicking
 
       // Enable CDP Network domain for low-level network monitoring
       const client = await page.context().newCDPSession(page);
@@ -1315,9 +1339,13 @@ export class GMAuth {
         )
         .first();
       await emailField.waitFor({ timeout: 60000 });
-      await emailField.fill(this.config.username);
+      await emailField.click({ delay: Math.random() * 200 + 50 });
+      await emailField.type(this.config.username, {
+        delay: Math.random() * 150 + 50,
+      });
 
       console.log("Looking for Continue button...");
+      await page.waitForTimeout(500 + Math.random() * 500); // Pause before clicking
 
       // Click continue button
       const continueButton = page
@@ -1325,8 +1353,10 @@ export class GMAuth {
           'button#continue[data-dtm="sign in"][aria-label="Continue"], button:has-text("Continue")[data-dtm="sign in"], [role="button"][aria-label*="Continue"i]',
         )
         .first();
-      await emailField.waitFor({ timeout: 60000 });
-      await continueButton.click();
+      await continueButton.waitFor({ timeout: 60000 });
+      await continueButton.hover();
+      await page.waitForTimeout(100 + Math.random() * 200);
+      await continueButton.click({ delay: Math.random() * 200 + 50 });
 
       console.log("Looking for Password field...");
 
@@ -1339,10 +1369,14 @@ export class GMAuth {
         )
         .first();
       await passwordField.waitFor({ timeout: 60000 });
-      await passwordField.fill(this.config.password);
+      await passwordField.click({ delay: Math.random() * 200 + 50 });
+      await passwordField.type(this.config.password, {
+        delay: Math.random() * 150 + 50,
+      });
       console.log(
         "Looking for Sign In button and preparing to capture redirect...",
       );
+      await page.waitForTimeout(500 + Math.random() * 500); // Pause before clicking
 
       // Enable CDP Network domain for low-level network monitoring
       const client = await page.context().newCDPSession(page);
@@ -1453,7 +1487,9 @@ export class GMAuth {
         .first();
 
       await submitButton.waitFor({ timeout: 60000 });
-      await submitButton.click();
+      await submitButton.hover();
+      await page.waitForTimeout(100 + Math.random() * 200);
+      await submitButton.click({ delay: Math.random() * 200 + 50 });
 
       // Wait a bit for the redirect to potentially happen
       await page.waitForTimeout(3000);
