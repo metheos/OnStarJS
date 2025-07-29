@@ -479,8 +479,8 @@ export class GMAuth {
         "https://www.google.com",
       ];
 
-      // Visit 1-2 sites randomly for warmup
-      const sitesToVisit = Math.floor(Math.random() * 2) + 1; // 1 or 2 sites
+      // Visit 2-3 sites randomly for warmup
+      const sitesToVisit = Math.floor(Math.random() * 2) + 2; // 2 or 3 sites
       const selectedSites: string[] = [];
 
       for (let i = 0; i < sitesToVisit; i++) {
