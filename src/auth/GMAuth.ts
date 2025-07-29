@@ -2261,7 +2261,7 @@ export class GMAuth {
         // If still access denied after all retries, throw the error
         if (accessDenied) {
           throw new Error(
-            `�🚫 Access Denied: Authentication blocked after ${maxRetries} retries. This could be due to rate limiting, IP blocking, or security restrictions. Please wait before retrying or check if your IP is blocked.`,
+            `🚫 Access Denied: Authentication blocked after ${maxRetries} retries. This could be due to rate limiting, IP blocking, or security restrictions. Please wait before retrying or check if your IP is blocked.`,
           );
         }
       }
