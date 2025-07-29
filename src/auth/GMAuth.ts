@@ -210,6 +210,13 @@ export class GMAuth {
       this.browser = null;
       this.context = null;
       this.currentPage = null;
+
+      // Only delete the browser profile if we're starting fresh (no existing browser state)
+      // This preserves the profile from warmup sessions
+      if (fs.existsSync("./temp-browser-profile")) {
+        fs.rmSync("./temp-browser-profile", { recursive: true, force: true });
+        console.log("🗑️ Deleted existing temp browser profile");
+      }
     }
 
     // Generate random fingerprint if requested
@@ -236,12 +243,6 @@ export class GMAuth {
       console.log(
         `🎭 Using default viewport: ${fingerprint.viewport.width}x${fingerprint.viewport.height}`,
       );
-    }
-
-    // delete ./temp-browser-profile if it exists
-    if (fs.existsSync("./temp-browser-profile")) {
-      fs.rmSync("./temp-browser-profile", { recursive: true, force: true });
-      console.log("🗑️ Deleted existing temp browser profile");
     }
 
     // Detect platform (isLinux and hasNaturalDisplay already declared above)
