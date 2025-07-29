@@ -169,8 +169,14 @@ export class GMAuth {
     // Detect platform early to check Xvfb state
     const isLinux = process.platform === "linux";
     // Check if we have a natural display (not our own Xvfb)
+    // A natural display exists if:
+    // 1. We're on Linux AND
+    // 2. DISPLAY is set AND
+    // 3. Either we never started our own Xvfb OR the current DISPLAY doesn't match our Xvfb display
     const hasNaturalDisplay =
-      isLinux && process.env.DISPLAY && !this.xvfbDisplay;
+      isLinux &&
+      process.env.DISPLAY &&
+      (!this.xvfbDisplay || process.env.DISPLAY !== this.xvfbDisplay);
 
     // Check if browser and context are actually usable, not just that references exist
     let browserUsable = false;
@@ -243,6 +249,10 @@ export class GMAuth {
 
     // On Linux without a natural display, always check if we need Xvfb
     if (isLinux && !hasNaturalDisplay) {
+      console.log(
+        "🖥️ Linux detected without natural display, checking Xvfb status...",
+      );
+
       // First, check if we have an existing Xvfb reference and verify it's still running
       if (this.xvfb && this.xvfbDisplay) {
         console.log("🖥️ Checking existing Xvfb instance...");
