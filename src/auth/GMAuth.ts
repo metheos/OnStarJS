@@ -86,7 +86,6 @@ export class GMAuth {
   private xvfb: any = null; // Xvfb instance for Linux virtual display
   private xvfbDisplay: string | null = null; // Store the DISPLAY value for Xvfb
   private cleanupInProgress: boolean = false; // Flag to prevent concurrent cleanup
-  private browserWarmedUp: boolean = false; // Flag to track if browser has been warmed up for current profile
 
   constructor(config: GMAuthConfig) {
     this.config = config;
@@ -255,16 +254,8 @@ export class GMAuth {
       this.context = null;
       this.currentPage = null;
 
-      // Only delete the browser profile if we're starting completely fresh
-      // (no existing context at all). This preserves warmed-up sessions.
-      if (!hadExistingContext && fs.existsSync("./temp-browser-profile")) {
-        fs.rmSync("./temp-browser-profile", { recursive: true, force: true });
-        console.log("🗑️ Deleted existing temp browser profile (fresh start)");
-        // Reset warmup flag since we deleted the profile
-        this.browserWarmedUp = false;
-      } else if (hadExistingContext) {
-        console.log("🔄 Preserving browser profile from existing session");
-      }
+      fs.rmSync("./temp-browser-profile", { recursive: true, force: true });
+      console.log("🗑️ Deleted existing temp browser profile (fresh start)");
     }
 
     // Generate random fingerprint if requested
@@ -1108,99 +1099,6 @@ export class GMAuth {
     console.log(
       `🌐 Browser initialized with persistent context (${displayMode})`,
     );
-
-    // Perform browser warmup if not already done for this profile
-    if (!this.browserWarmedUp && useRandomFingerprint) {
-      console.log("🔥 Warming up browser session...");
-      try {
-        // Create a new page for warmup activities
-        const warmupPage = await this.context.newPage();
-
-        // Visit a few common sites to establish browsing patterns
-        const warmupSites = [
-          "https://www.microsoft.com",
-          "https://www.bing.com",
-          "https://outlook.com",
-          "https://www.google.com",
-          "https://www.amazon.com",
-          "https://www.facebook.com",
-          "https://www.wikipedia.org",
-          "https://www.yahoo.com",
-          "https://www.ebay.com",
-          "https://www.reddit.com",
-        ];
-
-        // Visit 3-4 sites randomly for warmup
-        const sitesToVisit = Math.floor(Math.random() * 2) + 3; // 3 or 4 sites
-        const selectedSites: string[] = [];
-
-        for (let i = 0; i < sitesToVisit; i++) {
-          const randomSite =
-            warmupSites[Math.floor(Math.random() * warmupSites.length)];
-          if (!selectedSites.includes(randomSite)) {
-            selectedSites.push(randomSite);
-          }
-        }
-
-        for (const site of selectedSites) {
-          try {
-            console.log(`🌐 Visiting ${site} for session warmup...`);
-
-            await warmupPage.goto(site, {
-              waitUntil: "domcontentloaded",
-              timeout: 20000, // Increased timeout
-            });
-
-            // Wait for a bit, simulating reading time
-            await warmupPage.waitForTimeout(2000 + Math.random() * 3000);
-
-            // Simulate scrolling
-            if (Math.random() > 0.3) {
-              const scrollAmount = Math.random() * 500 + 200;
-              await warmupPage.mouse.wheel(0, scrollAmount);
-              await warmupPage.waitForTimeout(500 + Math.random() * 1000);
-            }
-
-            // More scrolling
-            if (Math.random() > 0.5) {
-              const scrollAmount2 = Math.random() * 800 + 300;
-              await warmupPage.mouse.wheel(0, scrollAmount2);
-              await warmupPage.waitForTimeout(1000 + Math.random() * 2000);
-            }
-
-            // Simulate some natural mouse movement over a few steps
-            const viewport = warmupPage.viewportSize();
-            if (viewport) {
-              for (let j = 0; j < Math.floor(Math.random() * 3) + 2; j++) {
-                await warmupPage.mouse.move(
-                  Math.random() * viewport.width,
-                  Math.random() * viewport.height,
-                  { steps: 10 }, // Move in steps to look more human
-                );
-                await warmupPage.waitForTimeout(200 + Math.random() * 500);
-              }
-            }
-          } catch (error) {
-            console.warn(`⚠️ Warmup site ${site} failed:`, error);
-            // Continue with warmup even if a site fails
-          }
-        }
-
-        // Close the warmup page
-        await warmupPage.close();
-
-        // Mark warmup as completed
-        this.browserWarmedUp = true;
-        console.log("✅ Browser warmup completed");
-      } catch (error) {
-        console.warn("⚠️ Browser warmup failed:", error);
-        // Don't fail the initialization if warmup fails
-      }
-    } else if (this.browserWarmedUp) {
-      console.log("🔥 Browser profile already warmed up, skipping warmup");
-    } else {
-      console.log("🔥 Skipping warmup (not using randomized fingerprint)");
-    }
   }
 
   private async closeBrowser(): Promise<void> {
@@ -1239,9 +1137,6 @@ export class GMAuth {
 
     // Reset captured auth code when closing browser
     this.capturedAuthCode = null;
-
-    // Reset warmup state when completely closing browser
-    this.browserWarmedUp = false;
   }
 
   // Stop Xvfb when completely done (success or final failure)
@@ -1362,26 +1257,7 @@ export class GMAuth {
             `⏳ Will retry authentication in ${delaySeconds} seconds...`,
           );
 
-          // Add random micro-breaks during long delays to simulate human behavior
-          let remainingDelay = delayMs;
-          while (remainingDelay > 5000) {
-            const microBreak = Math.min(5000, remainingDelay);
-            await new Promise((resolve) => setTimeout(resolve, microBreak));
-            remainingDelay -= microBreak;
-
-            // Occasional longer pause (like human getting distracted)
-            if (Math.random() < 0.1) {
-              const extraPause = Math.random() * 3000 + 1000;
-              console.log(
-                `🤔 Taking a brief pause... (${(extraPause / 1000).toFixed(1)}s)`,
-              );
-              await new Promise((resolve) => setTimeout(resolve, extraPause));
-            }
-          }
-
-          if (remainingDelay > 0) {
-            await new Promise((resolve) => setTimeout(resolve, remainingDelay));
-          }
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
         }
 
         // Reset any previously captured authorization code
@@ -1395,59 +1271,6 @@ export class GMAuth {
           console.log(
             "🎭 Using randomized browser fingerprint for authentication",
           );
-
-          // Pre-warm the browser session with Microsoft domains to establish legitimacy
-          console.log(
-            "🔥 Pre-warming browser session with Microsoft domains...",
-          );
-          try {
-            if (!this.context) {
-              throw new Error("Browser context not available for pre-warming");
-            }
-
-            const warmupPage = await this.context.newPage();
-
-            // Visit Microsoft login page without credentials to establish session
-            await warmupPage.goto("https://login.microsoftonline.com", {
-              waitUntil: "domcontentloaded",
-              timeout: 15000,
-            });
-
-            // Simulate light browsing behavior
-            await warmupPage.waitForTimeout(2000 + Math.random() * 3000);
-
-            // Scroll around like a real user
-            if (Math.random() > 0.3) {
-              await warmupPage.mouse.wheel(0, Math.random() * 300 + 100);
-              await warmupPage.waitForTimeout(1000 + Math.random() * 2000);
-            }
-
-            // Move mouse around naturally
-            const viewport = warmupPage.viewportSize();
-            if (viewport) {
-              for (let i = 0; i < 2; i++) {
-                await warmupPage.mouse.move(
-                  Math.random() * viewport.width,
-                  Math.random() * viewport.height,
-                  { steps: Math.floor(Math.random() * 8) + 3 },
-                );
-                await warmupPage.waitForTimeout(500 + Math.random() * 1000);
-              }
-            }
-
-            await warmupPage.close();
-            console.log("✅ Pre-warming completed successfully");
-
-            // Small delay after warmup
-            await new Promise((resolve) =>
-              setTimeout(resolve, 1000 + Math.random() * 2000),
-            );
-          } catch (warmupError) {
-            console.warn(
-              "⚠️ Pre-warming failed, continuing anyway:",
-              warmupError,
-            );
-          }
         }
         await this.submitCredentials(authorizationUrl, useRandomFingerprint);
 
