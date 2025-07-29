@@ -169,9 +169,38 @@ export class GMAuth {
     const isLinux = process.platform === "linux";
     const hasDisplay = isLinux && process.env.DISPLAY;
 
-    // If browser is already running, no need to reinitialize
-    if (this.browser) {
-      return;
+    // Check if browser and context are actually usable, not just that references exist
+    let browserUsable = false;
+    if (this.browser && this.context) {
+      try {
+        // Try to check if the browser is still connected
+        const isConnected = this.browser.isConnected();
+        const pages = this.context.pages();
+        browserUsable = isConnected && pages !== null;
+        if (browserUsable) {
+          console.log("🌐 Reusing existing browser instance");
+          return;
+        } else {
+          console.log(
+            "🔄 Browser instance exists but not usable (disconnected or invalid), reinitializing...",
+          );
+        }
+      } catch (error) {
+        // Browser/context is not usable, proceed with reinitialization
+        console.log(
+          "🔄 Existing browser instance not usable, reinitializing...",
+          error,
+        );
+      }
+    } else if (this.browser || this.context) {
+      console.log("🔄 Partial browser state detected, reinitializing...");
+    }
+
+    // Clear stale references if browser is not usable
+    if (!browserUsable) {
+      this.browser = null;
+      this.context = null;
+      this.currentPage = null;
     }
 
     // Generate random fingerprint if requested
@@ -218,6 +247,28 @@ export class GMAuth {
         console.log(`🖥️ Restored DISPLAY: ${process.env.DISPLAY}`);
       } else {
         console.log(`🖥️ Current DISPLAY: ${process.env.DISPLAY}`);
+      }
+
+      // Verify Xvfb is actually still running
+      try {
+        // Check if the Xvfb process is still alive
+        const displayNum = this.xvfbDisplay
+          ? this.xvfbDisplay.replace(":", "")
+          : "99";
+        execSync(`pgrep -f "Xvfb.*:${displayNum}"`, { stdio: "ignore" });
+        console.log(
+          `🖥️ Verified Xvfb process is running on display ${this.xvfbDisplay}`,
+        );
+      } catch (e) {
+        console.warn(
+          `⚠️ Xvfb process not found for display ${this.xvfbDisplay}, will restart it`,
+        );
+        this.xvfb = null;
+        this.xvfbDisplay = null;
+        // Clear DISPLAY environment variable since Xvfb is dead
+        if (process.env.DISPLAY === this.xvfbDisplay) {
+          delete process.env.DISPLAY;
+        }
       }
     }
 
@@ -401,16 +452,33 @@ export class GMAuth {
     );
   }
   private async closeBrowser(): Promise<void> {
-    if (this.currentPage) {
-      await this.currentPage.close();
+    try {
+      if (this.currentPage) {
+        await this.currentPage.close();
+        this.currentPage = null;
+      }
+    } catch (error) {
+      console.warn("Warning: Failed to close current page:", error);
       this.currentPage = null;
     }
-    if (this.context) {
-      await this.context.close();
+
+    try {
+      if (this.context) {
+        await this.context.close();
+        this.context = null;
+      }
+    } catch (error) {
+      console.warn("Warning: Failed to close browser context:", error);
       this.context = null;
     }
-    if (this.browser) {
-      await this.browser.close();
+
+    try {
+      if (this.browser) {
+        await this.browser.close();
+        this.browser = null;
+      }
+    } catch (error) {
+      console.warn("Warning: Failed to close browser:", error);
       this.browser = null;
     }
 
@@ -424,14 +492,30 @@ export class GMAuth {
   // Stop Xvfb when completely done (success or final failure)
   private async stopXvfb(): Promise<void> {
     if (this.xvfb) {
+      const currentDisplay = this.xvfbDisplay; // Store current display before clearing
       try {
         console.log("🖥️ Stopping Xvfb...");
         this.xvfb.stopSync();
-        this.xvfb = null;
-        this.xvfbDisplay = null; // Clear stored display value
         console.log("🖥️ Xvfb stopped successfully");
       } catch (error) {
-        console.warn("⚠️ Failed to stop Xvfb:", error);
+        console.warn("⚠️ Failed to stop Xvfb gracefully:", error);
+        // Try to force kill if graceful stop fails
+        if (currentDisplay) {
+          try {
+            const displayNum = currentDisplay.replace(":", "");
+            execSync(`pkill -f "Xvfb.*:${displayNum}"`, { stdio: "ignore" });
+            console.log("🖥️ Force killed Xvfb process");
+          } catch (killError) {
+            console.warn("⚠️ Failed to force kill Xvfb:", killError);
+          }
+        }
+      } finally {
+        this.xvfb = null;
+        this.xvfbDisplay = null; // Clear stored display value
+        // Clear DISPLAY environment variable if it matches our Xvfb display
+        if (currentDisplay && process.env.DISPLAY === currentDisplay) {
+          delete process.env.DISPLAY;
+        }
       }
     }
   }
