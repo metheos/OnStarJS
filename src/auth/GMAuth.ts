@@ -166,17 +166,8 @@ export class GMAuth {
   private async initBrowser(
     useRandomFingerprint: boolean = false,
   ): Promise<void> {
-    // Detect platform early to check Xvfb state
+    // Detect platform early to check display state
     const isLinux = process.platform === "linux";
-    // Check if we have a natural display (not our own Xvfb)
-    // A natural display exists if:
-    // 1. We're on Linux AND
-    // 2. DISPLAY is set AND
-    // 3. Either we never started our own Xvfb OR the current DISPLAY doesn't match our Xvfb display
-    const hasNaturalDisplay =
-      isLinux &&
-      process.env.DISPLAY &&
-      (!this.xvfbDisplay || process.env.DISPLAY !== this.xvfbDisplay);
 
     // Check if browser and context are actually usable, not just that references exist
     let browserUsable = false;
@@ -248,40 +239,116 @@ export class GMAuth {
     // Detect platform (isLinux and hasNaturalDisplay already declared above)
     const isWindows = process.platform === "win32";
 
-    // On Linux without a natural display, always check if we need Xvfb
-    if (isLinux && !hasNaturalDisplay) {
-      console.log(
-        "🖥️ Linux detected without natural display, checking Xvfb status...",
-      );
+    // On Linux, always verify we have a working display
+    if (isLinux) {
+      console.log("🖥️ Linux detected, verifying display availability...");
 
-      // First, check if we have an existing Xvfb reference and verify it's still running
-      if (this.xvfb && this.xvfbDisplay) {
-        console.log("🖥️ Checking existing Xvfb instance...");
+      let displayWorking = false;
+
+      // First, test if the current DISPLAY is working (if set)
+      if (process.env.DISPLAY) {
         try {
-          // Check if the Xvfb process is still alive
-          const displayNum = this.xvfbDisplay.replace(":", "");
-          execSync(`pgrep -f "Xvfb.*:${displayNum}"`, { stdio: "ignore" });
-          console.log(
-            `🖥️ Verified Xvfb process is running on display ${this.xvfbDisplay}`,
-          );
-          // Restore the DISPLAY environment variable
-          process.env.DISPLAY = this.xvfbDisplay;
-          console.log(`🖥️ Restored DISPLAY: ${process.env.DISPLAY}`);
+          // Try to connect to the X display using native commands that are always available
+          // We'll try multiple approaches in order of preference
+          let testPassed = false;
+
+          // Method 1: Try to list X server info using xset (usually available)
+          try {
+            execSync("xset q >/dev/null 2>&1", {
+              stdio: "ignore",
+              timeout: 3000,
+            });
+            testPassed = true;
+          } catch (e) {
+            // xset failed, try next method
+          }
+
+          // Method 2: Try to get display info using xwininfo on root window
+          if (!testPassed) {
+            try {
+              execSync("xwininfo -root >/dev/null 2>&1", {
+                stdio: "ignore",
+                timeout: 3000,
+              });
+              testPassed = true;
+            } catch (e) {
+              // xwininfo failed, try next method
+            }
+          }
+
+          // Method 3: Try to test the display using xlsclients (list X clients)
+          if (!testPassed) {
+            try {
+              execSync("xlsclients >/dev/null 2>&1", {
+                stdio: "ignore",
+                timeout: 3000,
+              });
+              testPassed = true;
+            } catch (e) {
+              // xlsclients failed, try final method
+            }
+          }
+
+          // Method 4: Try a basic X11 connection test using xhost
+          if (!testPassed) {
+            try {
+              execSync("xhost >/dev/null 2>&1", {
+                stdio: "ignore",
+                timeout: 3000,
+              });
+              testPassed = true;
+            } catch (e) {
+              // All X11 tests failed
+            }
+          }
+
+          if (testPassed) {
+            console.log(
+              `🖥️ Existing display ${process.env.DISPLAY} is working`,
+            );
+            displayWorking = true;
+          } else {
+            console.warn(
+              `⚠️ Display ${process.env.DISPLAY} is set but not accessible (no X11 tools responded)`,
+            );
+          }
         } catch (e) {
           console.warn(
-            `⚠️ Xvfb process not found for display ${this.xvfbDisplay}, will restart it`,
+            `⚠️ Display ${process.env.DISPLAY} is not working or accessible`,
           );
-          this.xvfb = null;
-          this.xvfbDisplay = null;
-          // Clear DISPLAY environment variable since Xvfb is dead
-          if (process.env.DISPLAY === this.xvfbDisplay) {
-            delete process.env.DISPLAY;
+        }
+      } else {
+        console.log("🖥️ No DISPLAY environment variable set");
+      }
+
+      // If we don't have a working display, check if we need to start/restart Xvfb
+      if (!displayWorking) {
+        console.log("🖥️ No working display found, checking Xvfb status...");
+
+        // First, check if we have an existing Xvfb reference and verify it's still running
+        if (this.xvfb && this.xvfbDisplay) {
+          console.log("🖥️ Checking existing Xvfb instance...");
+          try {
+            // Check if the Xvfb process is still alive
+            const displayNum = this.xvfbDisplay.replace(":", "");
+            execSync(`pgrep -f "Xvfb.*:${displayNum}"`, { stdio: "ignore" });
+            console.log(
+              `🖥️ Verified Xvfb process is running on display ${this.xvfbDisplay}`,
+            );
+            // Xvfb library manages DISPLAY internally, no need to set it manually
+            displayWorking = true;
+          } catch (e) {
+            console.warn(
+              `⚠️ Xvfb process not found for display ${this.xvfbDisplay}, will restart it`,
+            );
+            this.xvfb = null;
+            this.xvfbDisplay = null;
           }
         }
       }
 
-      // If we don't have a working Xvfb instance, start one
-      if (!this.xvfb) {
+      // If we still don't have a working display, start Xvfb
+      if (!displayWorking) {
         console.log("🖥️ Starting Xvfb for virtual display...");
         try {
           // First check if Xvfb binary is available
@@ -456,9 +523,9 @@ export class GMAuth {
     const displayMode = isWindows
       ? "headful (minimized)"
       : isLinux
-        ? hasNaturalDisplay
-          ? "headful"
-          : "headful (Xvfb virtual display)"
+        ? this.xvfbDisplay
+          ? "headful (Xvfb virtual display)"
+          : "headful (natural display)"
         : "headful";
     console.log(
       `🌐 Browser initialized with persistent context (${displayMode})`,
@@ -623,10 +690,7 @@ export class GMAuth {
       } finally {
         this.xvfb = null;
         this.xvfbDisplay = null; // Clear stored display value
-        // Clear DISPLAY environment variable if it matches our Xvfb display
-        if (currentDisplay && process.env.DISPLAY === currentDisplay) {
-          delete process.env.DISPLAY;
-        }
+        // Don't modify process.env.DISPLAY - let the system handle it
       }
     }
   }
