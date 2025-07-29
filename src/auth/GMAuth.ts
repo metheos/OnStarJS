@@ -1549,7 +1549,9 @@ export class GMAuth {
     }
   }
   private async handleMFA(): Promise<void> {
-    console.log("Handling MFA via browser automation");
+    console.log(
+      "🔐 Initiating multi-factor authentication (MFA) via browser automation",
+    );
 
     if (!this.context || !this.currentPage) {
       throw new Error(
@@ -1558,16 +1560,23 @@ export class GMAuth {
     }
 
     const page = this.currentPage;
-    console.log("Page title:", await page.title());
+    console.log("📄 Current MFA page title:", await page.title());
 
     try {
       // Wait for MFA page to load
       await page.waitForLoadState("networkidle");
 
+      console.log(
+        "🔍 Scanning for multi-factor authentication (MFA) input elements...",
+      );
       // Look for MFA elements
       await page.waitForSelector(
         'input[name="otpCode"], input[name="emailMfa"], input[name="strongAuthenticationPhoneNumber"]',
         { timeout: 60000 },
+      );
+
+      console.log(
+        "✅ MFA elements found - analyzing authentication method type",
       );
 
       const pageContent = await page.content();
@@ -1622,7 +1631,7 @@ export class GMAuth {
         period: 30,
       });
 
-      console.log("Submitting OTP Code:", otp); // Fill in the OTP code
+      console.log("📱 Entering TOTP authentication code:", otp); // Fill in the OTP code
       const otpField = await page
         .locator(
           'input[name="otpCode"], [aria-label*="One-Time Passcode"i], [aria-label*="OTP"i]',
@@ -1631,6 +1640,8 @@ export class GMAuth {
       await otpField.click({ delay: Math.random() * 200 + 50 });
       await otpField.type(otp, { delay: Math.random() * 150 + 50 });
       await page.waitForTimeout(500 + Math.random() * 500); // Pause before clicking
+
+      console.log("✅ TOTP code entered - preparing to submit MFA form");
 
       // Enable CDP Network domain for low-level network monitoring
       const client = await page.context().newCDPSession(page);
@@ -1717,6 +1728,9 @@ export class GMAuth {
         .first();
       await submitMfaButton.waitFor({ timeout: 60000 });
 
+      console.log(
+        "✅ MFA submit button found - clicking to complete authentication",
+      );
       await submitMfaButton.click();
 
       if (this.debugMode)
@@ -1727,7 +1741,7 @@ export class GMAuth {
         // Wait for the auth code to be captured by CDP listeners
         if (this.debugMode)
           console.log(
-            "⌛ [handleMFA] Waiting for auth code capture after submit...",
+            "⌛ Monitoring for authorization code capture after MFA submission...",
           );
         const captured = await this.waitForAuthCode(60000); // Use the new helper
         if (!captured && this.debugMode) {
@@ -1746,7 +1760,9 @@ export class GMAuth {
       }
 
       if (this.debugMode)
-        console.log("⌛ Waiting for redirect after MFA submission...");
+        console.log(
+          "⌛ Waiting for page navigation and redirect completion after MFA...",
+        );
       await page.waitForLoadState("networkidle");
 
       if (this.capturedAuthCode) {
@@ -1988,7 +2004,7 @@ export class GMAuth {
     authorizationUrl: string,
     useRandomFingerprint: boolean = false,
   ): Promise<void> {
-    console.log("Starting browser-based authentication");
+    console.log("🌐 Launching browser automation for Microsoft authentication");
 
     // Initialize browser if not already done
     await this.initBrowser(useRandomFingerprint);
@@ -2024,8 +2040,11 @@ export class GMAuth {
 
       await page.waitForLoadState("networkidle", { timeout: 60000 }); // Keep this for after successful goto
 
-      console.log("Page loaded, current URL:", page.url());
-      console.log("Page title:", await page.title());
+      console.log(
+        "📄 Authentication page loaded successfully. URL:",
+        page.url(),
+      );
+      console.log("📄 Current page title:", await page.title());
 
       // Simulate human browsing behavior - scroll and mouse movement
       await page.waitForTimeout(1000 + Math.random() * 2000);
@@ -2066,15 +2085,17 @@ export class GMAuth {
         // console.log("Screenshot saved as debug-loading-page.png");
 
         // Try refreshing the page
-        console.log("Attempting page refresh...");
+        console.log(
+          "🔄 Attempting page refresh to reload authentication form...",
+        );
         await page.reload({ waitUntil: "domcontentloaded" });
         await page.waitForLoadState("networkidle");
 
         const newTitle = await page.title();
-        console.log("Page title after refresh:", newTitle);
+        console.log("📄 Page refreshed successfully. New title:", newTitle);
       }
 
-      console.log("Looking for email field...");
+      console.log("🔍 Locating Microsoft email input field on login page...");
 
       // Find and fill email field
       const emailField = page
@@ -2083,6 +2104,8 @@ export class GMAuth {
         )
         .first();
       await emailField.waitFor({ timeout: 60000 });
+
+      console.log("✅ Email field found - clicking and entering email address");
 
       // Simulate realistic human behavior - pause to "read" the page
       await page.waitForTimeout(2000 + Math.random() * 3000);
@@ -2116,7 +2139,9 @@ export class GMAuth {
         }
       }
 
-      console.log("Looking for Continue button...");
+      console.log(
+        "🔍 Searching for Continue button to proceed to password page...",
+      );
       await page.waitForTimeout(800 + Math.random() * 1200); // Human hesitation before proceeding
 
       // Click continue button with realistic mouse movement
@@ -2126,6 +2151,10 @@ export class GMAuth {
         )
         .first();
       await continueButton.waitFor({ timeout: 60000 });
+
+      console.log(
+        "✅ Continue button found - clicking to proceed to password entry",
+      );
 
       // Hover before clicking (human-like behavior)
       await continueButton.hover();
@@ -2144,7 +2173,9 @@ export class GMAuth {
 
       await continueButton.click({ delay: Math.random() * 200 + 50 });
 
-      console.log("Looking for Password field...");
+      console.log(
+        "🔍 Looking for password input field on authentication page...",
+      );
 
       // Wait for password page and fill password
       await page.waitForLoadState("networkidle", { timeout: 60000 });
@@ -2155,6 +2186,8 @@ export class GMAuth {
         )
         .first();
       await passwordField.waitFor({ timeout: 60000 });
+
+      console.log("✅ Password field found - clicking and entering password");
 
       // Simulate human behavior - pause to see the new page
       await page.waitForTimeout(1500 + Math.random() * 2500);
@@ -2190,7 +2223,7 @@ export class GMAuth {
         }
       }
       console.log(
-        "Looking for Sign In button and preparing to capture redirect...",
+        "🔍 Locating Sign In button and preparing network monitoring for authentication redirect...",
       );
       await page.waitForTimeout(500 + Math.random() * 500); // Pause before clicking
 
@@ -2303,6 +2336,9 @@ export class GMAuth {
         .first();
 
       await submitButton.waitFor({ timeout: 60000 });
+      console.log(
+        "✅ Sign In button found - clicking to submit authentication credentials",
+      );
       await submitButton.hover();
       await page.waitForTimeout(100 + Math.random() * 200);
       await submitButton.click({ delay: Math.random() * 200 + 50 });
@@ -2321,7 +2357,7 @@ export class GMAuth {
       // Wait for network to be idle in case other things are happening,
       // or if MFA is indeed the next step.
       console.log(
-        "Waiting for network idle after credential submission attempt...",
+        "⏳ Monitoring network activity and waiting for authentication response...",
       );
       await page.waitForLoadState("networkidle", { timeout: 60000 });
       // Wait a bit for the redirect to potentially happen
@@ -2438,7 +2474,7 @@ export class GMAuth {
           // Wait for the auth code to be captured by CDP listeners
           if (this.debugMode)
             console.log(
-              "⌛ [submitCredentials] Waiting for auth code capture after submit...",
+              "⌛ Monitoring for authorization code capture after credential submission...",
             );
           const captured = await this.waitForAuthCode(15000); // Use the new helper
           if (!captured && this.debugMode) {
@@ -2462,10 +2498,10 @@ export class GMAuth {
       }
 
       console.log(
-        "Credentials submitted (or redirect captured). Current URL:",
+        "✅ Credentials submitted successfully (or redirect captured). Current URL:",
         page.url(),
       );
-      console.log("Page title:", await page.title());
+      console.log("📄 Final page title:", await page.title());
     } catch (error) {
       console.error("Error in submitCredentials:", error);
       throw error;
