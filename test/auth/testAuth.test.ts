@@ -39,7 +39,7 @@ describe("GM Authentication", () => {
     expect(auth).toBeDefined();
     expect(decodedPayload.vehs[0]).toBeDefined();
     console.log(token.access_token);
-  }, 90000); // Increased timeout for authentication
+  }, 240000); // Increased timeout to 4 minutes for authentication with exponential backoff
 
   it("should successfully reauthenticate when tokens are expired or invalid", async () => {
     // Create config object from environment variables
@@ -134,5 +134,5 @@ describe("GM Authentication", () => {
         fs.writeFileSync(gmTokenPath, gmTokenBackup);
       }
     }
-  }, 180000); // 3 minutes timeout for full reauth cycle
+  }, 360000); // 6 minutes timeout for full reauth cycle with exponential backoff
 });
