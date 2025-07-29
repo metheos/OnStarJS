@@ -254,8 +254,11 @@ export class GMAuth {
       this.context = null;
       this.currentPage = null;
 
-      fs.rmSync("./temp-browser-profile", { recursive: true, force: true });
-      console.log("🗑️ Deleted existing temp browser profile (fresh start)");
+      const profilePath = path.resolve("./temp-browser-profile");
+      if (fs.existsSync(profilePath)) {
+        fs.rmSync(profilePath, { recursive: true, force: true });
+        console.log("🗑️ Deleted existing temp browser profile (fresh start)");
+      }
     }
 
     // Generate random fingerprint if requested
@@ -514,120 +517,74 @@ export class GMAuth {
       }
     }
 
-    // Prepare browser arguments based on platform
+    // Prepare browser arguments based on platform - simplified for better reliability
     const browserArgs = [
+      // Core stealth arguments (minimal set)
       "--disable-blink-features=AutomationControlled",
+      "--disable-automation",
       "--no-first-run",
-      "--disable-default-browser-check",
-      "--disable-password-generation",
-      "--disable-save-password-bubble",
-      "--disable-password-manager-reauthentication",
-      "--password-store=basic",
-      "--disable-features=PasswordManager",
-      "--disable-features=VizDisplayCompositor",
+
+      // Essential compatibility
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+
+      // Minimal stealth
       "--disable-password-manager",
       "--disable-save-password",
-      "--disable-background-timer-throttling", // Prevent throttling
-      "--disable-backgrounding-occluded-windows", // Prevent backgrounding
-      // Additional stealth arguments
-      "--disable-automation",
-      "--disable-dev-shm-usage",
-      "--disable-extensions-file-access-check",
-      "--disable-extensions-http-throttling",
-      "--disable-ipc-flooding-protection",
-      "--disable-popup-blocking",
-      "--disable-prompt-on-repost",
-      "--disable-renderer-backgrounding",
       "--disable-sync",
       "--disable-translate",
-      "--disable-features=TranslateUI",
-      "--disable-features=Translate",
-      "--metrics-recording-only",
-      "--no-report-upload",
-      "--disable-breakpad",
-      "--disable-crash-reporter",
-      "--disable-domain-reliability",
-      "--disable-component-update",
-      "--disable-background-networking",
-      "--disable-features=InterestFeedContentSuggestions",
-      "--disable-features=MediaRouter",
-      "--disable-hang-monitor",
-      "--disable-client-side-phishing-detection",
-      "--disable-component-extensions-with-background-pages",
-      "--disable-default-apps",
-      "--mute-audio",
-      "--no-default-browser-check",
-      "--autoplay-policy=user-gesture-required",
-      "--disable-features=AudioServiceOutOfProcess",
-      "--force-color-profile=srgb",
-      "--disable-threaded-animation",
-      "--disable-threaded-scrolling",
-      "--disable-checker-imaging",
-      "--disable-image-animation-resync",
-      "--aggressive-cache-discard",
-      "--enable-surface-synchronization",
-      // Advanced anti-detection flags
-      "--disable-features=UserAgentClientHint",
-      "--disable-features=UserAgentReduction",
-      "--disable-features=WebRtcHideLocalIpsWithMdns",
-      "--disable-web-security",
-      "--disable-site-isolation-trials",
-      "--disable-features=VizServiceDisplay",
-      "--disable-features=VizHitTestSurfaceLayer",
-      "--disable-features=VizDisplayCompositor",
-      "--disable-logging",
-      "--silent",
-      "--disable-gpu-sandbox",
-      "--disable-software-rasterizer",
-      "--disable-zygote",
-      "--no-zygote",
-      "--disable-dev-tools",
-      "--remote-debugging-port=0",
-      "--disable-features=msSmartScreenProtection",
-      "--disable-background-mode",
-      "--disable-renderer-accessibility",
-      "--disable-extensions",
-      "--disable-plugins",
-      "--disable-prerender-local-predictor",
-      "--disable-sync-preferences",
-      "--disable-sync-app-list",
-      "--disable-speech-api",
-      "--disable-file-system",
-      "--disable-presentation-api",
-      "--disable-permissions-api",
-      "--disable-notification-content-image",
-      "--disable-new-profile-management",
-      "--disable-new-avatar-menu",
-      "--disable-search-engine-choice-screen",
-      "--simulate-outdated-no-au='Tue, 31 Dec 2099 23:59:59 GMT'",
-      "--force-fieldtrials=*BackgroundTracing/default/",
-      "--force-fieldtrial-params=BackgroundTracing.default:mode/preemptive",
-      "--disable-field-trial-config",
-      "--disable-background-tracing",
-      "--disable-ipc-security-tests",
-      "--allow-pre-commit-input",
-      "--disable-v8-idle-tasks",
+
+      // Performance
+      "--disable-background-timer-throttling",
+      "--disable-renderer-backgrounding",
       "--max_old_space_size=4096",
+      "--enable-low-end-device-mode",
+
+      // Windows stability
+      "--disable-hang-monitor",
+      "--process-per-tab",
     ];
 
     // Add platform-specific args
     if (isWindows) {
-      // On Windows, start minimized
-      browserArgs.push("--start-minimized");
+      // On Windows, add start minimized and Windows-specific flags
+      browserArgs.push("--disable-features=msSmartScreenProtection");
     } else if (isLinux) {
       // On Linux with virtual display, add GPU-related args
-      browserArgs.push(
-        "--no-sandbox",
-        "--disable-dev-shm-usage",
-        "--use-gl=swiftshader",
-      );
+      browserArgs.push("--use-gl=swiftshader");
+    }
+
+    // Use absolute path for better reliability on Windows
+    const profilePath = path.resolve("./temp-browser-profile");
+
+    // Ensure profile directory exists and is clean
+    if (fs.existsSync(profilePath)) {
+      try {
+        // Wait a moment for processes to fully terminate
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // Remove the profile directory
+        fs.rmSync(profilePath, { recursive: true, force: true });
+        console.log("🧹 Cleaned existing browser profile for fresh start");
+      } catch (cleanupError) {
+        console.warn(
+          "⚠️ Warning: Could not clean existing profile:",
+          cleanupError,
+        );
+      }
     }
 
     // Use persistent context instead of launch + newContext for more realistic browser behavior
-    console.log("🌐 Launching persistent context with args:", browserArgs);
-    this.context = await chromium.launchPersistentContext(
-      "./temp-browser-profile",
-      {
+    console.log(
+      "🌐 Launching persistent context with simplified args:",
+      browserArgs.length,
+      "arguments",
+    );
+    console.log("📁 Profile path:", profilePath);
+
+    try {
+      this.context = await chromium.launchPersistentContext(profilePath, {
         channel: "chromium", // Use chromium
         headless: false, // Always headful for better compatibility
         hasTouch: true, // Simulate touch support
@@ -635,6 +592,7 @@ export class GMAuth {
         userAgent: fingerprint.userAgent,
         viewport: fingerprint.viewport,
         args: browserArgs,
+        timeout: 90000, // Increased to 90 second timeout for browser launch
         // Add extra stealth options
         locale: "en-US",
         timezoneId: "America/New_York",
@@ -662,261 +620,241 @@ export class GMAuth {
           "Sec-Fetch-User": "?1",
           "Upgrade-Insecure-Requests": "1",
         },
-      },
-    );
-
-    // Try to get the browser reference from the persistent context
-    // Note: In some containerized environments, context.browser() may return null
-    // even when the context is working perfectly fine
-    if (!this.browser) {
-      this.browser = this.context.browser();
-    }
-
-    // Wait a moment for browser to fully initialize
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    // Log browser reference status but don't fail if it's null
-    // The persistent context can work fine without an explicit browser reference
-    if (!this.browser) {
-      console.warn(
-        "⚠️ Browser reference is null, but persistent context is working",
-      );
-      console.log("Context details:", {
-        contextExists: !!this.context,
-        contextPages: this.context ? this.context.pages().length : "N/A",
       });
-      console.log(
-        "✅ Continuing with null browser reference (persistent context handles browser lifecycle)",
-      );
-    } else {
-      console.log("✅ Browser instance obtained successfully");
-    }
-    // Minimal stealth - only hide the most obvious automation indicators
-    await this.context.addInitScript((fingerprint) => {
-      // Remove all webdriver traces
-      Object.defineProperty(navigator, "webdriver", { get: () => undefined });
-      delete (window as any).webdriver;
-      delete (window.navigator as any).webdriver;
 
-      // Spoof platform and languages
-      const ua = fingerprint.userAgent.toLowerCase();
-      let platform = "iPhone"; // Default
-      if (ua.includes("iphone")) {
-        platform = "iPhone";
-      } else if (ua.includes("ipad")) {
-        platform = "iPad";
-      } else if (ua.includes("android")) {
-        platform = "Linux armv8l";
-      } else if (ua.includes("win")) {
-        platform = "Win32";
+      // Try to get the browser reference from the persistent context
+      // Note: In some containerized environments, context.browser() may return null
+      // even when the context is working perfectly fine
+      if (!this.browser) {
+        this.browser = this.context.browser();
       }
-      Object.defineProperty(navigator, "platform", { get: () => platform });
-      Object.defineProperty(navigator, "languages", {
-        get: () => ["en-US", "en"],
-      });
-      Object.defineProperty(navigator, "deviceMemory", { get: () => 8 });
 
-      // Additional stealth properties
-      Object.defineProperty(navigator, "hardwareConcurrency", { get: () => 4 });
-      Object.defineProperty(navigator, "maxTouchPoints", {
-        get: () =>
-          ua.includes("iphone") || ua.includes("ipad") || ua.includes("android")
-            ? 5
-            : 0,
-      });
+      // Wait a moment for browser to fully initialize
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      // Enhanced automation hiding
-      Object.defineProperty(navigator, "connection", {
-        get: () => ({
-          effectiveType: "4g",
-          rtt: 100 + Math.random() * 50,
-          downlink: 10 + Math.random() * 5,
-          saveData: false,
-          onchange: null,
-          addEventListener: () => {},
-          removeEventListener: () => {},
-          dispatchEvent: () => true,
-        }),
-        configurable: false,
-      });
-
-      // Override Object.getOwnPropertyDescriptor to hide our spoofing
-      const originalGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
-      Object.getOwnPropertyDescriptor = function (obj, prop) {
-        if (
-          obj === navigator &&
-          typeof prop === "string" &&
-          [
-            "webdriver",
-            "platform",
-            "languages",
-            "deviceMemory",
-            "hardwareConcurrency",
-            "maxTouchPoints",
-            "connection",
-          ].includes(prop)
-        ) {
-          return undefined; // Hide our modifications
-        }
-        return originalGetOwnPropertyDescriptor.call(this, obj, prop);
-      };
-
-      // Override Object.getOwnPropertyNames to hide automation properties
-      const originalGetOwnPropertyNames = Object.getOwnPropertyNames;
-      Object.getOwnPropertyNames = function (obj) {
-        const props = originalGetOwnPropertyNames.call(this, obj);
-        if (obj === navigator) {
-          return props.filter(
-            (prop) =>
-              ![
-                "webdriver",
-                "__webdriver_script_fn",
-                "__driver_evaluate",
-                "__webdriver_evaluate",
-                "__selenium_evaluate",
-                "__fxdriver_id",
-                "__fxdriver_unwrapped",
-                "__webdriver_script_func",
-                "__webdriver_script_function",
-                "__webdriver_unwrapped",
-              ].includes(prop),
-          );
-        }
-        return props;
-      };
-
-      // Hide automation indicators
-      try {
+      // Log browser reference status but don't fail if it's null
+      // The persistent context can work fine without an explicit browser reference
+      if (!this.browser) {
+        console.warn(
+          "⚠️ Browser reference is null, but persistent context is working",
+        );
+        console.log("Context details:", {
+          contextExists: !!this.context,
+          contextPages: this.context ? this.context.pages().length : "N/A",
+        });
+        console.log(
+          "✅ Continuing with null browser reference (persistent context handles browser lifecycle)",
+        );
+      } else {
+        console.log("✅ Browser instance obtained successfully");
+      }
+      // Minimal stealth - only hide the most obvious automation indicators
+      await this.context.addInitScript((fingerprint) => {
+        // Remove all webdriver traces
+        Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+        delete (window as any).webdriver;
         delete (window.navigator as any).webdriver;
-      } catch (e) {
-        // Ignore if property can't be deleted
-      }
 
-      // More convincing Chrome object
-      Object.defineProperty(window, "chrome", {
-        get: () => ({
-          runtime: {
-            onConnect: null,
-            onMessage: null,
-            connect: function () {},
-            sendMessage: function () {},
-          },
-          loadTimes: function () {
-            return {
-              commitLoadTime: Date.now() / 1000 - Math.random() * 10,
-              connectionInfo: "h2",
-              finishDocumentLoadTime: Date.now() / 1000 - Math.random() * 5,
-              finishLoadTime: Date.now() / 1000 - Math.random() * 3,
-              firstPaintAfterLoadTime: Date.now() / 1000 - Math.random() * 2,
-              firstPaintTime: Date.now() / 1000 - Math.random() * 7,
-              navigationType: "Navigation",
-              npnNegotiatedProtocol: "h2",
-              requestTime: Date.now() / 1000 - Math.random() * 15,
-              startLoadTime: Date.now() / 1000 - Math.random() * 12,
-              wasAlternateProtocolAvailable: false,
-              wasFetchedViaSpdy: true,
-              wasNpnNegotiated: true,
-            };
-          },
-          csi: function () {
-            return {
-              pageT: Date.now() - Math.random() * 1000,
-              startE: Date.now() - Math.random() * 2000,
-              tran: 15,
-            };
-          },
-          app: {
-            isInstalled: false,
-            InstallState: {
-              DISABLED: "disabled",
-              INSTALLED: "installed",
-              NOT_INSTALLED: "not_installed",
-            },
-            RunningState: {
-              CANNOT_RUN: "cannot_run",
-              READY_TO_RUN: "ready_to_run",
-              RUNNING: "running",
-            },
-          },
-        }),
-      });
+        // Spoof platform and languages
+        const ua = fingerprint.userAgent.toLowerCase();
+        let platform = "iPhone"; // Default
+        if (ua.includes("iphone")) {
+          platform = "iPhone";
+        } else if (ua.includes("ipad")) {
+          platform = "iPad";
+        } else if (ua.includes("android")) {
+          platform = "Linux armv8l";
+        } else if (ua.includes("win")) {
+          platform = "Win32";
+        }
+        Object.defineProperty(navigator, "platform", { get: () => platform });
+        Object.defineProperty(navigator, "languages", {
+          get: () => ["en-US", "en"],
+        });
+        Object.defineProperty(navigator, "deviceMemory", { get: () => 8 });
 
-      // Spoof screen properties to match viewport
-      const screenWidth = fingerprint.viewport.width;
-      const screenHeight = fingerprint.viewport.height;
-      Object.defineProperty(screen, "width", { get: () => screenWidth });
-      Object.defineProperty(screen, "height", { get: () => screenHeight });
-      Object.defineProperty(screen, "availWidth", { get: () => screenWidth });
-      Object.defineProperty(screen, "availHeight", { get: () => screenHeight });
-      Object.defineProperty(screen, "colorDepth", { get: () => 24 });
-      Object.defineProperty(screen, "pixelDepth", { get: () => 24 });
+        // Additional stealth properties
+        Object.defineProperty(navigator, "hardwareConcurrency", {
+          get: () => 4,
+        });
+        Object.defineProperty(navigator, "maxTouchPoints", {
+          get: () =>
+            ua.includes("iphone") ||
+            ua.includes("ipad") ||
+            ua.includes("android")
+              ? 5
+              : 0,
+        });
 
-      // Spoof plugins with more realistic data
-      const plugins = [
-        {
-          name: "Chrome PDF Plugin",
-          filename: "internal-pdf-viewer",
-          description: "Portable Document Format",
-          length: 1,
-        },
-        {
-          name: "Chrome PDF Viewer",
-          filename: "mhjfbmdgcfjbbpaeojofohoefgiehjai",
-          description: "",
-          length: 1,
-        },
-        {
-          name: "Native Client",
-          filename: "internal-nacl-plugin",
-          description: "",
-          length: 1,
-        },
-      ];
-      Object.defineProperty(navigator, "plugins", {
-        get: () => ({
-          ...plugins,
-          length: plugins.length,
-          item: (index: number) => plugins[index] || null,
-          namedItem: (name: string) =>
-            plugins.find((p) => p.name === name) || null,
-          refresh: () => {},
-        }),
-      });
+        // Enhanced automation hiding
+        Object.defineProperty(navigator, "connection", {
+          get: () => ({
+            effectiveType: "4g",
+            rtt: 100 + Math.random() * 50,
+            downlink: 10 + Math.random() * 5,
+            saveData: false,
+            onchange: null,
+            addEventListener: () => {},
+            removeEventListener: () => {},
+            dispatchEvent: () => true,
+          }),
+          configurable: false,
+        });
 
-      // Spoof WebGL vendor and renderer with more realistic mobile GPU info
-      try {
-        const getParameter = WebGLRenderingContext.prototype.getParameter;
-        WebGLRenderingContext.prototype.getParameter = function (
-          parameter: number,
-        ) {
-          if (parameter === 37445) {
-            // UNMASKED_VENDOR_WEBGL
-            if (ua.includes("iphone") || ua.includes("ipad")) {
-              return "Apple Inc.";
-            } else if (ua.includes("android")) {
-              return "Qualcomm";
-            }
-            return "Apple Inc.";
+        // Override Object.getOwnPropertyDescriptor to hide our spoofing
+        const originalGetOwnPropertyDescriptor =
+          Object.getOwnPropertyDescriptor;
+        Object.getOwnPropertyDescriptor = function (obj, prop) {
+          if (
+            obj === navigator &&
+            typeof prop === "string" &&
+            [
+              "webdriver",
+              "platform",
+              "languages",
+              "deviceMemory",
+              "hardwareConcurrency",
+              "maxTouchPoints",
+              "connection",
+            ].includes(prop)
+          ) {
+            return undefined; // Hide our modifications
           }
-          if (parameter === 37446) {
-            // UNMASKED_RENDERER_WEBGL
-            if (ua.includes("iphone") || ua.includes("ipad")) {
-              return "Apple A17 Pro GPU";
-            } else if (ua.includes("android")) {
-              return "Adreno (TM) 740";
-            }
-            return "Apple A17 Pro GPU";
-          }
-          return getParameter.call(this, parameter);
+          return originalGetOwnPropertyDescriptor.call(this, obj, prop);
         };
 
-        // Also spoof WebGL2 if available
-        if (typeof WebGL2RenderingContext !== "undefined") {
-          const getParameter2 = WebGL2RenderingContext.prototype.getParameter;
-          WebGL2RenderingContext.prototype.getParameter = function (
+        // Override Object.getOwnPropertyNames to hide automation properties
+        const originalGetOwnPropertyNames = Object.getOwnPropertyNames;
+        Object.getOwnPropertyNames = function (obj) {
+          const props = originalGetOwnPropertyNames.call(this, obj);
+          if (obj === navigator) {
+            return props.filter(
+              (prop) =>
+                ![
+                  "webdriver",
+                  "__webdriver_script_fn",
+                  "__driver_evaluate",
+                  "__webdriver_evaluate",
+                  "__selenium_evaluate",
+                  "__fxdriver_id",
+                  "__fxdriver_unwrapped",
+                  "__webdriver_script_func",
+                  "__webdriver_script_function",
+                  "__webdriver_unwrapped",
+                ].includes(prop),
+            );
+          }
+          return props;
+        };
+
+        // Hide automation indicators
+        try {
+          delete (window.navigator as any).webdriver;
+        } catch (e) {
+          // Ignore if property can't be deleted
+        }
+
+        // More convincing Chrome object
+        Object.defineProperty(window, "chrome", {
+          get: () => ({
+            runtime: {
+              onConnect: null,
+              onMessage: null,
+              connect: function () {},
+              sendMessage: function () {},
+            },
+            loadTimes: function () {
+              return {
+                commitLoadTime: Date.now() / 1000 - Math.random() * 10,
+                connectionInfo: "h2",
+                finishDocumentLoadTime: Date.now() / 1000 - Math.random() * 5,
+                finishLoadTime: Date.now() / 1000 - Math.random() * 3,
+                firstPaintAfterLoadTime: Date.now() / 1000 - Math.random() * 2,
+                firstPaintTime: Date.now() / 1000 - Math.random() * 7,
+                navigationType: "Navigation",
+                npnNegotiatedProtocol: "h2",
+                requestTime: Date.now() / 1000 - Math.random() * 15,
+                startLoadTime: Date.now() / 1000 - Math.random() * 12,
+                wasAlternateProtocolAvailable: false,
+                wasFetchedViaSpdy: true,
+                wasNpnNegotiated: true,
+              };
+            },
+            csi: function () {
+              return {
+                pageT: Date.now() - Math.random() * 1000,
+                startE: Date.now() - Math.random() * 2000,
+                tran: 15,
+              };
+            },
+            app: {
+              isInstalled: false,
+              InstallState: {
+                DISABLED: "disabled",
+                INSTALLED: "installed",
+                NOT_INSTALLED: "not_installed",
+              },
+              RunningState: {
+                CANNOT_RUN: "cannot_run",
+                READY_TO_RUN: "ready_to_run",
+                RUNNING: "running",
+              },
+            },
+          }),
+        });
+
+        // Spoof screen properties to match viewport
+        const screenWidth = fingerprint.viewport.width;
+        const screenHeight = fingerprint.viewport.height;
+        Object.defineProperty(screen, "width", { get: () => screenWidth });
+        Object.defineProperty(screen, "height", { get: () => screenHeight });
+        Object.defineProperty(screen, "availWidth", { get: () => screenWidth });
+        Object.defineProperty(screen, "availHeight", {
+          get: () => screenHeight,
+        });
+        Object.defineProperty(screen, "colorDepth", { get: () => 24 });
+        Object.defineProperty(screen, "pixelDepth", { get: () => 24 });
+
+        // Spoof plugins with more realistic data
+        const plugins = [
+          {
+            name: "Chrome PDF Plugin",
+            filename: "internal-pdf-viewer",
+            description: "Portable Document Format",
+            length: 1,
+          },
+          {
+            name: "Chrome PDF Viewer",
+            filename: "mhjfbmdgcfjbbpaeojofohoefgiehjai",
+            description: "",
+            length: 1,
+          },
+          {
+            name: "Native Client",
+            filename: "internal-nacl-plugin",
+            description: "",
+            length: 1,
+          },
+        ];
+        Object.defineProperty(navigator, "plugins", {
+          get: () => ({
+            ...plugins,
+            length: plugins.length,
+            item: (index: number) => plugins[index] || null,
+            namedItem: (name: string) =>
+              plugins.find((p) => p.name === name) || null,
+            refresh: () => {},
+          }),
+        });
+
+        // Spoof WebGL vendor and renderer with more realistic mobile GPU info
+        try {
+          const getParameter = WebGLRenderingContext.prototype.getParameter;
+          WebGLRenderingContext.prototype.getParameter = function (
             parameter: number,
           ) {
             if (parameter === 37445) {
+              // UNMASKED_VENDOR_WEBGL
               if (ua.includes("iphone") || ua.includes("ipad")) {
                 return "Apple Inc.";
               } else if (ua.includes("android")) {
@@ -925,6 +863,7 @@ export class GMAuth {
               return "Apple Inc.";
             }
             if (parameter === 37446) {
+              // UNMASKED_RENDERER_WEBGL
               if (ua.includes("iphone") || ua.includes("ipad")) {
                 return "Apple A17 Pro GPU";
               } else if (ua.includes("android")) {
@@ -932,173 +871,232 @@ export class GMAuth {
               }
               return "Apple A17 Pro GPU";
             }
-            return getParameter2.call(this, parameter);
+            return getParameter.call(this, parameter);
           };
-        }
-      } catch (e) {
-        console.warn("Failed to spoof WebGL:", e);
-      }
 
-      // Spoof permissions with more realistic responses
-      try {
-        const originalQuery = navigator.permissions.query;
-        navigator.permissions.query = function (
-          parameters: PermissionDescriptor,
-        ) {
-          const permission = parameters.name;
-          let state: PermissionState = "prompt";
-
-          // Set realistic permission states for mobile devices
-          if (permission === "notifications") {
-            state = "granted";
-          } else if (permission === "geolocation") {
-            state = "prompt";
-          } else if (permission === "camera") {
-            state = "prompt";
-          } else if (permission === "microphone") {
-            state = "prompt";
-          } else if (permission === "push") {
-            state = "prompt";
+          // Also spoof WebGL2 if available
+          if (typeof WebGL2RenderingContext !== "undefined") {
+            const getParameter2 = WebGL2RenderingContext.prototype.getParameter;
+            WebGL2RenderingContext.prototype.getParameter = function (
+              parameter: number,
+            ) {
+              if (parameter === 37445) {
+                if (ua.includes("iphone") || ua.includes("ipad")) {
+                  return "Apple Inc.";
+                } else if (ua.includes("android")) {
+                  return "Qualcomm";
+                }
+                return "Apple Inc.";
+              }
+              if (parameter === 37446) {
+                if (ua.includes("iphone") || ua.includes("ipad")) {
+                  return "Apple A17 Pro GPU";
+                } else if (ua.includes("android")) {
+                  return "Adreno (TM) 740";
+                }
+                return "Apple A17 Pro GPU";
+              }
+              return getParameter2.call(this, parameter);
+            };
           }
+        } catch (e) {
+          console.warn("Failed to spoof WebGL:", e);
+        }
 
-          return Promise.resolve({
-            state: state,
-            name: permission,
-            onchange: null,
-            addEventListener: () => {},
-            removeEventListener: () => {},
-            dispatchEvent: () => true,
-          } as PermissionStatus);
-        };
-      } catch (e) {
-        console.warn("Failed to spoof permissions:", e);
-      }
+        // Spoof permissions with more realistic responses
+        try {
+          const originalQuery = navigator.permissions.query;
+          navigator.permissions.query = function (
+            parameters: PermissionDescriptor,
+          ) {
+            const permission = parameters.name;
+            let state: PermissionState = "prompt";
 
-      // Spoof battery API for mobile realism
-      if (
-        ua.includes("mobile") ||
-        ua.includes("iphone") ||
-        ua.includes("android")
-      ) {
-        Object.defineProperty(navigator, "getBattery", {
-          get: () => () =>
-            Promise.resolve({
-              charging: Math.random() > 0.5,
-              chargingTime: Infinity,
-              dischargingTime: Math.random() * 20000 + 3600,
-              level: Math.random() * 0.5 + 0.5, // 50-100%
+            // Set realistic permission states for mobile devices
+            if (permission === "notifications") {
+              state = "granted";
+            } else if (permission === "geolocation") {
+              state = "prompt";
+            } else if (permission === "camera") {
+              state = "prompt";
+            } else if (permission === "microphone") {
+              state = "prompt";
+            } else if (permission === "push") {
+              state = "prompt";
+            }
+
+            return Promise.resolve({
+              state: state,
+              name: permission,
+              onchange: null,
               addEventListener: () => {},
               removeEventListener: () => {},
               dispatchEvent: () => true,
-            }),
-        });
-      }
-
-      // Remove automation detection properties
-      const propsToDelete = [
-        "webdriver",
-        "__webdriver_script_fn",
-        "__webdriver_script_func",
-        "__webdriver_script_function",
-        "__fxdriver_id",
-        "__fxdriver_unwrapped",
-        "__driver_evaluate",
-        "__webdriver_evaluate",
-        "__selenium_evaluate",
-        "__webdriver_script_fn",
-        "__nightwatch_elem",
-        "__playwright",
-      ];
-
-      propsToDelete.forEach((prop) => {
-        try {
-          delete (window as any)[prop];
-          delete (document as any)[prop];
-          delete (navigator as any)[prop];
+            } as PermissionStatus);
+          };
         } catch (e) {
-          // Ignore deletion errors
+          console.warn("Failed to spoof permissions:", e);
         }
-      });
 
-      // Override console methods to hide automation traces
-      const originalConsole = { ...console };
-      ["debug", "log", "warn", "error"].forEach((method) => {
-        (console as any)[method] = function (...args: any[]) {
-          const message = args.join(" ");
-          if (
-            message.includes("webdriver") ||
-            message.includes("playwright") ||
-            message.includes("automation") ||
-            message.includes("HeadlessChrome")
-          ) {
-            return; // Suppress automation-related logs
+        // Spoof battery API for mobile realism
+        if (
+          ua.includes("mobile") ||
+          ua.includes("iphone") ||
+          ua.includes("android")
+        ) {
+          Object.defineProperty(navigator, "getBattery", {
+            get: () => () =>
+              Promise.resolve({
+                charging: Math.random() > 0.5,
+                chargingTime: Infinity,
+                dischargingTime: Math.random() * 20000 + 3600,
+                level: Math.random() * 0.5 + 0.5, // 50-100%
+                addEventListener: () => {},
+                removeEventListener: () => {},
+                dispatchEvent: () => true,
+              }),
+          });
+        }
+
+        // Remove automation detection properties
+        const propsToDelete = [
+          "webdriver",
+          "__webdriver_script_fn",
+          "__webdriver_script_func",
+          "__webdriver_script_function",
+          "__fxdriver_id",
+          "__fxdriver_unwrapped",
+          "__driver_evaluate",
+          "__webdriver_evaluate",
+          "__selenium_evaluate",
+          "__webdriver_script_fn",
+          "__nightwatch_elem",
+          "__playwright",
+        ];
+
+        propsToDelete.forEach((prop) => {
+          try {
+            delete (window as any)[prop];
+            delete (document as any)[prop];
+            delete (navigator as any)[prop];
+          } catch (e) {
+            // Ignore deletion errors
           }
-          (originalConsole as any)[method].apply(console, args);
-        };
-      });
+        });
 
-      // Spoof media devices for mobile realism
-      if (navigator.mediaDevices) {
-        const originalEnumerateDevices =
-          navigator.mediaDevices.enumerateDevices;
-        navigator.mediaDevices.enumerateDevices = function () {
-          return Promise.resolve([
-            {
-              deviceId: "default",
-              kind: "audioinput" as MediaDeviceKind,
-              label: "Default - Built-in Microphone",
-              groupId: "group1",
-            },
-            {
-              deviceId: "communications",
-              kind: "audioinput" as MediaDeviceKind,
-              label: "Communications - Built-in Microphone",
-              groupId: "group1",
-            },
-            {
-              deviceId: "camera1",
-              kind: "videoinput" as MediaDeviceKind,
-              label: "Built-in Camera",
-              groupId: "group2",
-            },
-            {
-              deviceId: "speaker1",
-              kind: "audiooutput" as MediaDeviceKind,
-              label: "Built-in Speaker",
-              groupId: "group3",
-            },
-          ] as MediaDeviceInfo[]);
+        // Override console methods to hide automation traces
+        const originalConsole = { ...console };
+        ["debug", "log", "warn", "error"].forEach((method) => {
+          (console as any)[method] = function (...args: any[]) {
+            const message = args.join(" ");
+            if (
+              message.includes("webdriver") ||
+              message.includes("playwright") ||
+              message.includes("automation") ||
+              message.includes("HeadlessChrome")
+            ) {
+              return; // Suppress automation-related logs
+            }
+            (originalConsole as any)[method].apply(console, args);
+          };
+        });
+
+        // Spoof media devices for mobile realism
+        if (navigator.mediaDevices) {
+          const originalEnumerateDevices =
+            navigator.mediaDevices.enumerateDevices;
+          navigator.mediaDevices.enumerateDevices = function () {
+            return Promise.resolve([
+              {
+                deviceId: "default",
+                kind: "audioinput" as MediaDeviceKind,
+                label: "Default - Built-in Microphone",
+                groupId: "group1",
+              },
+              {
+                deviceId: "communications",
+                kind: "audioinput" as MediaDeviceKind,
+                label: "Communications - Built-in Microphone",
+                groupId: "group1",
+              },
+              {
+                deviceId: "camera1",
+                kind: "videoinput" as MediaDeviceKind,
+                label: "Built-in Camera",
+                groupId: "group2",
+              },
+              {
+                deviceId: "speaker1",
+                kind: "audiooutput" as MediaDeviceKind,
+                label: "Built-in Speaker",
+                groupId: "group3",
+              },
+            ] as MediaDeviceInfo[]);
+          };
+        }
+
+        // Add realistic timing jitter to Date.now()
+        const originalDateNow = Date.now;
+        let timeOffset = 0;
+        Date.now = function () {
+          // Add small random jitter to timing
+          timeOffset += Math.random() * 2 - 1; // ±1ms jitter
+          return originalDateNow() + Math.floor(timeOffset);
         };
+
+        // Spoof performance.now() with realistic timing
+        const originalPerformanceNow = performance.now;
+        let performanceOffset = 0;
+        performance.now = function () {
+          performanceOffset += Math.random() * 0.1 - 0.05; // ±0.05ms jitter
+          return originalPerformanceNow() + performanceOffset;
+        };
+      }, fingerprint);
+
+      const displayMode = isWindows
+        ? "headful (minimized)"
+        : isLinux
+          ? this.xvfbDisplay
+            ? "headful (Xvfb virtual display)"
+            : "headful (natural display)"
+          : "headful";
+      console.log(
+        `🌐 Browser initialized with persistent context (${displayMode})`,
+      );
+    } catch (error) {
+      console.error("❌ Failed to launch browser context:", error);
+      console.error("🔍 Browser arguments used:", browserArgs);
+      console.error("📁 Profile path:", profilePath);
+
+      // Provide helpful troubleshooting information
+      if (isWindows) {
+        console.error("💡 Windows troubleshooting tips:");
+        console.error(
+          "   1. Ensure Windows Defender/antivirus isn't blocking Chromium",
+        );
+        console.error("   2. Try running as administrator");
+        console.error("   3. Close all Chrome/Chromium instances manually");
+        console.error("   4. Check if profile directory is write-accessible");
       }
 
-      // Add realistic timing jitter to Date.now()
-      const originalDateNow = Date.now;
-      let timeOffset = 0;
-      Date.now = function () {
-        // Add small random jitter to timing
-        timeOffset += Math.random() * 2 - 1; // ±1ms jitter
-        return originalDateNow() + Math.floor(timeOffset);
-      };
-
-      // Spoof performance.now() with realistic timing
-      const originalPerformanceNow = performance.now;
-      let performanceOffset = 0;
-      performance.now = function () {
-        performanceOffset += Math.random() * 0.1 - 0.05; // ±0.05ms jitter
-        return originalPerformanceNow() + performanceOffset;
-      };
-    }, fingerprint);
-
-    const displayMode = isWindows
-      ? "headful (minimized)"
-      : isLinux
-        ? this.xvfbDisplay
-          ? "headful (Xvfb virtual display)"
-          : "headful (natural display)"
-        : "headful";
-    console.log(
-      `🌐 Browser initialized with persistent context (${displayMode})`,
-    );
+      // Clean up any partially created resources
+      if (this.context) {
+        try {
+          await this.context.close();
+        } catch (closeError) {
+          console.warn(
+            "Warning: Failed to close context during error cleanup:",
+            closeError,
+          );
+        }
+        this.context = null;
+      }
+      this.browser = null;
+      this.currentPage = null;
+      throw new Error(
+        `Browser launch failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   private async closeBrowser(): Promise<void> {
@@ -2863,21 +2861,46 @@ export class GMAuth {
       // Use the discovery data but merge with fallback to ensure required fields
       const discoveredConfig = response.data;
 
+      // Track which endpoints are using fallback values
+      const fallbacksUsed = [];
+      const finalAuthEndpoint =
+        discoveredConfig.authorization_endpoint ||
+        fallbackConfig.authorization_endpoint;
+      const finalTokenEndpoint =
+        discoveredConfig.token_endpoint || fallbackConfig.token_endpoint;
+      const finalJwksUri = discoveredConfig.jwks_uri || fallbackConfig.jwks_uri;
+
+      if (!discoveredConfig.authorization_endpoint) {
+        fallbacksUsed.push("authorization_endpoint");
+      }
+      if (!discoveredConfig.token_endpoint) {
+        fallbacksUsed.push("token_endpoint");
+      }
+      if (!discoveredConfig.jwks_uri) {
+        fallbacksUsed.push("jwks_uri");
+      }
+
       // Create issuer with combined configuration
       issuer = new this.oidc.Issuer({
         ...fallbackConfig,
         ...discoveredConfig,
         // Ensure these critical endpoints are defined
-        authorization_endpoint:
-          discoveredConfig.authorization_endpoint ||
-          fallbackConfig.authorization_endpoint,
-        token_endpoint:
-          discoveredConfig.token_endpoint || fallbackConfig.token_endpoint,
-        jwks_uri: discoveredConfig.jwks_uri || fallbackConfig.jwks_uri,
+        authorization_endpoint: finalAuthEndpoint,
+        token_endpoint: finalTokenEndpoint,
+        jwks_uri: finalJwksUri,
       });
 
       if (this.debugMode) {
         console.log("Successfully created issuer with discovery data");
+        if (fallbacksUsed.length > 0) {
+          console.log(
+            `🔧 Using fallback values for: ${fallbacksUsed.join(", ")}`,
+          );
+        } else {
+          console.log(
+            "✅ All endpoints retrieved from discovery, no fallbacks needed",
+          );
+        }
       }
     } catch (error) {
       console.warn(
@@ -2891,6 +2914,9 @@ export class GMAuth {
       if (this.debugMode) {
         console.log("Created issuer with fallback configuration");
       }
+      console.log(
+        "🔧 Using complete fallback configuration for all OpenID endpoints",
+      );
     }
 
     if (!issuer) {
