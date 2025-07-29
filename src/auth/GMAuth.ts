@@ -790,10 +790,8 @@ export class GMAuth {
         // Reset any previously captured authorization code
         this.capturedAuthCode = null;
 
-        // Perform browser warming before retry attempts to establish natural session state
-        if (attempt > 0) {
-          await this.warmupBrowser(useRandomFingerprint);
-        }
+        // Perform browser warming to establish natural session state
+        await this.warmupBrowser(useRandomFingerprint);
 
         const { authorizationUrl, code_verifier } =
           await this.startMSAuthorizationFlow();
