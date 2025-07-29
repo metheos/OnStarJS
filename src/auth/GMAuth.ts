@@ -578,15 +578,6 @@ export class GMAuth {
     // Wait a moment for browser to fully initialize
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    // Try again if browser is still null
-    if (!this.browser) {
-      console.log(
-        "🔄 Browser reference is null, retrying to get browser instance...",
-      );
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      this.browser = this.context.browser();
-    }
-
     // Log browser reference status but don't fail if it's null
     // The persistent context can work fine without an explicit browser reference
     if (!this.browser) {
