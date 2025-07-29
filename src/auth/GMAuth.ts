@@ -85,6 +85,7 @@ export class GMAuth {
   private debugMode: boolean = true; // Default to visible mode for reliability
   private xvfb: any = null; // Xvfb instance for Linux virtual display
   private xvfbDisplay: string | null = null; // Store the DISPLAY value for Xvfb
+  private cleanupInProgress: boolean = false; // Flag to prevent concurrent cleanup
 
   constructor(config: GMAuthConfig) {
     this.config = config;
@@ -483,7 +484,7 @@ export class GMAuth {
     }
 
     // DON'T stop Xvfb here - we want to reuse it for retries
-    // Xvfb will be stopped in cleanup methods or when the class is destroyed
+    // Xvfb will be stopped by internalCleanup when authentication is complete
 
     // Reset captured auth code when closing browser
     this.capturedAuthCode = null;
@@ -529,13 +530,21 @@ export class GMAuth {
     this.debugMode = false;
   }
 
-  // Public cleanup method to properly stop Xvfb and close browser
-  public async cleanup(): Promise<void> {
+  // Private cleanup method for internal use
+  private async internalCleanup(): Promise<void> {
+    if (this.cleanupInProgress) {
+      return; // Prevent concurrent cleanup
+    }
+
+    this.cleanupInProgress = true;
+
     try {
       await this.closeBrowser();
       await this.stopXvfb();
     } catch (error) {
-      console.warn("Warning: Cleanup failed:", error);
+      console.warn("Warning: Internal cleanup failed:", error);
+    } finally {
+      this.cleanupInProgress = false;
     }
   }
 
@@ -564,10 +573,10 @@ export class GMAuth {
 
       // Ensure cleanup happens on any authentication error
       try {
-        await this.stopXvfb();
+        await this.internalCleanup();
       } catch (cleanupError) {
         console.warn(
-          "Warning: Xvfb cleanup failed in authenticate error handler:",
+          "Warning: Cleanup failed in authenticate error handler:",
           cleanupError,
         );
       }
@@ -630,8 +639,7 @@ export class GMAuth {
 
         // Always clean up browser resources after successful authentication
         try {
-          await this.closeBrowser();
-          await this.stopXvfb(); // Stop Xvfb on successful completion
+          await this.internalCleanup();
         } catch (cleanupError) {
           console.warn(
             "Warning: Browser cleanup failed after success:",
@@ -669,12 +677,12 @@ export class GMAuth {
     // If we get here, all retries failed
     console.error(`🚫 Authentication failed after ${maxRetries + 1} attempts`);
 
-    // Clean up Xvfb on final failure
+    // Clean up on final failure
     try {
-      await this.stopXvfb();
+      await this.internalCleanup();
     } catch (cleanupError) {
       console.warn(
-        "Warning: Xvfb cleanup failed after final failure:",
+        "Warning: Cleanup failed after final failure:",
         cleanupError,
       );
     }
@@ -1573,6 +1581,17 @@ export class GMAuth {
       this.currentGMAPIToken.expires_at > now + 5 * 60
     ) {
       // console.log("Returning existing GM API token");
+
+      // Clean up any browser resources since we're using existing tokens
+      try {
+        await this.closeBrowser(); // Only close browser, keep Xvfb for potential future use
+      } catch (cleanupError) {
+        console.warn(
+          "Warning: Browser cleanup failed when returning existing token:",
+          cleanupError,
+        );
+      }
+
       return this.currentGMAPIToken;
     }
 
@@ -1630,6 +1649,16 @@ export class GMAuth {
       // Store the new token
       this.currentGMAPIToken = response.data;
       this.saveTokens(tokenSet);
+
+      // Clean up browser resources after successful token retrieval
+      try {
+        await this.closeBrowser(); // Only close browser, keep Xvfb for potential future use
+      } catch (cleanupError) {
+        console.warn(
+          "Warning: Browser cleanup failed after new token retrieval:",
+          cleanupError,
+        );
+      }
 
       return response.data;
     } catch (error: any) {

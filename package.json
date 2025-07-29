@@ -31,6 +31,7 @@
     "test:functional": "jest test/functional",
     "test:keys": "jest test/functional -t 'Unupgraded Command Successful'",
     "test:auth": "jest test/auth/testAuth",
+    "test:reauth": "jest test/auth/testAuth -t 'should successfully reauthenticate'",
     "prepare": "husky install",
     "postinstall": "patchright install chromium"
   },
