@@ -86,6 +86,7 @@ export class GMAuth {
   private xvfb: any = null; // Xvfb instance for Linux virtual display
   private xvfbDisplay: string | null = null; // Store the DISPLAY value for Xvfb
   private cleanupInProgress: boolean = false; // Flag to prevent concurrent cleanup
+  private browserWarmedUp: boolean = false; // Flag to track if browser has been warmed up for current profile
 
   constructor(config: GMAuthConfig) {
     this.config = config;
@@ -173,33 +174,55 @@ export class GMAuth {
     let browserUsable = false;
 
     // First check: Do we have both browser and context?
-    if (this.browser && this.context) {
-      try {
-        // Try to check if the browser is still connected
-        const isConnected = this.browser.isConnected();
-        const pages = this.context.pages();
-        browserUsable = isConnected && pages !== null;
+    console.log(
+      `🔍 Browser check: browser=${!!this.browser}, context=${!!this.context}`,
+    );
 
-        if (browserUsable) {
-          console.log("🌐 Reusing existing browser instance");
-          return; // Early return - don't continue with initialization
-        } else {
+    if (this.context) {
+      // We have a context, check if we can get a valid browser from it
+      if (!this.browser) {
+        // Try to get the browser from the context
+        this.browser = this.context.browser();
+        console.log(`🔍 Trying to get browser from context: ${!!this.browser}`);
+      }
+
+      if (this.browser) {
+        try {
+          // Try to check if the browser is still connected
+          const isConnected = this.browser.isConnected();
+          const pages = this.context.pages();
           console.log(
-            "🔄 Browser instance exists but not usable (disconnected or invalid), reinitializing...",
+            `🔍 Browser usability: isConnected=${isConnected}, pages=${pages ? pages.length : "null"}`,
+          );
+          browserUsable = isConnected && pages !== null;
+
+          if (browserUsable) {
+            console.log("🌐 Reusing existing browser instance");
+            return; // Early return - don't continue with initialization
+          } else {
+            console.log(
+              "🔄 Browser instance exists but not usable (disconnected or invalid), reinitializing...",
+            );
+          }
+        } catch (error) {
+          // Browser/context is not usable, proceed with reinitialization
+          console.log(
+            "🔄 Existing browser instance not usable, reinitializing...",
+            error,
           );
         }
-      } catch (error) {
-        // Browser/context is not usable, proceed with reinitialization
+      } else {
         console.log(
-          "🔄 Existing browser instance not usable, reinitializing...",
-          error,
+          "🔄 Context exists but no valid browser reference, reinitializing...",
         );
       }
-      // If we reach here, browser/context exist but are not usable
+      // If we reach here, context exists but browser is not usable
       browserUsable = false;
-    } else if (this.browser || this.context) {
-      // Only partial browser state (either browser OR context but not both)
-      console.log("🔄 Partial browser state detected, reinitializing...");
+    } else if (this.browser) {
+      // We have a browser but no context - this shouldn't happen with persistent contexts
+      console.log(
+        `🔄 Browser exists without context (unexpected state), reinitializing...`,
+      );
       browserUsable = false;
     } else {
       // No existing browser or context
@@ -209,15 +232,22 @@ export class GMAuth {
 
     // Clear stale references if browser is not usable
     if (!browserUsable) {
+      // Remember if we had an existing context before clearing references
+      const hadExistingContext = this.context !== null;
+
       this.browser = null;
       this.context = null;
       this.currentPage = null;
 
-      // Only delete the browser profile if we're starting fresh (no existing browser state)
-      // This preserves the profile from warmup sessions
-      if (fs.existsSync("./temp-browser-profile")) {
+      // Only delete the browser profile if we're starting completely fresh
+      // (no existing context at all). This preserves warmed-up sessions.
+      if (!hadExistingContext && fs.existsSync("./temp-browser-profile")) {
         fs.rmSync("./temp-browser-profile", { recursive: true, force: true });
-        console.log("🗑️ Deleted existing temp browser profile");
+        console.log("🗑️ Deleted existing temp browser profile (fresh start)");
+        // Reset warmup flag since we deleted the profile
+        this.browserWarmedUp = false;
+      } else if (hadExistingContext) {
+        console.log("🔄 Preserving browser profile from existing session");
       }
     }
 
@@ -522,7 +552,12 @@ export class GMAuth {
     );
 
     // The browser is part of the persistent context
-    this.browser = this.context.browser()!;
+    this.browser = this.context.browser();
+
+    // Ensure we have a valid browser reference
+    if (!this.browser) {
+      throw new Error("Failed to get browser instance from persistent context");
+    }
 
     // Minimal stealth - only hide the most obvious automation indicators
     await this.context.addInitScript(() => {
@@ -541,102 +576,98 @@ export class GMAuth {
     console.log(
       `🌐 Browser initialized with persistent context (${displayMode})`,
     );
-  }
 
-  // Browser warming to establish natural session state
-  private async warmupBrowser(
-    useRandomFingerprint: boolean = false,
-  ): Promise<void> {
-    console.log("🔥 Warming up browser session...");
+    // Perform browser warmup if not already done for this profile
+    if (!this.browserWarmedUp && useRandomFingerprint) {
+      console.log("🔥 Warming up browser session...");
+      try {
+        // Create a new page for warmup activities
+        const warmupPage = await this.context.newPage();
 
-    // Initialize browser if needed
-    await this.initBrowser(useRandomFingerprint);
+        // Visit a few common sites to establish browsing patterns
+        const warmupSites = [
+          "https://www.microsoft.com",
+          "https://www.bing.com",
+          "https://outlook.com",
+          "https://www.google.com",
+          "https://www.amazon.com",
+          "https://www.facebook.com",
+          "https://www.wikipedia.org",
+          "https://www.yahoo.com",
+          "https://www.ebay.com",
+          "https://www.reddit.com",
+        ];
 
-    if (!this.context) {
-      throw new Error("Browser context not available for warmup");
-    }
+        // Visit 3-4 sites randomly for warmup
+        const sitesToVisit = Math.floor(Math.random() * 2) + 3; // 3 or 4 sites
+        const selectedSites: string[] = [];
 
-    try {
-      // Create a new page for warmup activities
-      const warmupPage = await this.context.newPage();
-
-      // Visit a few common sites to establish browsing patterns
-      const warmupSites = [
-        "https://www.microsoft.com",
-        "https://www.bing.com",
-        "https://outlook.com",
-        "https://www.google.com",
-        "https://www.amazon.com",
-        "https://www.facebook.com",
-        "https://www.wikipedia.org",
-        "https://www.yahoo.com",
-        "https://www.ebay.com",
-        "https://www.reddit.com",
-      ];
-
-      // Visit 3-4 sites randomly for warmup
-      const sitesToVisit = Math.floor(Math.random() * 2) + 3; // 3 or 4 sites
-      const selectedSites: string[] = [];
-
-      for (let i = 0; i < sitesToVisit; i++) {
-        const randomSite =
-          warmupSites[Math.floor(Math.random() * warmupSites.length)];
-        if (!selectedSites.includes(randomSite)) {
-          selectedSites.push(randomSite);
+        for (let i = 0; i < sitesToVisit; i++) {
+          const randomSite =
+            warmupSites[Math.floor(Math.random() * warmupSites.length)];
+          if (!selectedSites.includes(randomSite)) {
+            selectedSites.push(randomSite);
+          }
         }
-      }
 
-      for (const site of selectedSites) {
-        try {
-          console.log(`🌐 Visiting ${site} for session warmup...`);
+        for (const site of selectedSites) {
+          try {
+            console.log(`🌐 Visiting ${site} for session warmup...`);
 
-          await warmupPage.goto(site, {
-            waitUntil: "domcontentloaded",
-            timeout: 20000, // Increased timeout
-          });
+            await warmupPage.goto(site, {
+              waitUntil: "domcontentloaded",
+              timeout: 20000, // Increased timeout
+            });
 
-          // Wait for a bit, simulating reading time
-          await warmupPage.waitForTimeout(2000 + Math.random() * 3000);
+            // Wait for a bit, simulating reading time
+            await warmupPage.waitForTimeout(2000 + Math.random() * 3000);
 
-          // Simulate scrolling
-          if (Math.random() > 0.3) {
-            const scrollAmount = Math.random() * 500 + 200;
-            await warmupPage.mouse.wheel(0, scrollAmount);
-            await warmupPage.waitForTimeout(500 + Math.random() * 1000);
-          }
-
-          // More scrolling
-          if (Math.random() > 0.5) {
-            const scrollAmount2 = Math.random() * 800 + 300;
-            await warmupPage.mouse.wheel(0, scrollAmount2);
-            await warmupPage.waitForTimeout(1000 + Math.random() * 2000);
-          }
-
-          // Simulate some natural mouse movement over a few steps
-          const viewport = warmupPage.viewportSize();
-          if (viewport) {
-            for (let j = 0; j < Math.floor(Math.random() * 3) + 2; j++) {
-              await warmupPage.mouse.move(
-                Math.random() * viewport.width,
-                Math.random() * viewport.height,
-                { steps: 10 }, // Move in steps to look more human
-              );
-              await warmupPage.waitForTimeout(200 + Math.random() * 500);
+            // Simulate scrolling
+            if (Math.random() > 0.3) {
+              const scrollAmount = Math.random() * 500 + 200;
+              await warmupPage.mouse.wheel(0, scrollAmount);
+              await warmupPage.waitForTimeout(500 + Math.random() * 1000);
             }
+
+            // More scrolling
+            if (Math.random() > 0.5) {
+              const scrollAmount2 = Math.random() * 800 + 300;
+              await warmupPage.mouse.wheel(0, scrollAmount2);
+              await warmupPage.waitForTimeout(1000 + Math.random() * 2000);
+            }
+
+            // Simulate some natural mouse movement over a few steps
+            const viewport = warmupPage.viewportSize();
+            if (viewport) {
+              for (let j = 0; j < Math.floor(Math.random() * 3) + 2; j++) {
+                await warmupPage.mouse.move(
+                  Math.random() * viewport.width,
+                  Math.random() * viewport.height,
+                  { steps: 10 }, // Move in steps to look more human
+                );
+                await warmupPage.waitForTimeout(200 + Math.random() * 500);
+              }
+            }
+          } catch (error) {
+            console.warn(`⚠️ Warmup site ${site} failed:`, error);
+            // Continue with warmup even if a site fails
           }
-        } catch (error) {
-          console.warn(`⚠️ Warmup site ${site} failed:`, error);
-          // Continue with warmup even if a site fails
         }
+
+        // Close the warmup page
+        await warmupPage.close();
+
+        // Mark warmup as completed
+        this.browserWarmedUp = true;
+        console.log("✅ Browser warmup completed");
+      } catch (error) {
+        console.warn("⚠️ Browser warmup failed:", error);
+        // Don't fail the initialization if warmup fails
       }
-
-      // Close the warmup page
-      await warmupPage.close();
-
-      console.log("✅ Browser warmup completed");
-    } catch (error) {
-      console.warn("⚠️ Browser warmup failed:", error);
-      // Don't fail the authentication if warmup fails
+    } else if (this.browserWarmedUp) {
+      console.log("🔥 Browser profile already warmed up, skipping warmup");
+    } else {
+      console.log("🔥 Skipping warmup (not using randomized fingerprint)");
     }
   }
 
@@ -676,6 +707,9 @@ export class GMAuth {
 
     // Reset captured auth code when closing browser
     this.capturedAuthCode = null;
+
+    // Reset warmup state when completely closing browser
+    this.browserWarmedUp = false;
   }
 
   // Stop Xvfb when completely done (success or final failure)
@@ -800,9 +834,6 @@ export class GMAuth {
 
         // Reset any previously captured authorization code
         this.capturedAuthCode = null;
-
-        // Perform browser warming to establish natural session state
-        await this.warmupBrowser(useRandomFingerprint);
 
         const { authorizationUrl, code_verifier } =
           await this.startMSAuthorizationFlow();
