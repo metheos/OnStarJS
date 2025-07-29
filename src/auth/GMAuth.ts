@@ -2182,15 +2182,22 @@ export class GMAuth {
           // Reset the access denied flag for this retry
           accessDenied = false;
 
-          // Wait a bit before retrying
-          await page.waitForTimeout(2000 + Math.random() * 3000);
+          // Human-like wait before retrying - simulate user thinking and trying again
+          const retryDelay = 2000 + Math.random() * 3000 + retryCount * 1000; // Progressive delay
+          console.log(
+            `⏳ Waiting ${(retryDelay / 1000).toFixed(1)}s before retry (simulating human behavior)...`,
+          );
+          await page.waitForTimeout(retryDelay);
 
           try {
             // Refresh the page to start over with credential submission
             console.log("🔄 Refreshing authentication page for retry...");
             await page.reload({ waitUntil: "networkidle", timeout: 60000 });
 
-            // Re-enter email
+            // Simulate human pause after page reload to read/assess the page
+            await page.waitForTimeout(1500 + Math.random() * 2500);
+
+            // Re-enter email with human-like behavior
             console.log(
               "🔍 Re-locating email input field after page refresh...",
             );
@@ -2202,8 +2209,34 @@ export class GMAuth {
             await retryEmailField.waitFor({ timeout: 60000 });
 
             console.log("✅ Email field found - entering email address");
+
+            // Simulate human mouse movement before clicking
+            const emailBox = await retryEmailField.boundingBox();
+            if (emailBox) {
+              await page.mouse.move(
+                emailBox.x + emailBox.width * (0.2 + Math.random() * 0.6),
+                emailBox.y + emailBox.height * (0.2 + Math.random() * 0.6),
+                { steps: Math.floor(Math.random() * 8) + 3 },
+              );
+              await page.waitForTimeout(150 + Math.random() * 300);
+            }
+
             await retryEmailField.click({ delay: Math.random() * 200 + 50 });
-            await retryEmailField.fill(this.config.username);
+
+            // Type email with human-like timing
+            const email = this.config.username;
+            for (let i = 0; i < email.length; i++) {
+              await page.keyboard.type(email[i], {
+                delay: Math.random() * 120 + 40,
+              });
+              // Occasional hesitation during typing
+              if (Math.random() < 0.08) {
+                await page.waitForTimeout(200 + Math.random() * 500);
+              }
+            }
+
+            // Human pause before clicking continue
+            await page.waitForTimeout(800 + Math.random() * 1200);
 
             // Click continue button
             console.log("🔍 Locating Continue button...");
@@ -2213,6 +2246,13 @@ export class GMAuth {
               )
               .first();
             await retryContinueButton.waitFor({ timeout: 60000 });
+
+            console.log(
+              "✅ Continue button found - clicking to proceed to password entry",
+            );
+            // Hover before clicking (human-like)
+            await retryContinueButton.hover();
+            await page.waitForTimeout(200 + Math.random() * 400);
             await retryContinueButton.click({
               delay: Math.random() * 200 + 50,
             });
@@ -2221,7 +2261,10 @@ export class GMAuth {
             console.log("⏳ Waiting for password page to load...");
             await page.waitForLoadState("networkidle", { timeout: 60000 });
 
-            // Re-enter password
+            // Human pause to assess password page
+            await page.waitForTimeout(1200 + Math.random() * 2000);
+
+            // Re-enter password with human-like behavior
             console.log("🔍 Re-locating password input field...");
             const retryPasswordField = page
               .locator(
@@ -2231,8 +2274,35 @@ export class GMAuth {
             await retryPasswordField.waitFor({ timeout: 60000 });
 
             console.log("✅ Password field found - entering password");
+
+            // Simulate mouse movement before password field
+            const passwordBox = await retryPasswordField.boundingBox();
+            if (passwordBox) {
+              await page.mouse.move(
+                passwordBox.x + passwordBox.width * (0.2 + Math.random() * 0.6),
+                passwordBox.y +
+                  passwordBox.height * (0.2 + Math.random() * 0.6),
+                { steps: Math.floor(Math.random() * 8) + 4 },
+              );
+              await page.waitForTimeout(150 + Math.random() * 300);
+            }
+
             await retryPasswordField.click({ delay: Math.random() * 200 + 50 });
-            await retryPasswordField.fill(this.config.password);
+
+            // Type password with human-like timing
+            const password = this.config.password;
+            for (let i = 0; i < password.length; i++) {
+              await page.keyboard.type(password[i], {
+                delay: Math.random() * 100 + 50,
+              });
+              // Occasional hesitation during password typing
+              if (Math.random() < 0.06) {
+                await page.waitForTimeout(150 + Math.random() * 400);
+              }
+            }
+
+            // Human pause before final submission
+            await page.waitForTimeout(600 + Math.random() * 800);
 
             // Re-submit credentials
             console.log("🔍 Locating Sign In button for retry submission...");
@@ -2242,9 +2312,15 @@ export class GMAuth {
               )
               .first();
             await retrySubmitButton.waitFor({ timeout: 60000 });
-            await retrySubmitButton.click({ delay: Math.random() * 200 + 50 });
 
-            // Wait for response
+            console.log(
+              "✅ Sign In button found - clicking to submit credentials again",
+            );
+
+            // Hover before final click
+            await retrySubmitButton.hover();
+            await page.waitForTimeout(100 + Math.random() * 200);
+            await retrySubmitButton.click({ delay: Math.random() * 200 + 50 }); // Wait for response
             console.log(
               "⏳ Waiting for authentication response after retry...",
             );
@@ -2303,45 +2379,121 @@ export class GMAuth {
         console.log(
           "🔄 Attempting to refresh page and retry credential submission...",
         );
+
+        // Human-like delay before retry - simulate user thinking about what went wrong
+        const retryThinkingDelay = 3000 + Math.random() * 4000;
+        console.log(
+          `⏳ Pausing ${(retryThinkingDelay / 1000).toFixed(1)}s before retry (simulating human assessment)...`,
+        );
+        await page.waitForTimeout(retryThinkingDelay);
+
         await page.reload({ waitUntil: "networkidle" });
 
-        // Re-find and fill email field
+        // Simulate human pause after reload to read the page
+        await page.waitForTimeout(2000 + Math.random() * 3000);
+
+        // Re-find and fill email field with human-like behavior
         const retryEmailField = page
           .locator(
             'input[type="email"], input[name="logonIdentifier"], input#logonIdentifier, [aria-label*="Email"i], [placeholder*="Email"i]',
           )
           .first();
         await retryEmailField.waitFor({ timeout: 30000 });
-        await retryEmailField.fill(this.config.username);
 
-        // Click continue button again
+        // Simulate mouse movement to email field
+        const emailBox = await retryEmailField.boundingBox();
+        if (emailBox) {
+          await page.mouse.move(
+            emailBox.x + emailBox.width * (0.1 + Math.random() * 0.8),
+            emailBox.y + emailBox.height * (0.1 + Math.random() * 0.8),
+            { steps: Math.floor(Math.random() * 12) + 5 },
+          );
+          await page.waitForTimeout(300 + Math.random() * 600);
+        }
+
+        await retryEmailField.click({ delay: Math.random() * 250 + 100 });
+
+        // Type email character by character with human-like timing
+        const email = this.config.username;
+        for (let i = 0; i < email.length; i++) {
+          await page.keyboard.type(email[i], {
+            delay: Math.random() * 140 + 60,
+          });
+          // Occasional longer pause during typing
+          if (Math.random() < 0.12) {
+            await page.waitForTimeout(250 + Math.random() * 700);
+          }
+        }
+
+        // Human pause before clicking continue
+        await page.waitForTimeout(1000 + Math.random() * 1500);
+
+        // Click continue button again with human-like behavior
         const retryContinueButton = page
           .locator(
             'button#continue[data-dtm="sign in"][aria-label="Continue"], button:has-text("Continue")[data-dtm="sign in"], [role="button"][aria-label*="Continue"i]',
           )
           .first();
-        await retryContinueButton.click();
+
+        // Hover before clicking
+        await retryContinueButton.hover();
+        await page.waitForTimeout(200 + Math.random() * 500);
+        await retryContinueButton.click({ delay: Math.random() * 180 + 80 });
 
         // Wait for password page
         await page.waitForLoadState("networkidle", { timeout: 30000 });
 
-        // Re-find and fill password field
+        // Human pause to assess password page
+        await page.waitForTimeout(1500 + Math.random() * 2500);
+
+        // Re-find and fill password field with human-like behavior
         const retryPasswordField = page
           .locator(
             'input[type="password"], input[name="password"], [aria-label*="Password"i], [placeholder*="Password"i]',
           )
           .first();
         await retryPasswordField.waitFor({ timeout: 30000 });
-        await retryPasswordField.fill(this.config.password);
 
-        // Click the sign-in button again
+        // Simulate mouse movement to password field
+        const passwordBox = await retryPasswordField.boundingBox();
+        if (passwordBox) {
+          await page.mouse.move(
+            passwordBox.x + passwordBox.width * (0.2 + Math.random() * 0.6),
+            passwordBox.y + passwordBox.height * (0.2 + Math.random() * 0.6),
+            { steps: Math.floor(Math.random() * 10) + 4 },
+          );
+          await page.waitForTimeout(200 + Math.random() * 400);
+        }
+
+        await retryPasswordField.click({ delay: Math.random() * 220 + 90 });
+
+        // Type password character by character with human-like timing
+        const password = this.config.password;
+        for (let i = 0; i < password.length; i++) {
+          await page.keyboard.type(password[i], {
+            delay: Math.random() * 110 + 60,
+          });
+          // Occasional hesitation during password typing
+          if (Math.random() < 0.08) {
+            await page.waitForTimeout(180 + Math.random() * 450);
+          }
+        }
+
+        // Human pause before final submission
+        await page.waitForTimeout(800 + Math.random() * 1200);
+
+        // Click the sign-in button again with human-like behavior
         const retrySubmitButton = page
           .locator(
             'button#continue[data-dtm="sign in"][aria-label="Sign in"], button:has-text("Log In")[data-dtm="sign in"], button:has-text("Sign in")[data-dtm="sign in"], [role="button"][aria-label*="Sign in"i], [role="button"][aria-label*="Log In"i]',
           )
           .first();
         await retrySubmitButton.waitFor({ timeout: 30000 });
-        await retrySubmitButton.click();
+
+        // Hover before final click
+        await retrySubmitButton.hover();
+        await page.waitForTimeout(150 + Math.random() * 350);
+        await retrySubmitButton.click({ delay: Math.random() * 200 + 100 });
 
         // Wait for response after retry
         await page.waitForTimeout(3000);
