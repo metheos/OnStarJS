@@ -168,7 +168,9 @@ export class GMAuth {
   ): Promise<void> {
     // Detect platform early to check Xvfb state
     const isLinux = process.platform === "linux";
-    const hasDisplay = isLinux && process.env.DISPLAY;
+    // Check if we have a natural display (not our own Xvfb)
+    const hasNaturalDisplay =
+      isLinux && process.env.DISPLAY && !this.xvfbDisplay;
 
     // Check if browser and context are actually usable, not just that references exist
     let browserUsable = false;
@@ -236,11 +238,11 @@ export class GMAuth {
       console.log("🗑️ Deleted existing temp browser profile");
     }
 
-    // Detect platform (isLinux and hasDisplay already declared above)
+    // Detect platform (isLinux and hasNaturalDisplay already declared above)
     const isWindows = process.platform === "win32";
 
-    // On Linux without a display, always check if we need Xvfb
-    if (isLinux && !hasDisplay) {
+    // On Linux without a natural display, always check if we need Xvfb
+    if (isLinux && !hasNaturalDisplay) {
       // First, check if we have an existing Xvfb reference and verify it's still running
       if (this.xvfb && this.xvfbDisplay) {
         console.log("🖥️ Checking existing Xvfb instance...");
@@ -443,7 +445,7 @@ export class GMAuth {
     const displayMode = isWindows
       ? "headful (minimized)"
       : isLinux
-        ? hasDisplay
+        ? hasNaturalDisplay
           ? "headful"
           : "headful (Xvfb virtual display)"
         : "headful";
