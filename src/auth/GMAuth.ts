@@ -451,6 +451,82 @@ export class GMAuth {
       `🌐 Browser initialized with persistent context (${displayMode})`,
     );
   }
+
+  // Browser warming to establish natural session state
+  private async warmupBrowser(
+    useRandomFingerprint: boolean = false,
+  ): Promise<void> {
+    console.log("🔥 Warming up browser session...");
+
+    // Initialize browser if needed
+    await this.initBrowser(useRandomFingerprint);
+
+    if (!this.context) {
+      throw new Error("Browser context not available for warmup");
+    }
+
+    try {
+      // Create a new page for warmup activities
+      const warmupPage = await this.context.newPage();
+
+      // Visit a few common sites to establish browsing patterns
+      const warmupSites = [
+        "https://www.microsoft.com",
+        "https://www.bing.com",
+        "https://outlook.com",
+        "https://www.google.com",
+      ];
+
+      // Visit 1-2 sites randomly for warmup
+      const sitesToVisit = Math.floor(Math.random() * 2) + 1; // 1 or 2 sites
+      const selectedSites: string[] = [];
+
+      for (let i = 0; i < sitesToVisit; i++) {
+        const randomSite =
+          warmupSites[Math.floor(Math.random() * warmupSites.length)];
+        if (!selectedSites.includes(randomSite)) {
+          selectedSites.push(randomSite);
+        }
+      }
+
+      for (const site of selectedSites) {
+        try {
+          console.log(`🌐 Visiting ${site} for session warmup...`);
+
+          await warmupPage.goto(site, {
+            waitUntil: "domcontentloaded",
+            timeout: 15000,
+          });
+
+          // Brief wait to simulate natural browsing
+          await warmupPage.waitForTimeout(1000 + Math.random() * 2000);
+
+          // Simulate some natural mouse movement
+          if (Math.random() > 0.5) {
+            const viewport = warmupPage.viewportSize();
+            if (viewport) {
+              await warmupPage.mouse.move(
+                Math.random() * viewport.width,
+                Math.random() * viewport.height,
+              );
+            }
+          }
+        } catch (error) {
+          console.warn(`⚠️ Warmup site ${site} failed:`, error);
+          // Continue with warmup even if a site fails
+        }
+      }
+
+      // Close the warmup page
+      await warmupPage.close();
+
+      console.log("✅ Browser warmup completed");
+    } catch (error) {
+      console.warn("⚠️ Browser warmup failed:", error);
+      // Don't fail the authentication if warmup fails
+    }
+  }
+
   private async closeBrowser(): Promise<void> {
     try {
       if (this.currentPage) {
@@ -614,6 +690,11 @@ export class GMAuth {
 
         // Reset any previously captured authorization code
         this.capturedAuthCode = null;
+
+        // Perform browser warming before retry attempts to establish natural session state
+        if (attempt > 0) {
+          await this.warmupBrowser(useRandomFingerprint);
+        }
 
         const { authorizationUrl, code_verifier } =
           await this.startMSAuthorizationFlow();
