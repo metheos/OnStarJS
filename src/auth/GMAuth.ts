@@ -538,6 +538,43 @@ export class GMAuth {
       "--disable-save-password",
       "--disable-background-timer-throttling", // Prevent throttling
       "--disable-backgrounding-occluded-windows", // Prevent backgrounding
+      // Additional stealth arguments
+      "--disable-automation",
+      "--disable-dev-shm-usage",
+      "--disable-extensions-file-access-check",
+      "--disable-extensions-http-throttling",
+      "--disable-ipc-flooding-protection",
+      "--disable-popup-blocking",
+      "--disable-prompt-on-repost",
+      "--disable-renderer-backgrounding",
+      "--disable-sync",
+      "--disable-translate",
+      "--disable-features=TranslateUI",
+      "--disable-features=Translate",
+      "--metrics-recording-only",
+      "--no-report-upload",
+      "--disable-breakpad",
+      "--disable-crash-reporter",
+      "--disable-domain-reliability",
+      "--disable-component-update",
+      "--disable-background-networking",
+      "--disable-features=InterestFeedContentSuggestions",
+      "--disable-features=MediaRouter",
+      "--disable-hang-monitor",
+      "--disable-client-side-phishing-detection",
+      "--disable-component-extensions-with-background-pages",
+      "--disable-default-apps",
+      "--mute-audio",
+      "--no-default-browser-check",
+      "--autoplay-policy=user-gesture-required",
+      "--disable-features=AudioServiceOutOfProcess",
+      "--force-color-profile=srgb",
+      "--disable-threaded-animation",
+      "--disable-threaded-scrolling",
+      "--disable-checker-imaging",
+      "--disable-image-animation-resync",
+      "--aggressive-cache-discard",
+      "--enable-surface-synchronization",
     ];
 
     // Add platform-specific args
@@ -565,6 +602,33 @@ export class GMAuth {
         userAgent: fingerprint.userAgent,
         viewport: fingerprint.viewport,
         args: browserArgs,
+        // Add extra stealth options
+        locale: "en-US",
+        timezoneId: "America/New_York",
+        colorScheme: "light",
+        reducedMotion: "no-preference",
+        forcedColors: "none",
+        extraHTTPHeaders: {
+          "Accept-Language": "en-US,en;q=0.9",
+          "Accept-Encoding": "gzip, deflate, br",
+          Accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
+          "sec-ch-ua":
+            '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+          "sec-ch-ua-mobile": fingerprint.userAgent.includes("Mobile")
+            ? "?1"
+            : "?0",
+          "sec-ch-ua-platform": fingerprint.userAgent.includes("iPhone")
+            ? '"iOS"'
+            : '"Android"',
+          "Sec-Fetch-Dest": "document",
+          "Sec-Fetch-Mode": "navigate",
+          "Sec-Fetch-Site": "none",
+          "Sec-Fetch-User": "?1",
+          "Upgrade-Insecure-Requests": "1",
+        },
       },
     );
 
@@ -596,6 +660,11 @@ export class GMAuth {
     }
     // Minimal stealth - only hide the most obvious automation indicators
     await this.context.addInitScript((fingerprint) => {
+      // Remove all webdriver traces
+      Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+      delete (window as any).webdriver;
+      delete (window.navigator as any).webdriver;
+
       // Spoof platform and languages
       const ua = fingerprint.userAgent.toLowerCase();
       let platform = "iPhone"; // Default
@@ -612,7 +681,6 @@ export class GMAuth {
       Object.defineProperty(navigator, "languages", {
         get: () => ["en-US", "en"],
       });
-      Object.defineProperty(navigator, "webdriver", { get: () => undefined });
       Object.defineProperty(navigator, "deviceMemory", { get: () => 8 });
 
       // Additional stealth properties
@@ -624,18 +692,69 @@ export class GMAuth {
             : 0,
       });
 
+      // Enhanced automation hiding
+      Object.defineProperty(navigator, "connection", {
+        get: () => ({
+          effectiveType: "4g",
+          rtt: 100,
+          downlink: 10,
+          saveData: false,
+        }),
+      });
+
       // Hide automation indicators
       try {
         delete (window.navigator as any).webdriver;
       } catch (e) {
         // Ignore if property can't be deleted
       }
+
+      // More convincing Chrome object
       Object.defineProperty(window, "chrome", {
         get: () => ({
-          runtime: {},
-          loadTimes: function () {},
-          csi: function () {},
-          app: {},
+          runtime: {
+            onConnect: null,
+            onMessage: null,
+            connect: function () {},
+            sendMessage: function () {},
+          },
+          loadTimes: function () {
+            return {
+              commitLoadTime: Date.now() / 1000 - Math.random() * 10,
+              connectionInfo: "h2",
+              finishDocumentLoadTime: Date.now() / 1000 - Math.random() * 5,
+              finishLoadTime: Date.now() / 1000 - Math.random() * 3,
+              firstPaintAfterLoadTime: Date.now() / 1000 - Math.random() * 2,
+              firstPaintTime: Date.now() / 1000 - Math.random() * 7,
+              navigationType: "Navigation",
+              npnNegotiatedProtocol: "h2",
+              requestTime: Date.now() / 1000 - Math.random() * 15,
+              startLoadTime: Date.now() / 1000 - Math.random() * 12,
+              wasAlternateProtocolAvailable: false,
+              wasFetchedViaSpdy: true,
+              wasNpnNegotiated: true,
+            };
+          },
+          csi: function () {
+            return {
+              pageT: Date.now() - Math.random() * 1000,
+              startE: Date.now() - Math.random() * 2000,
+              tran: 15,
+            };
+          },
+          app: {
+            isInstalled: false,
+            InstallState: {
+              DISABLED: "disabled",
+              INSTALLED: "installed",
+              NOT_INSTALLED: "not_installed",
+            },
+            RunningState: {
+              CANNOT_RUN: "cannot_run",
+              READY_TO_RUN: "ready_to_run",
+              RUNNING: "running",
+            },
+          },
         }),
       });
 
@@ -649,27 +768,39 @@ export class GMAuth {
       Object.defineProperty(screen, "colorDepth", { get: () => 24 });
       Object.defineProperty(screen, "pixelDepth", { get: () => 24 });
 
-      // Spoof plugins
+      // Spoof plugins with more realistic data
       const plugins = [
         {
           name: "Chrome PDF Plugin",
           filename: "internal-pdf-viewer",
           description: "Portable Document Format",
+          length: 1,
         },
         {
           name: "Chrome PDF Viewer",
           filename: "mhjfbmdgcfjbbpaeojofohoefgiehjai",
           description: "",
+          length: 1,
         },
         {
           name: "Native Client",
           filename: "internal-nacl-plugin",
           description: "",
+          length: 1,
         },
       ];
-      Object.defineProperty(navigator, "plugins", { get: () => plugins });
+      Object.defineProperty(navigator, "plugins", {
+        get: () => ({
+          ...plugins,
+          length: plugins.length,
+          item: (index: number) => plugins[index] || null,
+          namedItem: (name: string) =>
+            plugins.find((p) => p.name === name) || null,
+          refresh: () => {},
+        }),
+      });
 
-      // Spoof WebGL vendor and renderer
+      // Spoof WebGL vendor and renderer with more realistic mobile GPU info
       try {
         const getParameter = WebGLRenderingContext.prototype.getParameter;
         WebGLRenderingContext.prototype.getParameter = function (
@@ -677,39 +808,202 @@ export class GMAuth {
         ) {
           if (parameter === 37445) {
             // UNMASKED_VENDOR_WEBGL
+            if (ua.includes("iphone") || ua.includes("ipad")) {
+              return "Apple Inc.";
+            } else if (ua.includes("android")) {
+              return "Qualcomm";
+            }
             return "Apple Inc.";
           }
           if (parameter === 37446) {
             // UNMASKED_RENDERER_WEBGL
-            return "Apple GPU";
+            if (ua.includes("iphone") || ua.includes("ipad")) {
+              return "Apple A17 Pro GPU";
+            } else if (ua.includes("android")) {
+              return "Adreno (TM) 740";
+            }
+            return "Apple A17 Pro GPU";
           }
           return getParameter.call(this, parameter);
         };
+
+        // Also spoof WebGL2 if available
+        if (typeof WebGL2RenderingContext !== "undefined") {
+          const getParameter2 = WebGL2RenderingContext.prototype.getParameter;
+          WebGL2RenderingContext.prototype.getParameter = function (
+            parameter: number,
+          ) {
+            if (parameter === 37445) {
+              if (ua.includes("iphone") || ua.includes("ipad")) {
+                return "Apple Inc.";
+              } else if (ua.includes("android")) {
+                return "Qualcomm";
+              }
+              return "Apple Inc.";
+            }
+            if (parameter === 37446) {
+              if (ua.includes("iphone") || ua.includes("ipad")) {
+                return "Apple A17 Pro GPU";
+              } else if (ua.includes("android")) {
+                return "Adreno (TM) 740";
+              }
+              return "Apple A17 Pro GPU";
+            }
+            return getParameter2.call(this, parameter);
+          };
+        }
       } catch (e) {
         console.warn("Failed to spoof WebGL:", e);
       }
 
-      // Spoof permissions
+      // Spoof permissions with more realistic responses
       try {
         const originalQuery = navigator.permissions.query;
         navigator.permissions.query = function (
           parameters: PermissionDescriptor,
         ) {
-          if (parameters.name === "notifications") {
-            return Promise.resolve({
-              state: "granted" as PermissionState,
-              name: parameters.name,
-              onchange: null,
-              addEventListener: () => {},
-              removeEventListener: () => {},
-              dispatchEvent: () => true,
-            } as PermissionStatus);
+          const permission = parameters.name;
+          let state: PermissionState = "prompt";
+
+          // Set realistic permission states for mobile devices
+          if (permission === "notifications") {
+            state = "granted";
+          } else if (permission === "geolocation") {
+            state = "prompt";
+          } else if (permission === "camera") {
+            state = "prompt";
+          } else if (permission === "microphone") {
+            state = "prompt";
+          } else if (permission === "push") {
+            state = "prompt";
           }
-          return originalQuery.call(navigator.permissions, parameters);
+
+          return Promise.resolve({
+            state: state,
+            name: permission,
+            onchange: null,
+            addEventListener: () => {},
+            removeEventListener: () => {},
+            dispatchEvent: () => true,
+          } as PermissionStatus);
         };
       } catch (e) {
         console.warn("Failed to spoof permissions:", e);
       }
+
+      // Spoof battery API for mobile realism
+      if (
+        ua.includes("mobile") ||
+        ua.includes("iphone") ||
+        ua.includes("android")
+      ) {
+        Object.defineProperty(navigator, "getBattery", {
+          get: () => () =>
+            Promise.resolve({
+              charging: Math.random() > 0.5,
+              chargingTime: Infinity,
+              dischargingTime: Math.random() * 20000 + 3600,
+              level: Math.random() * 0.5 + 0.5, // 50-100%
+              addEventListener: () => {},
+              removeEventListener: () => {},
+              dispatchEvent: () => true,
+            }),
+        });
+      }
+
+      // Remove automation detection properties
+      const propsToDelete = [
+        "webdriver",
+        "__webdriver_script_fn",
+        "__webdriver_script_func",
+        "__webdriver_script_function",
+        "__fxdriver_id",
+        "__fxdriver_unwrapped",
+        "__driver_evaluate",
+        "__webdriver_evaluate",
+        "__selenium_evaluate",
+        "__webdriver_script_fn",
+        "__nightwatch_elem",
+        "__playwright",
+      ];
+
+      propsToDelete.forEach((prop) => {
+        try {
+          delete (window as any)[prop];
+          delete (document as any)[prop];
+          delete (navigator as any)[prop];
+        } catch (e) {
+          // Ignore deletion errors
+        }
+      });
+
+      // Override console methods to hide automation traces
+      const originalConsole = { ...console };
+      ["debug", "log", "warn", "error"].forEach((method) => {
+        (console as any)[method] = function (...args: any[]) {
+          const message = args.join(" ");
+          if (
+            message.includes("webdriver") ||
+            message.includes("playwright") ||
+            message.includes("automation") ||
+            message.includes("HeadlessChrome")
+          ) {
+            return; // Suppress automation-related logs
+          }
+          (originalConsole as any)[method].apply(console, args);
+        };
+      });
+
+      // Spoof media devices for mobile realism
+      if (navigator.mediaDevices) {
+        const originalEnumerateDevices =
+          navigator.mediaDevices.enumerateDevices;
+        navigator.mediaDevices.enumerateDevices = function () {
+          return Promise.resolve([
+            {
+              deviceId: "default",
+              kind: "audioinput" as MediaDeviceKind,
+              label: "Default - Built-in Microphone",
+              groupId: "group1",
+            },
+            {
+              deviceId: "communications",
+              kind: "audioinput" as MediaDeviceKind,
+              label: "Communications - Built-in Microphone",
+              groupId: "group1",
+            },
+            {
+              deviceId: "camera1",
+              kind: "videoinput" as MediaDeviceKind,
+              label: "Built-in Camera",
+              groupId: "group2",
+            },
+            {
+              deviceId: "speaker1",
+              kind: "audiooutput" as MediaDeviceKind,
+              label: "Built-in Speaker",
+              groupId: "group3",
+            },
+          ] as MediaDeviceInfo[]);
+        };
+      }
+
+      // Add realistic timing jitter to Date.now()
+      const originalDateNow = Date.now;
+      let timeOffset = 0;
+      Date.now = function () {
+        // Add small random jitter to timing
+        timeOffset += Math.random() * 2 - 1; // ±1ms jitter
+        return originalDateNow() + Math.floor(timeOffset);
+      };
+
+      // Spoof performance.now() with realistic timing
+      const originalPerformanceNow = performance.now;
+      let performanceOffset = 0;
+      performance.now = function () {
+        performanceOffset += Math.random() * 0.1 - 0.05; // ±0.05ms jitter
+        return originalPerformanceNow() + performanceOffset;
+      };
     }, fingerprint);
 
     const displayMode = isWindows
@@ -964,11 +1258,11 @@ export class GMAuth {
           // Exponential backoff with jitter to avoid thundering herd
           const baseDelayMs =
             lastError && lastError.message.includes("Access Denied")
-              ? 8000 // Base 8 seconds for access denied
-              : 3000; // Base 3 seconds for other errors
+              ? 12000 // Increased base delay for access denied (12 seconds)
+              : 5000; // Increased base delay for other errors (5 seconds)
 
           const exponentialDelay = baseDelayMs * Math.pow(2, attempt - 1);
-          const jitter = Math.random() * 0.3 * exponentialDelay; // Add up to 30% jitter
+          const jitter = Math.random() * 0.4 * exponentialDelay; // Increased jitter to 40%
           const delayMs = Math.floor(exponentialDelay + jitter);
 
           const delaySeconds = (delayMs / 1000).toFixed(1);
@@ -1040,8 +1334,8 @@ export class GMAuth {
         if (attempt < maxRetries) {
           const isAccessDenied = lastError.message.includes("Access Denied");
           const nextDelaySeconds = isAccessDenied
-            ? `${((8000 * Math.pow(2, attempt)) / 1000).toFixed(1)}-${((8000 * Math.pow(2, attempt) * 1.3) / 1000).toFixed(1)}`
-            : `${((3000 * Math.pow(2, attempt)) / 1000).toFixed(1)}-${((3000 * Math.pow(2, attempt) * 1.3) / 1000).toFixed(1)}`;
+            ? `${((12000 * Math.pow(2, attempt)) / 1000).toFixed(1)}-${((12000 * Math.pow(2, attempt) * 1.4) / 1000).toFixed(1)}`
+            : `${((5000 * Math.pow(2, attempt)) / 1000).toFixed(1)}-${((5000 * Math.pow(2, attempt) * 1.4) / 1000).toFixed(1)}`;
           console.log(
             `⏳ Will retry authentication in ~${nextDelaySeconds} seconds...`,
           );
@@ -1568,6 +1862,30 @@ export class GMAuth {
       console.log("Page loaded, current URL:", page.url());
       console.log("Page title:", await page.title());
 
+      // Simulate human browsing behavior - scroll and mouse movement
+      await page.waitForTimeout(1000 + Math.random() * 2000);
+
+      // Random mouse movements to simulate reading
+      const viewport = page.viewportSize();
+      if (viewport) {
+        for (let i = 0; i < 3; i++) {
+          await page.mouse.move(
+            Math.random() * viewport.width,
+            Math.random() * viewport.height,
+            { steps: Math.floor(Math.random() * 10) + 5 },
+          );
+          await page.waitForTimeout(500 + Math.random() * 1000);
+        }
+      }
+
+      // Simulate slight scrolling (like humans checking the page)
+      if (Math.random() > 0.3) {
+        await page.mouse.wheel(0, Math.random() * 200 + 50);
+        await page.waitForTimeout(300 + Math.random() * 500);
+        await page.mouse.wheel(0, -(Math.random() * 100 + 25)); // Scroll back up a bit
+        await page.waitForTimeout(200 + Math.random() * 400);
+      }
+
       // Check if we're stuck on a loading page
       const title = await page.title();
       if (
@@ -1601,26 +1919,64 @@ export class GMAuth {
         .first();
       await emailField.waitFor({ timeout: 60000 });
 
-      // Add realistic human delay before interacting
-      await page.waitForTimeout(1000 + Math.random() * 2000);
+      // Simulate realistic human behavior - pause to "read" the page
+      await page.waitForTimeout(2000 + Math.random() * 3000);
+
+      // Simulate mouse movement before clicking email field
+      const emailBox = await emailField.boundingBox();
+      if (emailBox) {
+        // Move mouse to a random point near the email field first
+        await page.mouse.move(
+          emailBox.x +
+            emailBox.width * 0.1 +
+            Math.random() * (emailBox.width * 0.3),
+          emailBox.y +
+            emailBox.height * 0.1 +
+            Math.random() * (emailBox.height * 0.3),
+          { steps: Math.floor(Math.random() * 10) + 5 },
+        );
+        await page.waitForTimeout(200 + Math.random() * 500);
+      }
 
       await emailField.click({ delay: Math.random() * 200 + 50 });
-      await emailField.type(this.config.username, {
-        delay: Math.random() * 150 + 50,
-      });
+
+      // Simulate realistic typing with occasional pauses (like humans do)
+      const email = this.config.username;
+      for (let i = 0; i < email.length; i++) {
+        await page.keyboard.type(email[i], { delay: Math.random() * 150 + 50 });
+
+        // Occasionally pause while typing (like humans thinking)
+        if (Math.random() < 0.1) {
+          await page.waitForTimeout(300 + Math.random() * 800);
+        }
+      }
 
       console.log("Looking for Continue button...");
-      await page.waitForTimeout(500 + Math.random() * 500); // Pause before clicking
+      await page.waitForTimeout(800 + Math.random() * 1200); // Human hesitation before proceeding
 
-      // Click continue button
+      // Click continue button with realistic mouse movement
       const continueButton = page
         .locator(
           'button#continue[data-dtm="sign in"][aria-label="Continue"], button:has-text("Continue")[data-dtm="sign in"], [role="button"][aria-label*="Continue"i]',
         )
         .first();
       await continueButton.waitFor({ timeout: 60000 });
+
+      // Hover before clicking (human-like behavior)
       await continueButton.hover();
-      await page.waitForTimeout(100 + Math.random() * 200);
+      await page.waitForTimeout(200 + Math.random() * 400);
+
+      // Move mouse slightly before final click
+      const continueBox = await continueButton.boundingBox();
+      if (continueBox) {
+        await page.mouse.move(
+          continueBox.x + continueBox.width * (0.3 + Math.random() * 0.4),
+          continueBox.y + continueBox.height * (0.3 + Math.random() * 0.4),
+          { steps: 3 },
+        );
+        await page.waitForTimeout(100 + Math.random() * 200);
+      }
+
       await continueButton.click({ delay: Math.random() * 200 + 50 });
 
       console.log("Looking for Password field...");
@@ -1635,13 +1991,39 @@ export class GMAuth {
         .first();
       await passwordField.waitFor({ timeout: 60000 });
 
-      // Add realistic human delay before password entry
-      await page.waitForTimeout(800 + Math.random() * 1500);
+      // Simulate human behavior - pause to see the new page
+      await page.waitForTimeout(1500 + Math.random() * 2500);
+
+      // Simulate mouse movement before password field interaction
+      const passwordBox = await passwordField.boundingBox();
+      if (passwordBox) {
+        // Move to password field area with realistic movement
+        await page.mouse.move(
+          passwordBox.x +
+            passwordBox.width * 0.2 +
+            Math.random() * (passwordBox.width * 0.3),
+          passwordBox.y +
+            passwordBox.height * 0.2 +
+            Math.random() * (passwordBox.height * 0.3),
+          { steps: Math.floor(Math.random() * 8) + 4 },
+        );
+        await page.waitForTimeout(150 + Math.random() * 300);
+      }
 
       await passwordField.click({ delay: Math.random() * 200 + 50 });
-      await passwordField.type(this.config.password, {
-        delay: Math.random() * 150 + 50,
-      });
+
+      // Type password with human-like patterns
+      const password = this.config.password;
+      for (let i = 0; i < password.length; i++) {
+        await page.keyboard.type(password[i], {
+          delay: Math.random() * 120 + 40,
+        });
+
+        // Occasional hesitation while typing password
+        if (Math.random() < 0.08) {
+          await page.waitForTimeout(200 + Math.random() * 600);
+        }
+      }
       console.log(
         "Looking for Sign In button and preparing to capture redirect...",
       );
