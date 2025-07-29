@@ -171,15 +171,18 @@ export class GMAuth {
 
     // Check if browser and context are actually usable, not just that references exist
     let browserUsable = false;
+
+    // First check: Do we have both browser and context?
     if (this.browser && this.context) {
       try {
         // Try to check if the browser is still connected
         const isConnected = this.browser.isConnected();
         const pages = this.context.pages();
         browserUsable = isConnected && pages !== null;
+
         if (browserUsable) {
           console.log("🌐 Reusing existing browser instance");
-          return;
+          return; // Early return - don't continue with initialization
         } else {
           console.log(
             "🔄 Browser instance exists but not usable (disconnected or invalid), reinitializing...",
@@ -192,9 +195,15 @@ export class GMAuth {
           error,
         );
       }
+      // If we reach here, browser/context exist but are not usable
+      browserUsable = false;
     } else if (this.browser || this.context) {
       // Only partial browser state (either browser OR context but not both)
       console.log("🔄 Partial browser state detected, reinitializing...");
+      browserUsable = false;
+    } else {
+      // No existing browser or context
+      console.log("🔍 No existing browser state, initializing fresh...");
       browserUsable = false;
     }
 
