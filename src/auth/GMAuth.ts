@@ -85,6 +85,7 @@ export class GMAuth {
   private debugMode: boolean = true; // Default to visible mode for reliability
   private xvfb: any = null; // Xvfb instance for Linux virtual display
   private xvfbDisplay: string | null = null; // Store the DISPLAY value for Xvfb
+  private cleanupInProgress: boolean = false; // Flag to prevent concurrent cleanup
 
   constructor(config: GMAuthConfig) {
     this.config = config;
@@ -165,13 +166,99 @@ export class GMAuth {
   private async initBrowser(
     useRandomFingerprint: boolean = false,
   ): Promise<void> {
-    // Detect platform early to check Xvfb state
+    // Detect platform early to check display state
     const isLinux = process.platform === "linux";
-    const hasDisplay = isLinux && process.env.DISPLAY;
 
-    // If browser is already running, no need to reinitialize
-    if (this.browser) {
-      return;
+    // Check if browser and context are actually usable, not just that references exist
+    let browserUsable = false;
+
+    // First check: Do we have both browser and context?
+    console.log(
+      `🔍 Browser check: browser=${!!this.browser}, context=${!!this.context}`,
+    );
+
+    if (this.context) {
+      // We have a context, check if it's still usable
+      try {
+        const pages = this.context.pages();
+        console.log(
+          `🔍 Context usability: pages=${pages ? pages.length : "null"}`,
+        );
+
+        // Check if context is still usable by testing pages access
+        if (pages !== null && pages !== undefined) {
+          // Context is usable, try to get browser reference (but don't require it)
+          if (!this.browser) {
+            this.browser = this.context.browser();
+            console.log(
+              `🔍 Trying to get browser from context: ${!!this.browser}`,
+            );
+          }
+
+          // For persistent contexts, we can work with just the context
+          // Browser reference may be null in containerized environments
+          if (this.browser) {
+            try {
+              const isConnected = this.browser.isConnected();
+              console.log(`🔍 Browser connection status: ${isConnected}`);
+              browserUsable = isConnected;
+            } catch (error) {
+              console.log(
+                "🔍 Browser reference exists but not connected:",
+                error,
+              );
+              browserUsable = true; // Context is still usable even if browser ref fails
+            }
+          } else {
+            console.log(
+              "� Browser reference is null, but context appears usable",
+            );
+            browserUsable = true; // Context can work without browser reference
+          }
+
+          if (browserUsable) {
+            console.log("🌐 Reusing existing browser context");
+            return; // Early return - don't continue with initialization
+          }
+        } else {
+          console.log(
+            "🔄 Context exists but pages access failed, reinitializing...",
+          );
+        }
+      } catch (error) {
+        console.log(
+          "🔄 Context exists but not usable, reinitializing...",
+          error,
+        );
+      }
+      // If we reach here, context exists but is not usable
+      browserUsable = false;
+    } else if (this.browser) {
+      // We have a browser but no context - this shouldn't happen with persistent contexts
+      console.log(
+        `🔄 Browser exists without context (unexpected state), reinitializing...`,
+      );
+      browserUsable = false;
+    } else {
+      // No existing browser or context
+      console.log("🔍 No existing browser state, initializing fresh...");
+      browserUsable = false;
+    }
+
+    // Clear stale references if browser is not usable
+    if (!browserUsable) {
+      // Remember if we had an existing context before clearing references
+      const hadExistingContext = this.context !== null;
+
+      this.browser = null;
+      this.context = null;
+      this.currentPage = null;
+
+      const profilePath = path.resolve("./temp-browser-profile");
+      if (fs.existsSync(profilePath)) {
+        fs.rmSync(profilePath, { recursive: true, force: true });
+        console.log("🗑️ Deleted existing temp browser profile (fresh start)");
+      }
     }
 
     // Generate random fingerprint if requested
@@ -200,175 +287,304 @@ export class GMAuth {
       );
     }
 
-    // delete ./temp-browser-profile if it exists
-    if (fs.existsSync("./temp-browser-profile")) {
-      fs.rmSync("./temp-browser-profile", { recursive: true, force: true });
-      console.log("🗑️ Deleted existing temp browser profile");
-    }
-
-    // Detect platform (isLinux and hasDisplay already declared above)
+    // Detect platform (isLinux and hasNaturalDisplay already declared above)
     const isWindows = process.platform === "win32";
 
-    // Check if Xvfb is already running on Linux
-    if (isLinux && !hasDisplay && this.xvfb) {
-      console.log("🖥️ Xvfb already running, reusing existing virtual display");
-      // Restore the DISPLAY environment variable
-      if (this.xvfbDisplay) {
-        process.env.DISPLAY = this.xvfbDisplay;
-        console.log(`🖥️ Restored DISPLAY: ${process.env.DISPLAY}`);
-      } else {
-        console.log(`🖥️ Current DISPLAY: ${process.env.DISPLAY}`);
-      }
-    }
+    // On Linux, always verify we have a working display
+    if (isLinux) {
+      console.log("🖥️ Linux detected, verifying display availability...");
 
-    // Start Xvfb on Linux if no display is available and Xvfb is not already running
-    if (isLinux && !hasDisplay && !this.xvfb) {
-      console.log("🖥️ Starting Xvfb for virtual display...");
-      try {
-        // First check if Xvfb binary is available
+      let displayWorking = false;
+
+      // First, test if the current DISPLAY is working (if set)
+      if (process.env.DISPLAY) {
         try {
-          execSync("which Xvfb", { stdio: "ignore" });
-        } catch (e) {
-          console.error("❌ Xvfb binary not found in PATH");
-          throw new Error(
-            "Xvfb is not installed. Please install it with: sudo apt-get install xvfb",
-          );
-        }
+          // Try to connect to the X display using native commands that are always available
+          // We'll try multiple approaches in order of preference
+          let testPassed = false;
 
-        // Also check for xvfb-run as a secondary check
-        try {
-          execSync("which xvfb-run", { stdio: "ignore" });
-        } catch (e) {
-          console.warn("⚠️ xvfb-run not found, but Xvfb binary is available");
-        }
-
-        // Kill any existing Xvfb processes that might be stuck
-        try {
-          execSync('pkill -f "Xvfb.*:99"', { stdio: "ignore" });
-          console.log("🧹 Cleaned up any existing Xvfb processes");
-        } catch (e) {
-          // Ignore errors - no existing processes to clean up
-        }
-
-        // Try multiple display numbers to find an available one
-        const maxAttempts = 5;
-        let displayNum = 99;
-        let xvfbStarted = false;
-
-        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          // Method 1: Try to list X server info using xset (usually available)
           try {
-            console.log(
-              `🖥️ Attempting to start Xvfb on display :${displayNum}...`,
-            );
-
-            this.xvfb = new Xvfb({
-              silent: true,
-              displayNum: displayNum,
-              reuse: false,
-              timeout: 10000, // Increased timeout to 10 seconds
-              xvfb_args: [
-                "-screen",
-                "0",
-                "1280x720x24",
-                "-ac",
-                "+extension",
-                "GLX",
-                "-nolisten",
-                "tcp",
-                "-dpi",
-                "96",
-                "-noreset",
-                "+extension",
-                "RANDR",
-              ],
+            execSync("xset q >/dev/null 2>&1", {
+              stdio: "ignore",
+              timeout: 3000,
             });
+            testPassed = true;
+          } catch (e) {
+            // xset failed, try next method
+          }
 
-            this.xvfb.startSync();
-            xvfbStarted = true;
-            this.xvfbDisplay = process.env.DISPLAY || null; // Store the DISPLAY value
-            console.log(
-              `🖥️ Xvfb started successfully on display :${displayNum} (${process.env.DISPLAY})`,
-            );
-            break;
-          } catch (displayError: any) {
-            console.warn(
-              `⚠️ Failed to start Xvfb on display :${displayNum}: ${displayError.message}`,
-            );
-            displayNum++;
-
-            // Clean up the failed xvfb instance
-            if (this.xvfb) {
-              try {
-                this.xvfb.stopSync();
-              } catch (cleanupError) {
-                // Ignore cleanup errors
-              }
-              this.xvfb = null;
-            }
-
-            if (attempt === maxAttempts - 1) {
-              throw displayError;
+          // Method 2: Try to get display info using xwininfo on root window
+          if (!testPassed) {
+            try {
+              execSync("xwininfo -root >/dev/null 2>&1", {
+                stdio: "ignore",
+                timeout: 3000,
+              });
+              testPassed = true;
+            } catch (e) {
+              // xwininfo failed, try next method
             }
           }
-        }
 
-        if (!xvfbStarted) {
-          throw new Error(`Failed to start Xvfb after ${maxAttempts} attempts`);
+          // Method 3: Try to test the display using xlsclients (list X clients)
+          if (!testPassed) {
+            try {
+              execSync("xlsclients >/dev/null 2>&1", {
+                stdio: "ignore",
+                timeout: 3000,
+              });
+              testPassed = true;
+            } catch (e) {
+              // xlsclients failed, try final method
+            }
+          }
+
+          // Method 4: Try a basic X11 connection test using xhost
+          if (!testPassed) {
+            try {
+              execSync("xhost >/dev/null 2>&1", {
+                stdio: "ignore",
+                timeout: 3000,
+              });
+              testPassed = true;
+            } catch (e) {
+              // All X11 tests failed
+            }
+          }
+
+          if (testPassed) {
+            console.log(
+              `🖥️ Existing display ${process.env.DISPLAY} is working`,
+            );
+            displayWorking = true;
+          } else {
+            console.warn(
+              `⚠️ Display ${process.env.DISPLAY} is set but not accessible (no X11 tools responded)`,
+            );
+          }
+        } catch (e) {
+          console.warn(
+            `⚠️ Display ${process.env.DISPLAY} is not working or accessible`,
+          );
         }
-      } catch (error) {
-        console.error("❌ Failed to start Xvfb:", error);
-        console.error("💡 To fix this issue, either:");
-        console.error("   1. Install Xvfb: sudo apt-get install xvfb");
-        console.error("   2. Run with xvfb-run: xvfb-run -a node your-app.js");
-        console.error(
-          "   3. Set a DISPLAY environment variable if you have a GUI",
-        );
-        console.error(
-          "   4. Try running in a container with proper display setup",
-        );
-        console.error(
-          "   5. Ensure no other Xvfb processes are running: pkill Xvfb",
-        );
-        throw new Error(
-          "Cannot run browser automation on Linux without a display server. Xvfb is required for headful operation - headless mode is not supported.",
-        );
+      } else {
+        console.log("🖥️ No DISPLAY environment variable set");
+      }
+
+      // If we don't have a working display, check if we need to start/restart Xvfb
+      if (!displayWorking) {
+        console.log("🖥️ No working display found, checking Xvfb status...");
+
+        // First, check if we have an existing Xvfb reference and verify it's still running
+        if (this.xvfb && this.xvfbDisplay) {
+          console.log("🖥️ Checking existing Xvfb instance...");
+          try {
+            // Check if the Xvfb process is still alive
+            const displayNum = this.xvfbDisplay.replace(":", "");
+            execSync(`pgrep -f "Xvfb.*:${displayNum}"`, { stdio: "ignore" });
+            console.log(
+              `🖥️ Verified Xvfb process is running on display ${this.xvfbDisplay}`,
+            );
+            // Xvfb library manages DISPLAY internally, no need to set it manually
+            displayWorking = true;
+          } catch (e) {
+            console.warn(
+              `⚠️ Xvfb process not found for display ${this.xvfbDisplay}, will restart it`,
+            );
+            this.xvfb = null;
+            this.xvfbDisplay = null;
+          }
+        }
+      }
+
+      // If we still don't have a working display, start Xvfb
+      if (!displayWorking) {
+        console.log("🖥️ Starting Xvfb for virtual display...");
+        try {
+          // First check if Xvfb binary is available
+          try {
+            execSync("which Xvfb", { stdio: "ignore" });
+          } catch (e) {
+            console.error("❌ Xvfb binary not found in PATH");
+            throw new Error(
+              "Xvfb is not installed. Please install it with: sudo apt-get install xvfb",
+            );
+          }
+
+          // Also check for xvfb-run as a secondary check
+          try {
+            execSync("which xvfb-run", { stdio: "ignore" });
+          } catch (e) {
+            console.warn("⚠️ xvfb-run not found, but Xvfb binary is available");
+          }
+
+          // Kill any existing Xvfb processes that might be stuck
+          try {
+            execSync('pkill -f "Xvfb.*:99"', { stdio: "ignore" });
+            console.log("🧹 Cleaned up any existing Xvfb processes");
+          } catch (e) {
+            // Ignore errors - no existing processes to clean up
+          }
+
+          // Try multiple display numbers to find an available one
+          const maxAttempts = 5;
+          let displayNum = 99;
+          let xvfbStarted = false;
+
+          for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            try {
+              console.log(
+                `🖥️ Attempting to start Xvfb on display :${displayNum}...`,
+              );
+
+              this.xvfb = new Xvfb({
+                silent: true,
+                displayNum: displayNum,
+                reuse: false,
+                timeout: 10000, // Increased timeout to 10 seconds
+                xvfb_args: [
+                  "-screen",
+                  "0",
+                  "1280x720x24",
+                  "-ac",
+                  "+extension",
+                  "GLX",
+                  "-nolisten",
+                  "tcp",
+                  "-dpi",
+                  "96",
+                  "-noreset",
+                  "+extension",
+                  "RANDR",
+                ],
+              });
+
+              this.xvfb.startSync();
+              xvfbStarted = true;
+              this.xvfbDisplay = process.env.DISPLAY || null; // Store the DISPLAY value
+              console.log(
+                `🖥️ Xvfb started successfully on display :${displayNum} (${process.env.DISPLAY})`,
+              );
+              break;
+            } catch (displayError: any) {
+              console.warn(
+                `⚠️ Failed to start Xvfb on display :${displayNum}: ${displayError.message}`,
+              );
+              displayNum++;
+
+              // Clean up the failed xvfb instance
+              if (this.xvfb) {
+                try {
+                  this.xvfb.stopSync();
+                } catch (cleanupError) {
+                  // Ignore cleanup errors
+                }
+                this.xvfb = null;
+              }
+
+              if (attempt === maxAttempts - 1) {
+                throw displayError;
+              }
+            }
+          }
+
+          if (!xvfbStarted) {
+            throw new Error(
+              `Failed to start Xvfb after ${maxAttempts} attempts`,
+            );
+          }
+        } catch (error) {
+          console.error("❌ Failed to start Xvfb:", error);
+          console.error("💡 To fix this issue, either:");
+          console.error("   1. Install Xvfb: sudo apt-get install xvfb");
+          console.error(
+            "   2. Run with xvfb-run: xvfb-run -a node your-app.js",
+          );
+          console.error(
+            "   3. Set a DISPLAY environment variable if you have a GUI",
+          );
+          console.error(
+            "   4. Try running in a container with proper display setup",
+          );
+          console.error(
+            "   5. Ensure no other Xvfb processes are running: pkill Xvfb",
+          );
+          throw new Error(
+            "Cannot run browser automation on Linux without a display server. Xvfb is required for headful operation - headless mode is not supported.",
+          );
+        }
       }
     }
 
-    // Prepare browser arguments based on platform
+    // Prepare browser arguments based on platform - simplified for better reliability
     const browserArgs = [
+      // Core stealth arguments (minimal set)
       "--disable-blink-features=AutomationControlled",
+      "--disable-automation",
       "--no-first-run",
-      "--disable-default-browser-check",
-      "--disable-password-generation",
-      "--disable-save-password-bubble",
-      "--disable-password-manager-reauthentication",
-      "--password-store=basic",
-      "--disable-features=PasswordManager",
-      "--disable-features=VizDisplayCompositor",
+
+      // Essential compatibility
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+
+      // Minimal stealth
       "--disable-password-manager",
       "--disable-save-password",
-      "--disable-background-timer-throttling", // Prevent throttling
-      "--disable-backgrounding-occluded-windows", // Prevent backgrounding
+      "--disable-sync",
+      "--disable-translate",
+
+      // Performance
+      "--disable-background-timer-throttling",
+      "--disable-renderer-backgrounding",
+      "--max_old_space_size=4096",
+      "--enable-low-end-device-mode",
+
+      // Windows stability
+      "--disable-hang-monitor",
+      "--process-per-tab",
     ];
 
     // Add platform-specific args
     if (isWindows) {
-      // On Windows, start minimized
-      browserArgs.push("--start-minimized");
+      // On Windows, add start minimized and Windows-specific flags
+      browserArgs.push("--disable-features=msSmartScreenProtection");
     } else if (isLinux) {
       // On Linux with virtual display, add GPU-related args
-      browserArgs.push(
-        "--no-sandbox",
-        "--disable-dev-shm-usage",
-        "--use-gl=swiftshader",
-      );
+      browserArgs.push("--use-gl=swiftshader");
+    }
+
+    // Use absolute path for better reliability on Windows
+    const profilePath = path.resolve("./temp-browser-profile");
+
+    // Ensure profile directory exists and is clean
+    if (fs.existsSync(profilePath)) {
+      try {
+        // Wait a moment for processes to fully terminate
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // Remove the profile directory
+        fs.rmSync(profilePath, { recursive: true, force: true });
+        console.log("🧹 Cleaned existing browser profile for fresh start");
+      } catch (cleanupError) {
+        console.warn(
+          "⚠️ Warning: Could not clean existing profile:",
+          cleanupError,
+        );
+      }
     }
 
     // Use persistent context instead of launch + newContext for more realistic browser behavior
-    this.context = await chromium.launchPersistentContext(
-      "./temp-browser-profile",
-      {
+    console.log(
+      "🌐 Launching persistent context with simplified args:",
+      browserArgs.length,
+      "arguments",
+    );
+    console.log("📁 Profile path:", profilePath);
+
+    try {
+      this.context = await chromium.launchPersistentContext(profilePath, {
         channel: "chromium", // Use chromium
         headless: false, // Always headful for better compatibility
         hasTouch: true, // Simulate touch support
@@ -376,46 +592,546 @@ export class GMAuth {
         userAgent: fingerprint.userAgent,
         viewport: fingerprint.viewport,
         args: browserArgs,
-      },
-    );
-
-    // The browser is part of the persistent context
-    this.browser = this.context.browser()!;
-
-    // Minimal stealth - only hide the most obvious automation indicators
-    await this.context.addInitScript(() => {
-      Object.defineProperty(navigator, "webdriver", {
-        get: () => undefined,
+        timeout: 90000, // Increased to 90 second timeout for browser launch
+        // Add extra stealth options
+        locale: "en-US",
+        timezoneId: "America/New_York",
+        colorScheme: "light",
+        reducedMotion: "no-preference",
+        forcedColors: "none",
+        extraHTTPHeaders: {
+          "Accept-Language": "en-US,en;q=0.9",
+          "Accept-Encoding": "gzip, deflate, br",
+          Accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
+          "sec-ch-ua":
+            '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+          "sec-ch-ua-mobile": fingerprint.userAgent.includes("Mobile")
+            ? "?1"
+            : "?0",
+          "sec-ch-ua-platform": fingerprint.userAgent.includes("iPhone")
+            ? '"iOS"'
+            : '"Android"',
+          "Sec-Fetch-Dest": "document",
+          "Sec-Fetch-Mode": "navigate",
+          "Sec-Fetch-Site": "none",
+          "Sec-Fetch-User": "?1",
+          "Upgrade-Insecure-Requests": "1",
+        },
       });
-    });
 
-    const displayMode = isWindows
-      ? "headful (minimized)"
-      : isLinux
-        ? hasDisplay
-          ? "headful"
-          : "headful (Xvfb virtual display)"
-        : "headful";
-    console.log(
-      `🌐 Browser initialized with persistent context (${displayMode})`,
-    );
+      // Try to get the browser reference from the persistent context
+      // Note: In some containerized environments, context.browser() may return null
+      // even when the context is working perfectly fine
+      if (!this.browser) {
+        this.browser = this.context.browser();
+      }
+
+      // Wait a moment for browser to fully initialize
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // Log browser reference status but don't fail if it's null
+      // The persistent context can work fine without an explicit browser reference
+      if (!this.browser) {
+        console.warn(
+          "⚠️ Browser reference is null, but persistent context is working",
+        );
+        console.log("Context details:", {
+          contextExists: !!this.context,
+          contextPages: this.context ? this.context.pages().length : "N/A",
+        });
+        console.log(
+          "✅ Continuing with null browser reference (persistent context handles browser lifecycle)",
+        );
+      } else {
+        console.log("✅ Browser instance obtained successfully");
+      }
+      // Minimal stealth - only hide the most obvious automation indicators
+      await this.context.addInitScript((fingerprint) => {
+        // Remove all webdriver traces
+        Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+        delete (window as any).webdriver;
+        delete (window.navigator as any).webdriver;
+
+        // Spoof platform and languages
+        const ua = fingerprint.userAgent.toLowerCase();
+        let platform = "iPhone"; // Default
+        if (ua.includes("iphone")) {
+          platform = "iPhone";
+        } else if (ua.includes("ipad")) {
+          platform = "iPad";
+        } else if (ua.includes("android")) {
+          platform = "Linux armv8l";
+        } else if (ua.includes("win")) {
+          platform = "Win32";
+        }
+        Object.defineProperty(navigator, "platform", { get: () => platform });
+        Object.defineProperty(navigator, "languages", {
+          get: () => ["en-US", "en"],
+        });
+        Object.defineProperty(navigator, "deviceMemory", { get: () => 8 });
+
+        // Additional stealth properties
+        Object.defineProperty(navigator, "hardwareConcurrency", {
+          get: () => 4,
+        });
+        Object.defineProperty(navigator, "maxTouchPoints", {
+          get: () =>
+            ua.includes("iphone") ||
+            ua.includes("ipad") ||
+            ua.includes("android")
+              ? 5
+              : 0,
+        });
+
+        // Enhanced automation hiding
+        Object.defineProperty(navigator, "connection", {
+          get: () => ({
+            effectiveType: "4g",
+            rtt: 100 + Math.random() * 50,
+            downlink: 10 + Math.random() * 5,
+            saveData: false,
+            onchange: null,
+            addEventListener: () => {},
+            removeEventListener: () => {},
+            dispatchEvent: () => true,
+          }),
+          configurable: false,
+        });
+
+        // Override Object.getOwnPropertyDescriptor to hide our spoofing
+        const originalGetOwnPropertyDescriptor =
+          Object.getOwnPropertyDescriptor;
+        Object.getOwnPropertyDescriptor = function (obj, prop) {
+          if (
+            obj === navigator &&
+            typeof prop === "string" &&
+            [
+              "webdriver",
+              "platform",
+              "languages",
+              "deviceMemory",
+              "hardwareConcurrency",
+              "maxTouchPoints",
+              "connection",
+            ].includes(prop)
+          ) {
+            return undefined; // Hide our modifications
+          }
+          return originalGetOwnPropertyDescriptor.call(this, obj, prop);
+        };
+
+        // Override Object.getOwnPropertyNames to hide automation properties
+        const originalGetOwnPropertyNames = Object.getOwnPropertyNames;
+        Object.getOwnPropertyNames = function (obj) {
+          const props = originalGetOwnPropertyNames.call(this, obj);
+          if (obj === navigator) {
+            return props.filter(
+              (prop) =>
+                ![
+                  "webdriver",
+                  "__webdriver_script_fn",
+                  "__driver_evaluate",
+                  "__webdriver_evaluate",
+                  "__selenium_evaluate",
+                  "__fxdriver_id",
+                  "__fxdriver_unwrapped",
+                  "__webdriver_script_func",
+                  "__webdriver_script_function",
+                  "__webdriver_unwrapped",
+                ].includes(prop),
+            );
+          }
+          return props;
+        };
+
+        // Hide automation indicators
+        try {
+          delete (window.navigator as any).webdriver;
+        } catch (e) {
+          // Ignore if property can't be deleted
+        }
+
+        // More convincing Chrome object
+        Object.defineProperty(window, "chrome", {
+          get: () => ({
+            runtime: {
+              onConnect: null,
+              onMessage: null,
+              connect: function () {},
+              sendMessage: function () {},
+            },
+            loadTimes: function () {
+              return {
+                commitLoadTime: Date.now() / 1000 - Math.random() * 10,
+                connectionInfo: "h2",
+                finishDocumentLoadTime: Date.now() / 1000 - Math.random() * 5,
+                finishLoadTime: Date.now() / 1000 - Math.random() * 3,
+                firstPaintAfterLoadTime: Date.now() / 1000 - Math.random() * 2,
+                firstPaintTime: Date.now() / 1000 - Math.random() * 7,
+                navigationType: "Navigation",
+                npnNegotiatedProtocol: "h2",
+                requestTime: Date.now() / 1000 - Math.random() * 15,
+                startLoadTime: Date.now() / 1000 - Math.random() * 12,
+                wasAlternateProtocolAvailable: false,
+                wasFetchedViaSpdy: true,
+                wasNpnNegotiated: true,
+              };
+            },
+            csi: function () {
+              return {
+                pageT: Date.now() - Math.random() * 1000,
+                startE: Date.now() - Math.random() * 2000,
+                tran: 15,
+              };
+            },
+            app: {
+              isInstalled: false,
+              InstallState: {
+                DISABLED: "disabled",
+                INSTALLED: "installed",
+                NOT_INSTALLED: "not_installed",
+              },
+              RunningState: {
+                CANNOT_RUN: "cannot_run",
+                READY_TO_RUN: "ready_to_run",
+                RUNNING: "running",
+              },
+            },
+          }),
+        });
+
+        // Spoof screen properties to match viewport
+        const screenWidth = fingerprint.viewport.width;
+        const screenHeight = fingerprint.viewport.height;
+        Object.defineProperty(screen, "width", { get: () => screenWidth });
+        Object.defineProperty(screen, "height", { get: () => screenHeight });
+        Object.defineProperty(screen, "availWidth", { get: () => screenWidth });
+        Object.defineProperty(screen, "availHeight", {
+          get: () => screenHeight,
+        });
+        Object.defineProperty(screen, "colorDepth", { get: () => 24 });
+        Object.defineProperty(screen, "pixelDepth", { get: () => 24 });
+
+        // Spoof plugins with more realistic data
+        const plugins = [
+          {
+            name: "Chrome PDF Plugin",
+            filename: "internal-pdf-viewer",
+            description: "Portable Document Format",
+            length: 1,
+          },
+          {
+            name: "Chrome PDF Viewer",
+            filename: "mhjfbmdgcfjbbpaeojofohoefgiehjai",
+            description: "",
+            length: 1,
+          },
+          {
+            name: "Native Client",
+            filename: "internal-nacl-plugin",
+            description: "",
+            length: 1,
+          },
+        ];
+        Object.defineProperty(navigator, "plugins", {
+          get: () => ({
+            ...plugins,
+            length: plugins.length,
+            item: (index: number) => plugins[index] || null,
+            namedItem: (name: string) =>
+              plugins.find((p) => p.name === name) || null,
+            refresh: () => {},
+          }),
+        });
+
+        // Spoof WebGL vendor and renderer with more realistic mobile GPU info
+        try {
+          const getParameter = WebGLRenderingContext.prototype.getParameter;
+          WebGLRenderingContext.prototype.getParameter = function (
+            parameter: number,
+          ) {
+            if (parameter === 37445) {
+              // UNMASKED_VENDOR_WEBGL
+              if (ua.includes("iphone") || ua.includes("ipad")) {
+                return "Apple Inc.";
+              } else if (ua.includes("android")) {
+                return "Qualcomm";
+              }
+              return "Apple Inc.";
+            }
+            if (parameter === 37446) {
+              // UNMASKED_RENDERER_WEBGL
+              if (ua.includes("iphone") || ua.includes("ipad")) {
+                return "Apple A17 Pro GPU";
+              } else if (ua.includes("android")) {
+                return "Adreno (TM) 740";
+              }
+              return "Apple A17 Pro GPU";
+            }
+            return getParameter.call(this, parameter);
+          };
+
+          // Also spoof WebGL2 if available
+          if (typeof WebGL2RenderingContext !== "undefined") {
+            const getParameter2 = WebGL2RenderingContext.prototype.getParameter;
+            WebGL2RenderingContext.prototype.getParameter = function (
+              parameter: number,
+            ) {
+              if (parameter === 37445) {
+                if (ua.includes("iphone") || ua.includes("ipad")) {
+                  return "Apple Inc.";
+                } else if (ua.includes("android")) {
+                  return "Qualcomm";
+                }
+                return "Apple Inc.";
+              }
+              if (parameter === 37446) {
+                if (ua.includes("iphone") || ua.includes("ipad")) {
+                  return "Apple A17 Pro GPU";
+                } else if (ua.includes("android")) {
+                  return "Adreno (TM) 740";
+                }
+                return "Apple A17 Pro GPU";
+              }
+              return getParameter2.call(this, parameter);
+            };
+          }
+        } catch (e) {
+          console.warn("Failed to spoof WebGL:", e);
+        }
+
+        // Spoof permissions with more realistic responses
+        try {
+          const originalQuery = navigator.permissions.query;
+          navigator.permissions.query = function (
+            parameters: PermissionDescriptor,
+          ) {
+            const permission = parameters.name;
+            let state: PermissionState = "prompt";
+
+            // Set realistic permission states for mobile devices
+            if (permission === "notifications") {
+              state = "granted";
+            } else if (permission === "geolocation") {
+              state = "prompt";
+            } else if (permission === "camera") {
+              state = "prompt";
+            } else if (permission === "microphone") {
+              state = "prompt";
+            } else if (permission === "push") {
+              state = "prompt";
+            }
+
+            return Promise.resolve({
+              state: state,
+              name: permission,
+              onchange: null,
+              addEventListener: () => {},
+              removeEventListener: () => {},
+              dispatchEvent: () => true,
+            } as PermissionStatus);
+          };
+        } catch (e) {
+          console.warn("Failed to spoof permissions:", e);
+        }
+
+        // Spoof battery API for mobile realism
+        if (
+          ua.includes("mobile") ||
+          ua.includes("iphone") ||
+          ua.includes("android")
+        ) {
+          Object.defineProperty(navigator, "getBattery", {
+            get: () => () =>
+              Promise.resolve({
+                charging: Math.random() > 0.5,
+                chargingTime: Infinity,
+                dischargingTime: Math.random() * 20000 + 3600,
+                level: Math.random() * 0.5 + 0.5, // 50-100%
+                addEventListener: () => {},
+                removeEventListener: () => {},
+                dispatchEvent: () => true,
+              }),
+          });
+        }
+
+        // Remove automation detection properties
+        const propsToDelete = [
+          "webdriver",
+          "__webdriver_script_fn",
+          "__webdriver_script_func",
+          "__webdriver_script_function",
+          "__fxdriver_id",
+          "__fxdriver_unwrapped",
+          "__driver_evaluate",
+          "__webdriver_evaluate",
+          "__selenium_evaluate",
+          "__webdriver_script_fn",
+          "__nightwatch_elem",
+          "__playwright",
+        ];
+
+        propsToDelete.forEach((prop) => {
+          try {
+            delete (window as any)[prop];
+            delete (document as any)[prop];
+            delete (navigator as any)[prop];
+          } catch (e) {
+            // Ignore deletion errors
+          }
+        });
+
+        // Override console methods to hide automation traces
+        const originalConsole = { ...console };
+        ["debug", "log", "warn", "error"].forEach((method) => {
+          (console as any)[method] = function (...args: any[]) {
+            const message = args.join(" ");
+            if (
+              message.includes("webdriver") ||
+              message.includes("playwright") ||
+              message.includes("automation") ||
+              message.includes("HeadlessChrome")
+            ) {
+              return; // Suppress automation-related logs
+            }
+            (originalConsole as any)[method].apply(console, args);
+          };
+        });
+
+        // Spoof media devices for mobile realism
+        if (navigator.mediaDevices) {
+          const originalEnumerateDevices =
+            navigator.mediaDevices.enumerateDevices;
+          navigator.mediaDevices.enumerateDevices = function () {
+            return Promise.resolve([
+              {
+                deviceId: "default",
+                kind: "audioinput" as MediaDeviceKind,
+                label: "Default - Built-in Microphone",
+                groupId: "group1",
+              },
+              {
+                deviceId: "communications",
+                kind: "audioinput" as MediaDeviceKind,
+                label: "Communications - Built-in Microphone",
+                groupId: "group1",
+              },
+              {
+                deviceId: "camera1",
+                kind: "videoinput" as MediaDeviceKind,
+                label: "Built-in Camera",
+                groupId: "group2",
+              },
+              {
+                deviceId: "speaker1",
+                kind: "audiooutput" as MediaDeviceKind,
+                label: "Built-in Speaker",
+                groupId: "group3",
+              },
+            ] as MediaDeviceInfo[]);
+          };
+        }
+
+        // Add realistic timing jitter to Date.now()
+        const originalDateNow = Date.now;
+        let timeOffset = 0;
+        Date.now = function () {
+          // Add small random jitter to timing
+          timeOffset += Math.random() * 2 - 1; // ±1ms jitter
+          return originalDateNow() + Math.floor(timeOffset);
+        };
+
+        // Spoof performance.now() with realistic timing
+        const originalPerformanceNow = performance.now;
+        let performanceOffset = 0;
+        performance.now = function () {
+          performanceOffset += Math.random() * 0.1 - 0.05; // ±0.05ms jitter
+          return originalPerformanceNow() + performanceOffset;
+        };
+      }, fingerprint);
+
+      const displayMode = isWindows
+        ? "headful (minimized)"
+        : isLinux
+          ? this.xvfbDisplay
+            ? "headful (Xvfb virtual display)"
+            : "headful (natural display)"
+          : "headful";
+      console.log(
+        `🌐 Browser initialized with persistent context (${displayMode})`,
+      );
+    } catch (error) {
+      console.error("❌ Failed to launch browser context:", error);
+      console.error("🔍 Browser arguments used:", browserArgs);
+      console.error("📁 Profile path:", profilePath);
+
+      // Provide helpful troubleshooting information
+      if (isWindows) {
+        console.error("💡 Windows troubleshooting tips:");
+        console.error(
+          "   1. Ensure Windows Defender/antivirus isn't blocking Chromium",
+        );
+        console.error("   2. Try running as administrator");
+        console.error("   3. Close all Chrome/Chromium instances manually");
+        console.error("   4. Check if profile directory is write-accessible");
+      }
+
+      // Clean up any partially created resources
+      if (this.context) {
+        try {
+          await this.context.close();
+        } catch (closeError) {
+          console.warn(
+            "Warning: Failed to close context during error cleanup:",
+            closeError,
+          );
+        }
+        this.context = null;
+      }
+      this.browser = null;
+      this.currentPage = null;
+      throw new Error(
+        `Browser launch failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
+
   private async closeBrowser(): Promise<void> {
-    if (this.currentPage) {
-      await this.currentPage.close();
+    try {
+      if (this.currentPage) {
+        await this.currentPage.close();
+        this.currentPage = null;
+      }
+    } catch (error) {
+      console.warn("Warning: Failed to close current page:", error);
       this.currentPage = null;
     }
-    if (this.context) {
-      await this.context.close();
+
+    try {
+      if (this.context) {
+        await this.context.close();
+        this.context = null;
+      }
+    } catch (error) {
+      console.warn("Warning: Failed to close browser context:", error);
       this.context = null;
     }
-    if (this.browser) {
-      await this.browser.close();
+
+    try {
+      if (this.browser) {
+        await this.browser.close();
+        this.browser = null;
+      }
+    } catch (error) {
+      console.warn("Warning: Failed to close browser:", error);
       this.browser = null;
     }
 
     // DON'T stop Xvfb here - we want to reuse it for retries
-    // Xvfb will be stopped in cleanup methods or when the class is destroyed
+    // Xvfb will be stopped by internalCleanup when authentication is complete
 
     // Reset captured auth code when closing browser
     this.capturedAuthCode = null;
@@ -424,14 +1140,27 @@ export class GMAuth {
   // Stop Xvfb when completely done (success or final failure)
   private async stopXvfb(): Promise<void> {
     if (this.xvfb) {
+      const currentDisplay = this.xvfbDisplay; // Store current display before clearing
       try {
         console.log("🖥️ Stopping Xvfb...");
         this.xvfb.stopSync();
-        this.xvfb = null;
-        this.xvfbDisplay = null; // Clear stored display value
         console.log("🖥️ Xvfb stopped successfully");
       } catch (error) {
-        console.warn("⚠️ Failed to stop Xvfb:", error);
+        console.warn("⚠️ Failed to stop Xvfb gracefully:", error);
+        // Try to force kill if graceful stop fails
+        if (currentDisplay) {
+          try {
+            const displayNum = currentDisplay.replace(":", "");
+            execSync(`pkill -f "Xvfb.*:${displayNum}"`, { stdio: "ignore" });
+            console.log("🖥️ Force killed Xvfb process");
+          } catch (killError) {
+            console.warn("⚠️ Failed to force kill Xvfb:", killError);
+          }
+        }
+      } finally {
+        this.xvfb = null;
+        this.xvfbDisplay = null; // Clear stored display value
+        // Don't modify process.env.DISPLAY - let the system handle it
       }
     }
   }
@@ -445,13 +1174,21 @@ export class GMAuth {
     this.debugMode = false;
   }
 
-  // Public cleanup method to properly stop Xvfb and close browser
-  public async cleanup(): Promise<void> {
+  // Private cleanup method for internal use
+  private async internalCleanup(): Promise<void> {
+    if (this.cleanupInProgress) {
+      return; // Prevent concurrent cleanup
+    }
+
+    this.cleanupInProgress = true;
+
     try {
       await this.closeBrowser();
       await this.stopXvfb();
     } catch (error) {
-      console.warn("Warning: Cleanup failed:", error);
+      console.warn("Warning: Internal cleanup failed:", error);
+    } finally {
+      this.cleanupInProgress = false;
     }
   }
 
@@ -480,10 +1217,10 @@ export class GMAuth {
 
       // Ensure cleanup happens on any authentication error
       try {
-        await this.stopXvfb();
+        await this.internalCleanup();
       } catch (cleanupError) {
         console.warn(
-          "Warning: Xvfb cleanup failed in authenticate error handler:",
+          "Warning: Cleanup failed in authenticate error handler:",
           cleanupError,
         );
       }
@@ -492,7 +1229,7 @@ export class GMAuth {
     }
   }
   async doFullAuthSequence(): Promise<TokenSet> {
-    const maxRetries = 2;
+    const maxRetries = 4; // Increased from 2 to 4 (5 total attempts)
     let lastError: Error | null = null;
     let useRandomFingerprint = true; // Always use randomized fingerprint for better evasion
 
@@ -503,11 +1240,21 @@ export class GMAuth {
             `🔄 Authentication attempt ${attempt + 1}/${maxRetries + 1} (retry ${attempt})`,
           );
 
-          // Wait a bit before retrying to avoid rate limiting
-          const delayMs =
+          // More sophisticated backoff with human-like patterns
+          const baseDelayMs =
             lastError && lastError.message.includes("Access Denied")
-              ? 5000 + Math.random() * 5000 // 5-10 seconds for access denied
-              : 2000 * attempt; // Standard exponential backoff
+              ? 20000 + Math.random() * 10000 // 20-30 seconds for access denied with randomization
+              : 8000 + Math.random() * 4000; // 8-12 seconds for other errors
+
+          const exponentialDelay = baseDelayMs * Math.pow(1.5, attempt - 1); // Reduced exponential factor
+          const jitter = Math.random() * 0.5 * exponentialDelay; // 50% jitter for unpredictability
+          const delayMs = Math.floor(exponentialDelay + jitter);
+
+          const delaySeconds = (delayMs / 1000).toFixed(1);
+          console.log(
+            `⏳ Will retry authentication in ${delaySeconds} seconds...`,
+          );
+
           await new Promise((resolve) => setTimeout(resolve, delayMs));
         }
 
@@ -546,8 +1293,7 @@ export class GMAuth {
 
         // Always clean up browser resources after successful authentication
         try {
-          await this.closeBrowser();
-          await this.stopXvfb(); // Stop Xvfb on successful completion
+          await this.internalCleanup();
         } catch (cleanupError) {
           console.warn(
             "Warning: Browser cleanup failed after success:",
@@ -573,9 +1319,11 @@ export class GMAuth {
         // If this is not the last attempt, continue to retry
         if (attempt < maxRetries) {
           const isAccessDenied = lastError.message.includes("Access Denied");
-          const delayTime = isAccessDenied ? "5-10" : `${2 * (attempt + 1)}`;
+          const nextDelaySeconds = isAccessDenied
+            ? `${((12000 * Math.pow(2, attempt)) / 1000).toFixed(1)}-${((12000 * Math.pow(2, attempt) * 1.4) / 1000).toFixed(1)}`
+            : `${((5000 * Math.pow(2, attempt)) / 1000).toFixed(1)}-${((5000 * Math.pow(2, attempt) * 1.4) / 1000).toFixed(1)}`;
           console.log(
-            `⏳ Will retry authentication in ${delayTime} seconds...`,
+            `⏳ Will retry authentication in ~${nextDelaySeconds} seconds...`,
           );
           continue;
         }
@@ -585,12 +1333,12 @@ export class GMAuth {
     // If we get here, all retries failed
     console.error(`🚫 Authentication failed after ${maxRetries + 1} attempts`);
 
-    // Clean up Xvfb on final failure
+    // Clean up on final failure
     try {
-      await this.stopXvfb();
+      await this.internalCleanup();
     } catch (cleanupError) {
       console.warn(
-        "Warning: Xvfb cleanup failed after final failure:",
+        "Warning: Cleanup failed after final failure:",
         cleanupError,
       );
     }
@@ -622,7 +1370,9 @@ export class GMAuth {
     }
   }
   private async handleMFA(): Promise<void> {
-    console.log("Handling MFA via browser automation");
+    console.log(
+      "🔐 Initiating multi-factor authentication (MFA) via browser automation",
+    );
 
     if (!this.context || !this.currentPage) {
       throw new Error(
@@ -631,16 +1381,23 @@ export class GMAuth {
     }
 
     const page = this.currentPage;
-    console.log("Page title:", await page.title());
+    console.log("📄 Current MFA page title:", await page.title());
 
     try {
       // Wait for MFA page to load
       await page.waitForLoadState("networkidle");
 
+      console.log(
+        "🔍 Scanning for multi-factor authentication (MFA) input elements...",
+      );
       // Look for MFA elements
       await page.waitForSelector(
         'input[name="otpCode"], input[name="emailMfa"], input[name="strongAuthenticationPhoneNumber"]',
         { timeout: 60000 },
+      );
+
+      console.log(
+        "✅ MFA elements found - analyzing authentication method type",
       );
 
       const pageContent = await page.content();
@@ -695,13 +1452,17 @@ export class GMAuth {
         period: 30,
       });
 
-      console.log("Submitting OTP Code:", otp); // Fill in the OTP code
+      console.log("📱 Entering TOTP authentication code:", otp); // Fill in the OTP code
       const otpField = await page
         .locator(
           'input[name="otpCode"], [aria-label*="One-Time Passcode"i], [aria-label*="OTP"i]',
         )
         .first();
-      await otpField.fill(otp);
+      await otpField.click({ delay: Math.random() * 200 + 50 });
+      await otpField.type(otp, { delay: Math.random() * 150 + 50 });
+      await page.waitForTimeout(500 + Math.random() * 500); // Pause before clicking
+
+      console.log("✅ TOTP code entered - preparing to submit MFA form");
 
       // Enable CDP Network domain for low-level network monitoring
       const client = await page.context().newCDPSession(page);
@@ -788,6 +1549,9 @@ export class GMAuth {
         .first();
       await submitMfaButton.waitFor({ timeout: 60000 });
 
+      console.log(
+        "✅ MFA submit button found - clicking to complete authentication",
+      );
       await submitMfaButton.click();
 
       if (this.debugMode)
@@ -798,7 +1562,7 @@ export class GMAuth {
         // Wait for the auth code to be captured by CDP listeners
         if (this.debugMode)
           console.log(
-            "⌛ [handleMFA] Waiting for auth code capture after submit...",
+            "⌛ Monitoring for authorization code capture after MFA submission...",
           );
         const captured = await this.waitForAuthCode(60000); // Use the new helper
         if (!captured && this.debugMode) {
@@ -817,7 +1581,9 @@ export class GMAuth {
       }
 
       if (this.debugMode)
-        console.log("⌛ Waiting for redirect after MFA submission...");
+        console.log(
+          "⌛ Waiting for page navigation and redirect completion after MFA...",
+        );
       await page.waitForLoadState("networkidle");
 
       if (this.capturedAuthCode) {
@@ -1059,7 +1825,7 @@ export class GMAuth {
     authorizationUrl: string,
     useRandomFingerprint: boolean = false,
   ): Promise<void> {
-    console.log("Starting browser-based authentication");
+    console.log("🌐 Launching browser automation for Microsoft authentication");
 
     // Initialize browser if not already done
     await this.initBrowser(useRandomFingerprint);
@@ -1095,8 +1861,35 @@ export class GMAuth {
 
       await page.waitForLoadState("networkidle", { timeout: 60000 }); // Keep this for after successful goto
 
-      console.log("Page loaded, current URL:", page.url());
-      console.log("Page title:", await page.title());
+      console.log(
+        "📄 Authentication page loaded successfully. URL:",
+        page.url(),
+      );
+      console.log("📄 Current page title:", await page.title());
+
+      // Simulate human browsing behavior - scroll and mouse movement
+      await page.waitForTimeout(1000 + Math.random() * 2000);
+
+      // Random mouse movements to simulate reading
+      const viewport = page.viewportSize();
+      if (viewport) {
+        for (let i = 0; i < 3; i++) {
+          await page.mouse.move(
+            Math.random() * viewport.width,
+            Math.random() * viewport.height,
+            { steps: Math.floor(Math.random() * 10) + 5 },
+          );
+          await page.waitForTimeout(500 + Math.random() * 1000);
+        }
+      }
+
+      // Simulate slight scrolling (like humans checking the page)
+      if (Math.random() > 0.3) {
+        await page.mouse.wheel(0, Math.random() * 200 + 50);
+        await page.waitForTimeout(300 + Math.random() * 500);
+        await page.mouse.wheel(0, -(Math.random() * 100 + 25)); // Scroll back up a bit
+        await page.waitForTimeout(200 + Math.random() * 400);
+      }
 
       // Check if we're stuck on a loading page
       const title = await page.title();
@@ -1113,15 +1906,17 @@ export class GMAuth {
         // console.log("Screenshot saved as debug-loading-page.png");
 
         // Try refreshing the page
-        console.log("Attempting page refresh...");
+        console.log(
+          "🔄 Attempting page refresh to reload authentication form...",
+        );
         await page.reload({ waitUntil: "domcontentloaded" });
         await page.waitForLoadState("networkidle");
 
         const newTitle = await page.title();
-        console.log("Page title after refresh:", newTitle);
+        console.log("📄 Page refreshed successfully. New title:", newTitle);
       }
 
-      console.log("Looking for email field...");
+      console.log("🔍 Locating Microsoft email input field on login page...");
 
       // Find and fill email field
       const emailField = page
@@ -1130,20 +1925,78 @@ export class GMAuth {
         )
         .first();
       await emailField.waitFor({ timeout: 60000 });
-      await emailField.fill(this.config.username);
 
-      console.log("Looking for Continue button...");
+      console.log("✅ Email field found - clicking and entering email address");
 
-      // Click continue button
+      // Simulate realistic human behavior - pause to "read" the page
+      await page.waitForTimeout(2000 + Math.random() * 3000);
+
+      // Simulate mouse movement before clicking email field
+      const emailBox = await emailField.boundingBox();
+      if (emailBox) {
+        // Move mouse to a random point near the email field first
+        await page.mouse.move(
+          emailBox.x +
+            emailBox.width * 0.1 +
+            Math.random() * (emailBox.width * 0.3),
+          emailBox.y +
+            emailBox.height * 0.1 +
+            Math.random() * (emailBox.height * 0.3),
+          { steps: Math.floor(Math.random() * 10) + 5 },
+        );
+        await page.waitForTimeout(200 + Math.random() * 500);
+      }
+
+      await emailField.click({ delay: Math.random() * 200 + 50 });
+
+      // Simulate realistic typing with occasional pauses (like humans do)
+      const email = this.config.username;
+      for (let i = 0; i < email.length; i++) {
+        await page.keyboard.type(email[i], { delay: Math.random() * 150 + 50 });
+
+        // Occasionally pause while typing (like humans thinking)
+        if (Math.random() < 0.1) {
+          await page.waitForTimeout(300 + Math.random() * 800);
+        }
+      }
+
+      console.log(
+        "🔍 Searching for Continue button to proceed to password page...",
+      );
+      await page.waitForTimeout(800 + Math.random() * 1200); // Human hesitation before proceeding
+
+      // Click continue button with realistic mouse movement
       const continueButton = page
         .locator(
           'button#continue[data-dtm="sign in"][aria-label="Continue"], button:has-text("Continue")[data-dtm="sign in"], [role="button"][aria-label*="Continue"i]',
         )
         .first();
-      await emailField.waitFor({ timeout: 60000 });
-      await continueButton.click();
+      await continueButton.waitFor({ timeout: 60000 });
 
-      console.log("Looking for Password field...");
+      console.log(
+        "✅ Continue button found - clicking to proceed to password entry",
+      );
+
+      // Hover before clicking (human-like behavior)
+      await continueButton.hover();
+      await page.waitForTimeout(200 + Math.random() * 400);
+
+      // Move mouse slightly before final click
+      const continueBox = await continueButton.boundingBox();
+      if (continueBox) {
+        await page.mouse.move(
+          continueBox.x + continueBox.width * (0.3 + Math.random() * 0.4),
+          continueBox.y + continueBox.height * (0.3 + Math.random() * 0.4),
+          { steps: 3 },
+        );
+        await page.waitForTimeout(100 + Math.random() * 200);
+      }
+
+      await continueButton.click({ delay: Math.random() * 200 + 50 });
+
+      console.log(
+        "🔍 Looking for password input field on authentication page...",
+      );
 
       // Wait for password page and fill password
       await page.waitForLoadState("networkidle", { timeout: 60000 });
@@ -1154,10 +2007,46 @@ export class GMAuth {
         )
         .first();
       await passwordField.waitFor({ timeout: 60000 });
-      await passwordField.fill(this.config.password);
+
+      console.log("✅ Password field found - clicking and entering password");
+
+      // Simulate human behavior - pause to see the new page
+      await page.waitForTimeout(1500 + Math.random() * 2500);
+
+      // Simulate mouse movement before password field interaction
+      const passwordBox = await passwordField.boundingBox();
+      if (passwordBox) {
+        // Move to password field area with realistic movement
+        await page.mouse.move(
+          passwordBox.x +
+            passwordBox.width * 0.2 +
+            Math.random() * (passwordBox.width * 0.3),
+          passwordBox.y +
+            passwordBox.height * 0.2 +
+            Math.random() * (passwordBox.height * 0.3),
+          { steps: Math.floor(Math.random() * 8) + 4 },
+        );
+        await page.waitForTimeout(150 + Math.random() * 300);
+      }
+
+      await passwordField.click({ delay: Math.random() * 200 + 50 });
+
+      // Type password with human-like patterns
+      const password = this.config.password;
+      for (let i = 0; i < password.length; i++) {
+        await page.keyboard.type(password[i], {
+          delay: Math.random() * 120 + 40,
+        });
+
+        // Occasional hesitation while typing password
+        if (Math.random() < 0.08) {
+          await page.waitForTimeout(200 + Math.random() * 600);
+        }
+      }
       console.log(
-        "Looking for Sign In button and preparing to capture redirect...",
+        "🔍 Locating Sign In button and preparing network monitoring for authentication redirect...",
       );
+      await page.waitForTimeout(500 + Math.random() * 500); // Pause before clicking
 
       // Enable CDP Network domain for low-level network monitoring
       const client = await page.context().newCDPSession(page);
@@ -1268,7 +2157,12 @@ export class GMAuth {
         .first();
 
       await submitButton.waitFor({ timeout: 60000 });
-      await submitButton.click();
+      console.log(
+        "✅ Sign In button found - clicking to submit authentication credentials",
+      );
+      await submitButton.hover();
+      await page.waitForTimeout(100 + Math.random() * 200);
+      await submitButton.click({ delay: Math.random() * 200 + 50 });
 
       // Wait a bit for the redirect to potentially happen
       await page.waitForTimeout(3000);
@@ -1276,15 +2170,182 @@ export class GMAuth {
 
       // Check for access denied response detected by CDP
       if (accessDenied) {
-        throw new Error(
-          "🚫 Access Denied: Authentication blocked. This could be due to rate limiting, IP blocking, or security restrictions. Please wait before retrying or check if your IP is blocked.",
-        );
+        let retryCount = 0;
+        const maxRetries = 2;
+
+        while (accessDenied && retryCount < maxRetries) {
+          retryCount++;
+          console.log(
+            `🔄 Access denied detected. Retrying credential submission (attempt ${retryCount}/${maxRetries})...`,
+          );
+
+          // Reset the access denied flag for this retry
+          accessDenied = false;
+
+          // Human-like wait before retrying - simulate user thinking and trying again
+          const retryDelay = 2000 + Math.random() * 3000 + retryCount * 1000; // Progressive delay
+          console.log(
+            `⏳ Waiting ${(retryDelay / 1000).toFixed(1)}s before retry (simulating human behavior)...`,
+          );
+          await page.waitForTimeout(retryDelay);
+
+          try {
+            // Refresh the page to start over with credential submission
+            console.log("🔄 Refreshing authentication page for retry...");
+            await page.reload({ waitUntil: "networkidle", timeout: 60000 });
+
+            // Simulate human pause after page reload to read/assess the page
+            await page.waitForTimeout(1500 + Math.random() * 2500);
+
+            // Re-enter email with human-like behavior
+            console.log(
+              "🔍 Re-locating email input field after page refresh...",
+            );
+            const retryEmailField = page
+              .locator(
+                'input[type="email"], input[name="logonIdentifier"], input#logonIdentifier, [aria-label*="Email"i], [placeholder*="Email"i]',
+              )
+              .first();
+            await retryEmailField.waitFor({ timeout: 60000 });
+
+            console.log("✅ Email field found - entering email address");
+
+            // Simulate human mouse movement before clicking
+            const emailBox = await retryEmailField.boundingBox();
+            if (emailBox) {
+              await page.mouse.move(
+                emailBox.x + emailBox.width * (0.2 + Math.random() * 0.6),
+                emailBox.y + emailBox.height * (0.2 + Math.random() * 0.6),
+                { steps: Math.floor(Math.random() * 8) + 3 },
+              );
+              await page.waitForTimeout(150 + Math.random() * 300);
+            }
+
+            await retryEmailField.click({ delay: Math.random() * 200 + 50 });
+
+            // Type email with human-like timing
+            const email = this.config.username;
+            for (let i = 0; i < email.length; i++) {
+              await page.keyboard.type(email[i], {
+                delay: Math.random() * 120 + 40,
+              });
+              // Occasional hesitation during typing
+              if (Math.random() < 0.08) {
+                await page.waitForTimeout(200 + Math.random() * 500);
+              }
+            }
+
+            // Human pause before clicking continue
+            await page.waitForTimeout(800 + Math.random() * 1200);
+
+            // Click continue button
+            console.log("🔍 Locating Continue button...");
+            const retryContinueButton = page
+              .locator(
+                'button#continue[data-dtm="sign in"][aria-label="Continue"], button:has-text("Continue")[data-dtm="sign in"], [role="button"][aria-label*="Continue"i]',
+              )
+              .first();
+            await retryContinueButton.waitFor({ timeout: 60000 });
+
+            console.log(
+              "✅ Continue button found - clicking to proceed to password entry",
+            );
+            // Hover before clicking (human-like)
+            await retryContinueButton.hover();
+            await page.waitForTimeout(200 + Math.random() * 400);
+            await retryContinueButton.click({
+              delay: Math.random() * 200 + 50,
+            });
+
+            // Wait for password page
+            console.log("⏳ Waiting for password page to load...");
+            await page.waitForLoadState("networkidle", { timeout: 60000 });
+
+            // Human pause to assess password page
+            await page.waitForTimeout(1200 + Math.random() * 2000);
+
+            // Re-enter password with human-like behavior
+            console.log("🔍 Re-locating password input field...");
+            const retryPasswordField = page
+              .locator(
+                'input[type="password"], input[name="password"], [aria-label*="Password"i], [placeholder*="Password"i]',
+              )
+              .first();
+            await retryPasswordField.waitFor({ timeout: 60000 });
+
+            console.log("✅ Password field found - entering password");
+
+            // Simulate mouse movement before password field
+            const passwordBox = await retryPasswordField.boundingBox();
+            if (passwordBox) {
+              await page.mouse.move(
+                passwordBox.x + passwordBox.width * (0.2 + Math.random() * 0.6),
+                passwordBox.y +
+                  passwordBox.height * (0.2 + Math.random() * 0.6),
+                { steps: Math.floor(Math.random() * 8) + 4 },
+              );
+              await page.waitForTimeout(150 + Math.random() * 300);
+            }
+
+            await retryPasswordField.click({ delay: Math.random() * 200 + 50 });
+
+            // Type password with human-like timing
+            const password = this.config.password;
+            for (let i = 0; i < password.length; i++) {
+              await page.keyboard.type(password[i], {
+                delay: Math.random() * 100 + 50,
+              });
+              // Occasional hesitation during password typing
+              if (Math.random() < 0.06) {
+                await page.waitForTimeout(150 + Math.random() * 400);
+              }
+            }
+
+            // Human pause before final submission
+            await page.waitForTimeout(600 + Math.random() * 800);
+
+            // Re-submit credentials
+            console.log("🔍 Locating Sign In button for retry submission...");
+            const retrySubmitButton = page
+              .locator(
+                'button#continue[data-dtm="sign in"][aria-label="Sign in"], button:has-text("Log In")[data-dtm="sign in"], button:has-text("Sign in")[data-dtm="sign in"], [role="button"][aria-label*="Sign in"i], [role="button"][aria-label*="Log In"i]',
+              )
+              .first();
+            await retrySubmitButton.waitFor({ timeout: 60000 });
+
+            console.log(
+              "✅ Sign In button found - clicking to submit credentials again",
+            );
+
+            // Hover before final click
+            await retrySubmitButton.hover();
+            await page.waitForTimeout(100 + Math.random() * 200);
+            await retrySubmitButton.click({ delay: Math.random() * 200 + 50 }); // Wait for response
+            console.log(
+              "⏳ Waiting for authentication response after retry...",
+            );
+            await page.waitForTimeout(3000);
+            await page.waitForLoadState("networkidle", { timeout: 60000 });
+
+            console.log(`✅ Retry attempt ${retryCount} completed`);
+          } catch (retryError) {
+            console.error(`❌ Retry attempt ${retryCount} failed:`, retryError);
+            // Continue to next retry or exit loop if max retries reached
+          }
+        }
+
+        // If still access denied after all retries, throw the error
+        if (accessDenied) {
+          throw new Error(
+            `🚫 Access Denied: Authentication blocked after ${maxRetries} retries. This could be due to rate limiting, IP blocking, or security restrictions. Please wait before retrying or check if your IP is blocked.`,
+          );
+        }
       }
 
       // Wait for network to be idle in case other things are happening,
       // or if MFA is indeed the next step.
       console.log(
-        "Waiting for network idle after credential submission attempt...",
+        "⏳ Monitoring network activity and waiting for authentication response...",
       );
       await page.waitForLoadState("networkidle", { timeout: 60000 });
       // Wait a bit for the redirect to potentially happen
@@ -1318,45 +2379,121 @@ export class GMAuth {
         console.log(
           "🔄 Attempting to refresh page and retry credential submission...",
         );
+
+        // Human-like delay before retry - simulate user thinking about what went wrong
+        const retryThinkingDelay = 3000 + Math.random() * 4000;
+        console.log(
+          `⏳ Pausing ${(retryThinkingDelay / 1000).toFixed(1)}s before retry (simulating human assessment)...`,
+        );
+        await page.waitForTimeout(retryThinkingDelay);
+
         await page.reload({ waitUntil: "networkidle" });
 
-        // Re-find and fill email field
+        // Simulate human pause after reload to read the page
+        await page.waitForTimeout(2000 + Math.random() * 3000);
+
+        // Re-find and fill email field with human-like behavior
         const retryEmailField = page
           .locator(
             'input[type="email"], input[name="logonIdentifier"], input#logonIdentifier, [aria-label*="Email"i], [placeholder*="Email"i]',
           )
           .first();
         await retryEmailField.waitFor({ timeout: 30000 });
-        await retryEmailField.fill(this.config.username);
 
-        // Click continue button again
+        // Simulate mouse movement to email field
+        const emailBox = await retryEmailField.boundingBox();
+        if (emailBox) {
+          await page.mouse.move(
+            emailBox.x + emailBox.width * (0.1 + Math.random() * 0.8),
+            emailBox.y + emailBox.height * (0.1 + Math.random() * 0.8),
+            { steps: Math.floor(Math.random() * 12) + 5 },
+          );
+          await page.waitForTimeout(300 + Math.random() * 600);
+        }
+
+        await retryEmailField.click({ delay: Math.random() * 250 + 100 });
+
+        // Type email character by character with human-like timing
+        const email = this.config.username;
+        for (let i = 0; i < email.length; i++) {
+          await page.keyboard.type(email[i], {
+            delay: Math.random() * 140 + 60,
+          });
+          // Occasional longer pause during typing
+          if (Math.random() < 0.12) {
+            await page.waitForTimeout(250 + Math.random() * 700);
+          }
+        }
+
+        // Human pause before clicking continue
+        await page.waitForTimeout(1000 + Math.random() * 1500);
+
+        // Click continue button again with human-like behavior
         const retryContinueButton = page
           .locator(
             'button#continue[data-dtm="sign in"][aria-label="Continue"], button:has-text("Continue")[data-dtm="sign in"], [role="button"][aria-label*="Continue"i]',
           )
           .first();
-        await retryContinueButton.click();
+
+        // Hover before clicking
+        await retryContinueButton.hover();
+        await page.waitForTimeout(200 + Math.random() * 500);
+        await retryContinueButton.click({ delay: Math.random() * 180 + 80 });
 
         // Wait for password page
         await page.waitForLoadState("networkidle", { timeout: 30000 });
 
-        // Re-find and fill password field
+        // Human pause to assess password page
+        await page.waitForTimeout(1500 + Math.random() * 2500);
+
+        // Re-find and fill password field with human-like behavior
         const retryPasswordField = page
           .locator(
             'input[type="password"], input[name="password"], [aria-label*="Password"i], [placeholder*="Password"i]',
           )
           .first();
         await retryPasswordField.waitFor({ timeout: 30000 });
-        await retryPasswordField.fill(this.config.password);
 
-        // Click the sign-in button again
+        // Simulate mouse movement to password field
+        const passwordBox = await retryPasswordField.boundingBox();
+        if (passwordBox) {
+          await page.mouse.move(
+            passwordBox.x + passwordBox.width * (0.2 + Math.random() * 0.6),
+            passwordBox.y + passwordBox.height * (0.2 + Math.random() * 0.6),
+            { steps: Math.floor(Math.random() * 10) + 4 },
+          );
+          await page.waitForTimeout(200 + Math.random() * 400);
+        }
+
+        await retryPasswordField.click({ delay: Math.random() * 220 + 90 });
+
+        // Type password character by character with human-like timing
+        const password = this.config.password;
+        for (let i = 0; i < password.length; i++) {
+          await page.keyboard.type(password[i], {
+            delay: Math.random() * 110 + 60,
+          });
+          // Occasional hesitation during password typing
+          if (Math.random() < 0.08) {
+            await page.waitForTimeout(180 + Math.random() * 450);
+          }
+        }
+
+        // Human pause before final submission
+        await page.waitForTimeout(800 + Math.random() * 1200);
+
+        // Click the sign-in button again with human-like behavior
         const retrySubmitButton = page
           .locator(
             'button#continue[data-dtm="sign in"][aria-label="Sign in"], button:has-text("Log In")[data-dtm="sign in"], button:has-text("Sign in")[data-dtm="sign in"], [role="button"][aria-label*="Sign in"i], [role="button"][aria-label*="Log In"i]',
           )
           .first();
         await retrySubmitButton.waitFor({ timeout: 30000 });
-        await retrySubmitButton.click();
+
+        // Hover before final click
+        await retrySubmitButton.hover();
+        await page.waitForTimeout(150 + Math.random() * 350);
+        await retrySubmitButton.click({ delay: Math.random() * 200 + 100 });
 
         // Wait for response after retry
         await page.waitForTimeout(3000);
@@ -1401,7 +2538,7 @@ export class GMAuth {
           // Wait for the auth code to be captured by CDP listeners
           if (this.debugMode)
             console.log(
-              "⌛ [submitCredentials] Waiting for auth code capture after submit...",
+              "⌛ Monitoring for authorization code capture after credential submission...",
             );
           const captured = await this.waitForAuthCode(15000); // Use the new helper
           if (!captured && this.debugMode) {
@@ -1425,10 +2562,10 @@ export class GMAuth {
       }
 
       console.log(
-        "Credentials submitted (or redirect captured). Current URL:",
+        "✅ Credentials submitted successfully (or redirect captured). Current URL:",
         page.url(),
       );
-      console.log("Page title:", await page.title());
+      console.log("📄 Final page title:", await page.title());
     } catch (error) {
       console.error("Error in submitCredentials:", error);
       throw error;
@@ -1489,6 +2626,17 @@ export class GMAuth {
       this.currentGMAPIToken.expires_at > now + 5 * 60
     ) {
       // console.log("Returning existing GM API token");
+
+      // Clean up any browser resources since we're using existing tokens
+      try {
+        await this.closeBrowser(); // Only close browser, keep Xvfb for potential future use
+      } catch (cleanupError) {
+        console.warn(
+          "Warning: Browser cleanup failed when returning existing token:",
+          cleanupError,
+        );
+      }
+
       return this.currentGMAPIToken;
     }
 
@@ -1546,6 +2694,16 @@ export class GMAuth {
       // Store the new token
       this.currentGMAPIToken = response.data;
       this.saveTokens(tokenSet);
+
+      // Clean up browser resources after successful token retrieval
+      try {
+        await this.closeBrowser(); // Only close browser, keep Xvfb for potential future use
+      } catch (cleanupError) {
+        console.warn(
+          "Warning: Browser cleanup failed after new token retrieval:",
+          cleanupError,
+        );
+      }
 
       return response.data;
     } catch (error: any) {
@@ -1855,21 +3013,46 @@ export class GMAuth {
       // Use the discovery data but merge with fallback to ensure required fields
       const discoveredConfig = response.data;
 
+      // Track which endpoints are using fallback values
+      const fallbacksUsed = [];
+      const finalAuthEndpoint =
+        discoveredConfig.authorization_endpoint ||
+        fallbackConfig.authorization_endpoint;
+      const finalTokenEndpoint =
+        discoveredConfig.token_endpoint || fallbackConfig.token_endpoint;
+      const finalJwksUri = discoveredConfig.jwks_uri || fallbackConfig.jwks_uri;
+
+      if (!discoveredConfig.authorization_endpoint) {
+        fallbacksUsed.push("authorization_endpoint");
+      }
+      if (!discoveredConfig.token_endpoint) {
+        fallbacksUsed.push("token_endpoint");
+      }
+      if (!discoveredConfig.jwks_uri) {
+        fallbacksUsed.push("jwks_uri");
+      }
+
       // Create issuer with combined configuration
       issuer = new this.oidc.Issuer({
         ...fallbackConfig,
         ...discoveredConfig,
         // Ensure these critical endpoints are defined
-        authorization_endpoint:
-          discoveredConfig.authorization_endpoint ||
-          fallbackConfig.authorization_endpoint,
-        token_endpoint:
-          discoveredConfig.token_endpoint || fallbackConfig.token_endpoint,
-        jwks_uri: discoveredConfig.jwks_uri || fallbackConfig.jwks_uri,
+        authorization_endpoint: finalAuthEndpoint,
+        token_endpoint: finalTokenEndpoint,
+        jwks_uri: finalJwksUri,
       });
 
       if (this.debugMode) {
         console.log("Successfully created issuer with discovery data");
+        if (fallbacksUsed.length > 0) {
+          console.log(
+            `🔧 Using fallback values for: ${fallbacksUsed.join(", ")}`,
+          );
+        } else {
+          console.log(
+            "✅ All endpoints retrieved from discovery, no fallbacks needed",
+          );
+        }
       }
     } catch (error) {
       console.warn(
@@ -1883,6 +3066,9 @@ export class GMAuth {
       if (this.debugMode) {
         console.log("Created issuer with fallback configuration");
       }
+      console.log(
+        "🔧 Using complete fallback configuration for all OpenID endpoints",
+      );
     }
 
     if (!issuer) {

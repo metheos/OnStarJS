@@ -307,6 +307,12 @@ Run both unit and functional tests
 
 `pnpm test:auth`
 
+### Reauth
+
+Tests the re-authentication flow by simulating expired tokens and browser reinitialization scenarios. This is particularly useful testing for long-running applications that need to re-authenticate periodically.
+
+`pnpm test:reauth`
+
 ### Functional
 
 These tests will execute actual requests to the OnStar API. They will perform a Get Account Vehicles request followed by a Cancel Alert request and then a Diagnostics request.
