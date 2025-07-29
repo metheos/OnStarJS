@@ -193,7 +193,9 @@ export class GMAuth {
         );
       }
     } else if (this.browser || this.context) {
+      // Only partial browser state (either browser OR context but not both)
       console.log("🔄 Partial browser state detected, reinitializing...");
+      browserUsable = false;
     }
 
     // Clear stale references if browser is not usable
