@@ -538,28 +538,83 @@ export class GMAuth {
     }
 
     // Use persistent context instead of launch + newContext for more realistic browser behavior
-    this.context = await chromium.launchPersistentContext(
-      "./temp-browser-profile",
-      {
-        channel: "chromium", // Use chromium
-        headless: false, // Always headful for better compatibility
-        hasTouch: true, // Simulate touch support
-        isMobile: true, // Simulate mobile device
-        userAgent: fingerprint.userAgent,
-        viewport: fingerprint.viewport,
-        args: browserArgs,
-      },
-    );
+    console.log("🌐 Launching persistent context with args:", browserArgs);
+    try {
+      this.context = await chromium.launchPersistentContext(
+        "./temp-browser-profile",
+        {
+          channel: "chromium", // Use chromium
+          headless: false, // Always headful for better compatibility
+          hasTouch: true, // Simulate touch support
+          isMobile: true, // Simulate mobile device
+          userAgent: fingerprint.userAgent,
+          viewport: fingerprint.viewport,
+          args: browserArgs,
+        },
+      );
+    } catch (error) {
+      console.error("❌ Failed to launch persistent context:", error);
+
+      // Try with a simpler set of args for debugging
+      if (isLinux) {
+        console.log("🔄 Retrying with minimal browser args on Linux...");
+        const minimalArgs = [
+          "--no-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-features=VizDisplayCompositor",
+        ];
+
+        try {
+          this.context = await chromium.launchPersistentContext(
+            "./temp-browser-profile",
+            {
+              headless: false,
+              args: minimalArgs,
+            },
+          );
+          console.log("✅ Persistent context launched with minimal args");
+        } catch (retryError) {
+          console.error("❌ Failed even with minimal args:", retryError);
+          throw new Error(
+            `Failed to launch browser persistent context: ${retryError}`,
+          );
+        }
+      } else {
+        throw new Error(
+          `Failed to launch browser persistent context: ${error}`,
+        );
+      }
+    }
 
     // The browser is part of the persistent context
     this.browser = this.context.browser();
 
-    // Ensure we have a valid browser reference
+    // Wait a moment for browser to fully initialize
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    // Try again if browser is still null
     if (!this.browser) {
-      throw new Error("Failed to get browser instance from persistent context");
+      console.log("🔄 Browser still null, retrying to get browser instance...");
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      this.browser = this.context.browser();
     }
 
-    // Minimal stealth - only hide the most obvious automation indicators
+    // Ensure we have a valid browser reference
+    if (!this.browser) {
+      console.error(
+        "❌ Browser instance is null after context creation and retries",
+      );
+      console.error("Context details:", {
+        contextExists: !!this.context,
+        contextPages: this.context ? this.context.pages().length : "N/A",
+      });
+
+      throw new Error(
+        "Failed to get browser instance from persistent context - browser process may have failed to start",
+      );
+    }
+
+    console.log("✅ Browser instance obtained successfully"); // Minimal stealth - only hide the most obvious automation indicators
     await this.context.addInitScript(() => {
       Object.defineProperty(navigator, "webdriver", {
         get: () => undefined,
