@@ -6,14 +6,14 @@ This directory contains utilities for setting up your OnStarJS environment, part
 
 ### `setup-env.js`
 
-**Automatic environment setup**
+#### Automatic environment setup
 
 - Reads environment variables (from Codespace secrets or system)
 - Validates required credentials
 - Generates `.env` file automatically
 - Provides helpful error messages and setup instructions
 
-**Usage:**
+#### Usage
 
 ```bash
 npm run setup:env
@@ -23,13 +23,13 @@ node scripts/setup-env.js
 
 ### `setup-env.sh`
 
-**Bash version of environment setup**
+#### Bash version of environment setup
 
 - Cross-platform shell script
 - Same functionality as the Node.js version
 - Useful for environments without Node.js
 
-**Usage:**
+#### Shell Script Usage
 
 ```bash
 npm run setup:env:bash
@@ -39,14 +39,14 @@ npm run setup:env:bash
 
 ### `credential-manager.js`
 
-**Interactive credential setup**
+#### Interactive credential setup
 
 - Prompts for all credentials interactively
 - Masks sensitive input
 - Creates backups of existing `.env` files
 - Validates credential format
 
-**Usage:**
+#### Interactive Usage
 
 ```bash
 npm run setup:interactive
