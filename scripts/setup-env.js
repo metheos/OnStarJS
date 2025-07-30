@@ -7,10 +7,10 @@
  * (GitHub Codespace secrets, system env vars, etc.)
  */
 
-const fs = require("fs");
-const path = require("path");
-const crypto = require("crypto");
-const readline = require("readline");
+import fs from "fs";
+import path from "path";
+import crypto from "crypto";
+import readline from "readline";
 
 const ENV_FILE = ".env";
 const ENV_EXAMPLE = ".env.example";
@@ -265,11 +265,11 @@ process.on("unhandledRejection", (reason) => {
 });
 
 // Run the main function
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((error) => {
     log.error(`Setup failed: ${error.message}`);
     process.exit(1);
   });
 }
 
-module.exports = { main, createEnvContent, checkEnvironmentVariables };
+export { main, createEnvContent, checkEnvironmentVariables };

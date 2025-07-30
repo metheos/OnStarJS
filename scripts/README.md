@@ -101,6 +101,7 @@ pnpm run setup:env
 - Backup existing `.env` files before overwriting
 - Never log passwords or secrets to console
 - Support for secure input prompting
+- **Environment files protected**: All `.env*` files, token files, and credential directories are excluded from git commits and npm package publishing via comprehensive `.gitignore` and `.npmignore` configurations
 
 ## Integration
 

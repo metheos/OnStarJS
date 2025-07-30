@@ -6,10 +6,10 @@
  * This utility helps manage OnStar credentials across different environments
  */
 
-const fs = require("fs");
-const path = require("path");
-const crypto = require("crypto");
-const readline = require("readline");
+import fs from "fs";
+import path from "path";
+import crypto from "crypto";
+import readline from "readline";
 
 class CredentialManager {
   constructor() {
@@ -318,9 +318,9 @@ TOKEN_LOCATION="${credentials.TOKEN_LOCATION || ""}"
 }
 
 // CLI interface
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   const manager = new CredentialManager();
   manager.run();
 }
 
-module.exports = CredentialManager;
+export default CredentialManager;
