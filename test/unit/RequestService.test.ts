@@ -173,9 +173,9 @@ describe("RequestService", () => {
       },
     });
 
-    await expect(
-      requestService.setClient(httpClient).start(),
-    ).rejects.toThrowError(/^Command Timeout$/);
+    await expect(requestService.setClient(httpClient).start()).rejects.toThrow(
+      /^Command Timeout$/,
+    );
   });
 
   test("requestStatusFailureError", async () => {
@@ -188,9 +188,9 @@ describe("RequestService", () => {
       },
     });
 
-    await expect(
-      requestService.setClient(httpClient).start(),
-    ).rejects.toThrowError(/^Command Failure$/);
+    await expect(requestService.setClient(httpClient).start()).rejects.toThrow(
+      /^Command Failure$/,
+    );
   });
 
   test("axiosRequestResponseError", async () => {
@@ -206,9 +206,9 @@ describe("RequestService", () => {
       },
     });
 
-    await expect(
-      requestService.setClient(httpClient).start(),
-    ).rejects.toThrowError(/^Request Failed with status 400 - invalid_client$/);
+    await expect(requestService.setClient(httpClient).start()).rejects.toThrow(
+      /^Request Failed with status 400 - invalid_client$/,
+    );
   });
 
   test("axiosRequestNoResponseError", async () => {
@@ -219,9 +219,9 @@ describe("RequestService", () => {
       },
     });
 
-    await expect(
-      requestService.setClient(httpClient).start(),
-    ).rejects.toThrowError(/^No response$/);
+    await expect(requestService.setClient(httpClient).start()).rejects.toThrow(
+      /^No response$/,
+    );
   });
 
   test("axiosRequestError", async () => {
@@ -230,17 +230,17 @@ describe("RequestService", () => {
       message: "Test error",
     });
 
-    await expect(
-      requestService.setClient(httpClient).start(),
-    ).rejects.toThrowError(/^Test error$/);
+    await expect(requestService.setClient(httpClient).start()).rejects.toThrow(
+      /^Test error$/,
+    );
   });
 
   test("requestError", async () => {
     httpClient.post = jest.fn().mockRejectedValue(new Error("errorMessage"));
 
-    await expect(
-      requestService.setClient(httpClient).start(),
-    ).rejects.toThrowError(/^errorMessage$/);
+    await expect(requestService.setClient(httpClient).start()).rejects.toThrow(
+      /^errorMessage$/,
+    );
   });
 
   test("setClient", () => {
@@ -322,7 +322,7 @@ describe("RequestService", () => {
   });
 
   test("upgradeRequest throws Not Implemented error", async () => {
-    await expect(requestService["upgradeRequest"]()).rejects.toThrowError(
+    await expect(requestService["upgradeRequest"]()).rejects.toThrow(
       "Not Implemented",
     );
   });
@@ -347,7 +347,7 @@ describe("RequestService", () => {
   });
 
   test("upgradeRequest", async () => {
-    await expect(requestService["upgradeRequest"]()).rejects.toThrowError(
+    await expect(requestService["upgradeRequest"]()).rejects.toThrow(
       "Not Implemented",
     );
   });
