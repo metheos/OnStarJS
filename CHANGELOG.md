@@ -2,6 +2,77 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.9.0](https://github.com/BigThunderSR/OnStarJS/compare/v2.8.0...v2.9.0) (2025-07-30)
+
+
+### Features
+
+* **auth:** add logging for partial browser state detection during reinitialization ([90a4feb](https://github.com/BigThunderSR/OnStarJS/commit/90a4feb551e67958dc40a5dc3362c969d7b60795))
+* **auth:** add reauthentication tests and improve cleanup logic ([751a69d](https://github.com/BigThunderSR/OnStarJS/commit/751a69d82451ba53ccd6337b48759edf683841f9))
+* **auth:** add xvfb support for Linux virtual display ([d87cfd7](https://github.com/BigThunderSR/OnStarJS/commit/d87cfd76f3b8c748236ffc353e6b37fddaea1aca))
+* **auth:** adjust warmup logic to visit 2-3 sites for improved browser initialization ([6745f8c](https://github.com/BigThunderSR/OnStarJS/commit/6745f8cc6de0530b1f22a1d5ec7d067c6649ca74))
+* **auth:** enable randomized fingerprinting for all authentication attempts ([dbfb2d1](https://github.com/BigThunderSR/OnStarJS/commit/dbfb2d11b094fff89d4a508f0132da025a3b8e25))
+* **auth:** enhance browser and Xvfb management for improved long-running reliability ([a61c517](https://github.com/BigThunderSR/OnStarJS/commit/a61c5171fb51554d123e54a4ff58e07118a381c9))
+* **auth:** enhance browser automation ([49a24ea](https://github.com/BigThunderSR/OnStarJS/commit/49a24ea31c274e28328d5a6c98a776c40766bef3))
+* **auth:** enhance browser automation stealth with additional arguments and realistic human behavior simulation ([3559700](https://github.com/BigThunderSR/OnStarJS/commit/3559700e78837729c8e811f082147a785ea4cfd8))
+* **auth:** enhance browser automation with additional Chrome flags and retry logic for authentication ([7cf83c7](https://github.com/BigThunderSR/OnStarJS/commit/7cf83c747fdc5c9fbd14f4336a00eba41add43c8))
+* **auth:** enhance browser automation with advanced anti-detection flags and human-like behavior simulation ([29ac8dd](https://github.com/BigThunderSR/OnStarJS/commit/29ac8dd21dac4d666f1749bf6bdc1ca5b4f1f9e5))
+* **auth:** enhance browser by simulating more realistic user interactions ([7ff63f8](https://github.com/BigThunderSR/OnStarJS/commit/7ff63f8e7b2797b135251d2fb42a1959dd0f6ae1))
+* **auth:** enhance browser context initialization with error handling and logging ([4f9dc87](https://github.com/BigThunderSR/OnStarJS/commit/4f9dc87f377bc9f4aa9ebe443be317a88f611e34))
+* **auth:** enhance browser fingerprinting with device profiles for improved randomness ([2448a1d](https://github.com/BigThunderSR/OnStarJS/commit/2448a1d37b50469914a34c2b3084216f900cafcf))
+* **auth:** enhance browser initialization with Xvfb state detection for Linux ([ab1f4ce](https://github.com/BigThunderSR/OnStarJS/commit/ab1f4ceeea60b402e8fdecde51ec3a87dc11333b))
+* **auth:** enhance browser profile management and streamline browser arguments for improved reliability ([705443e](https://github.com/BigThunderSR/OnStarJS/commit/705443ea20ed390bd5bce41706ba7b4d92c82620))
+* **auth:** enhance browser stealth by spoofing navigator properties ([9035f2d](https://github.com/BigThunderSR/OnStarJS/commit/9035f2d94aa64c6ab8e2c558b2200de5ca1e132d))
+* **auth:** enhance browser usability checks during initialization ([108500f](https://github.com/BigThunderSR/OnStarJS/commit/108500f64598ee551ad9bd1040873e6afc1608e3))
+* **auth:** enhance credential submission with human-like behavior and progressive delays for retries ([77a259f](https://github.com/BigThunderSR/OnStarJS/commit/77a259f4300b0f08d5a9c1194d04556450c26e56))
+* **auth:** enhance display detection logic for Linux environments ([543fef0](https://github.com/BigThunderSR/OnStarJS/commit/543fef0c691552f634159673c0591a2f80bfc09d))
+* **auth:** enhance display detection logic for Xvfb usage on Linux ([0fe7371](https://github.com/BigThunderSR/OnStarJS/commit/0fe737125857f7fac1ff1d0d80ce1417cc96fd32))
+* **auth:** enhance MFA and authentication logging with detailed messages and emojis for better clarity ([2b11fa2](https://github.com/BigThunderSR/OnStarJS/commit/2b11fa28a8eea053e6ecf91525e95dcf15a9d060))
+* **auth:** implement browser warmup for improved session state and increase test timeouts for authentication and reauthentication ([4a63087](https://github.com/BigThunderSR/OnStarJS/commit/4a63087fdc00eedb3732492433852275e88cf32b))
+* **auth:** implement fallback browser launch method with enhanced logging ([afb7bed](https://github.com/BigThunderSR/OnStarJS/commit/afb7bed31521b2256b707fed5031e265aea2b172))
+* **auth:** implement randomized browser fingerprinting for enhanced authentication retries ([3c239c8](https://github.com/BigThunderSR/OnStarJS/commit/3c239c806dc84a2af5e447667c3750e9d069c237))
+* **auth:** implement retry mechanism for access denied errors during credential submission ([91ad704](https://github.com/BigThunderSR/OnStarJS/commit/91ad7045ab2a55ea28df00c4eaad2163f0e5b386))
+* **auth:** improve browser usability checks and warmup logic for session state ([0d4a6b3](https://github.com/BigThunderSR/OnStarJS/commit/0d4a6b3a6b7d4d5748c6237c3c712a19a2ddbab7))
+* **auth:** improve natural display detection logic for Linux environments ([be8ede0](https://github.com/BigThunderSR/OnStarJS/commit/be8ede0121811d4f7462caa5c899f1f4b33462a5))
+* **auth:** improve Xvfb initialization with enhanced checks and multiple display attempts for Linux ([8cb74d5](https://github.com/BigThunderSR/OnStarJS/commit/8cb74d53b560bd9f4ae7729ce99cd4fbb8cf7ebe))
+* **auth:** improve Xvfb management for better reliability and error handling ([33011a7](https://github.com/BigThunderSR/OnStarJS/commit/33011a78ffb4fa0440b5643c0fab0025466ba4bf))
+* **auth:** increase max authentication retries and implement exponential backoff with jitter ([b926a04](https://github.com/BigThunderSR/OnStarJS/commit/b926a0405f2e686d97bc0eb179167ace426d05e6))
+* **auth:** increase timeout for authentication and reauthentication tests to accommodate retries and browser warmup ([569cc3b](https://github.com/BigThunderSR/OnStarJS/commit/569cc3b154a2865861d4e571975b40d630d89841))
+* **auth:** increase timeout for full reauthentication cycle to support exponential backoff ([343d899](https://github.com/BigThunderSR/OnStarJS/commit/343d899b01fc74ea021e92183c5b25e401b59b12))
+* **auth:** modify Xvfb handling to allow reuse for retries and ensure proper cleanup on success or failure ([24cf870](https://github.com/BigThunderSR/OnStarJS/commit/24cf8701cd4db96cddf2ea01a1f2565446b59f9c))
+* **auth:** optimize browser profile management during initialization ([5d5f225](https://github.com/BigThunderSR/OnStarJS/commit/5d5f225731704c3cc412b603d38b202b47d10064))
+* **auth:** refine browser context usability checks and remove fallback launch flag ([3dac71d](https://github.com/BigThunderSR/OnStarJS/commit/3dac71da236880a655ed637de6e8ac7aecea801f))
+* **auth:** streamline browser warming logic for natural session state establishment ([c979b79](https://github.com/BigThunderSR/OnStarJS/commit/c979b79e705e02395195aab32ff272da1424def5))
+* enhance environment setup with interactive credential manager and improved scripts ([761834a](https://github.com/BigThunderSR/OnStarJS/commit/761834ae6e202fd6d021cdc06855f687678dda3b))
+
+
+### Bug Fixes
+
+* add 'echo y' to corepack install command in devcontainer configuration ([07ed5da](https://github.com/BigThunderSR/OnStarJS/commit/07ed5da61c0867da4bf9a76a43ec235579f8db2f))
+* **auth:** fix encoding error in emoji from access denied error message for clarity ([33946ab](https://github.com/BigThunderSR/OnStarJS/commit/33946ab00651dc73fd0f9b0bfd1f12a5e6a5047b))
+* **auth:** improve error handling for Xvfb initialization and provide installation guidance ([fe07842](https://github.com/BigThunderSR/OnStarJS/commit/fe0784238b5b2a03729e193032eb350043105ed1))
+* consolidate postCreateCommand into a single string for improved execution flow ([2722002](https://github.com/BigThunderSR/OnStarJS/commit/2722002e1b9243738fd85d130ac2ff9dbc9cf529))
+* **deps:** bump axios from 1.10.0 to 1.11.0 ([#401](https://github.com/BigThunderSR/OnStarJS/issues/401)) ([0f63e11](https://github.com/BigThunderSR/OnStarJS/commit/0f63e11136776ec45d69d769b5ca690223a76f3a))
+* **docs:** update web app link in README for TOTP token generation ([7f887a4](https://github.com/BigThunderSR/OnStarJS/commit/7f887a47d87b10c7c510e5cd9890726ce96032d9))
+* enhance postCreateCommand logging for better visibility during setup ([240580e](https://github.com/BigThunderSR/OnStarJS/commit/240580e9df522b034d89e955692fdf7f5cb4dd28))
+* refactor postCreateCommand to improve readability and include loading of pnpm environment ([c528439](https://github.com/BigThunderSR/OnStarJS/commit/c5284393672df8e09fdbc83983830be87be27f49))
+* remove unnecessary piping of 'yes' in corepack install command for clarity ([1e2791e](https://github.com/BigThunderSR/OnStarJS/commit/1e2791e711191b0f55e7909cf2de3e4abb4db5e7))
+* replace 'echo y' with 'yes' in corepack install command for consistency ([0deb37e](https://github.com/BigThunderSR/OnStarJS/commit/0deb37e4ee03cebbd759ff8784fcf1a6e240f1d5))
+* restore detailed logging in postCreateCommand for better visibility during setup ([ec817f6](https://github.com/BigThunderSR/OnStarJS/commit/ec817f6418fde06ab62f86d211edd11c6270a18a))
+* revert corepack install command to use echo for compatibility in devcontainer configuration ([890702a](https://github.com/BigThunderSR/OnStarJS/commit/890702a0c74c36456fc38453148775b742072694))
+* **tests:** increase global timeout to 900000ms for authentication tests ([cc04659](https://github.com/BigThunderSR/OnStarJS/commit/cc046590f7dcbefadfabc8baf078031d667c29ea))
+* update .gitignore and .npmignore for improved security and consistency ([8eadc4b](https://github.com/BigThunderSR/OnStarJS/commit/8eadc4b249c95a133ecae087cf34ccc6c6ab75fa))
+* update corepack install command in devcontainer configuration for conditional execution ([0e8146e](https://github.com/BigThunderSR/OnStarJS/commit/0e8146ec180c8012d4c0cc1f3fa41dae76d10eaa))
+* update error assertion methods in RequestService tests to resolve failing tests ([46af836](https://github.com/BigThunderSR/OnStarJS/commit/46af83666f3e5b1a67da0096baf5b0d2c8d45ec1))
+* update postCreateCommand in devcontainer configuration to use printf for compatibility ([4717ea5](https://github.com/BigThunderSR/OnStarJS/commit/4717ea51f544e954e482b195b8c5a253f8a16f63))
+* update postCreateCommand to include pnpm setup for improved environment configuration ([5db72da](https://github.com/BigThunderSR/OnStarJS/commit/5db72daf8b8f8d22a7da3cd32c021fe4c51c744e))
+* update postCreateCommand to install patchright globally for consistency ([d764201](https://github.com/BigThunderSR/OnStarJS/commit/d764201831904c7d7ba52ca36876e6f982a733ed))
+* update postCreateCommand to load pnpm environment for improved setup consistency ([d0d5d60](https://github.com/BigThunderSR/OnStarJS/commit/d0d5d6054eac7ddd0c5e4e546265ffbd5336c8e7))
+* update postCreateCommand to source bashrc for environment consistency ([7234a1c](https://github.com/BigThunderSR/OnStarJS/commit/7234a1c25a8e1eb24cdf91ebf9e4af69f93cab47))
+* update postCreateCommand to use 'env' for patchright installation for improved environment consistency ([1d27310](https://github.com/BigThunderSR/OnStarJS/commit/1d27310c573245fdbd2c948cfb8d25827405f01f))
+* update README formatting for consistency in section headers ([470a1b1](https://github.com/BigThunderSR/OnStarJS/commit/470a1b119c80274794d70409f50149e6b3078a81))
+* update README to replace 'npm' with 'pnpm' for consistency in setup commands ([91e827a](https://github.com/BigThunderSR/OnStarJS/commit/91e827abedd3b74809e289c19655c7e0755bc6cf))
+
 ## [2.8.0](https://github.com/BigThunderSR/OnStarJS/compare/v2.7.0...v2.8.0) (2025-07-22)
 
 
