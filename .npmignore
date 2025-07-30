@@ -1,0 +1,18 @@
+# Security: Environment files and secrets only
+# (package.json "files" array already restricts to dist/ + npm defaults)
+
+.env
+.env.*
+!.env.example
+.env-backups/
+
+# Security: Token and credential files
+tokens.json
+*_tokens.json
+credentials.json
+gm_tokens.json
+microsoft_tokens.json
+testCredentials.json
+**/token*test*/
+**/token*location*/
+**/*token*folder*/

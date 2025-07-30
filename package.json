@@ -33,7 +33,11 @@
     "test:auth": "jest test/auth/testAuth",
     "test:reauth": "jest test/auth/testAuth -t 'should successfully reauthenticate'",
     "prepare": "husky install",
-    "postinstall": "patchright install chromium"
+    "postinstall": "patchright install chromium",
+    "setup:env": "node scripts/setup-env.js",
+    "setup:env:bash": "chmod +x scripts/setup-env.sh && ./scripts/setup-env.sh",
+    "setup:credentials": "node scripts/credential-manager.js",
+    "setup:interactive": "node scripts/credential-manager.js"
   },
   "lint-staged": {
     "*.{js,ts,md,yml}": [
