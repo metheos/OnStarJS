@@ -16,7 +16,7 @@ This directory contains utilities for setting up your OnStarJS environment, part
 #### Usage
 
 ```bash
-npm run setup:env
+pnpm run setup:env
 # or
 node scripts/setup-env.js
 ```
@@ -32,7 +32,7 @@ node scripts/setup-env.js
 #### Shell Script Usage
 
 ```bash
-npm run setup:env:bash
+pnpm run setup:env:bash
 # or
 ./scripts/setup-env.sh
 ```
@@ -49,7 +49,7 @@ npm run setup:env:bash
 #### Interactive Usage
 
 ```bash
-npm run setup:interactive
+pnpm run setup:interactive
 # or
 node scripts/credential-manager.js
 ```
@@ -64,20 +64,20 @@ node scripts/credential-manager.js
 
 2. Environment will be automatically configured when Codespace starts
 
-3. Or manually run: `npm run setup:env`
+3. Or manually run: `pnpm run setup:env`
 
 ### For Local Development
 
 ```bash
 # Interactive setup (recommended for first time)
-npm run setup:interactive
+pnpm run setup:interactive
 
 # Or set environment variables and auto-generate
 export ONSTAR_USERNAME="your-email@example.com"
 export ONSTAR_PASSWORD="your-password"
 export ONSTAR_PIN="1234"
 export ONSTAR_TOTPKEY="your-totp-secret"
-npm run setup:env
+pnpm run setup:env
 ```
 
 ## Environment Variables
