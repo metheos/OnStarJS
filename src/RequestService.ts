@@ -354,81 +354,146 @@ class RequestService {
   }
 
   private async sendRequest(request: Request): Promise<Result> {
-    try {
-      const response = await this.makeClientRequest(request);
-      const { data } = response;
+    const max429Retries = this.config.max429Retries ?? 3;
+    const retryPost = this.config.retryOn429ForPost ?? false;
+    const baseDelay = this.config.initial429DelayMs ?? 1000;
+    const backoff = this.config.backoffFactor ?? 2;
+    const jitter = this.config.jitterMs ?? 250;
+    const maxDelay = this.config.max429DelayMs ?? 30000;
 
-      const checkRequestStatus =
-        request.getCheckRequestStatus() ?? this.checkRequestStatus;
+    let attempt = 0;
 
-      if (checkRequestStatus && typeof data === "object") {
-        const { commandResponse } = data;
+    while (true) {
+      try {
+        const response = await this.makeClientRequest(request);
+        const { data } = response;
 
-        if (commandResponse) {
-          const { requestTime, status, url, type } = commandResponse;
+        const checkRequestStatus =
+          request.getCheckRequestStatus() ?? this.checkRequestStatus;
 
-          const requestTimestamp = new Date(requestTime).getTime();
+        if (checkRequestStatus && typeof data === "object") {
+          const { commandResponse } = data;
 
-          if (status === CommandResponseStatus.failure) {
-            throw new RequestError("Command Failure")
-              .setResponse(response)
-              .setRequest(request);
+          if (commandResponse) {
+            const { requestTime, status, url, type } = commandResponse;
+
+            const requestTimestamp = new Date(requestTime).getTime();
+
+            if (status === CommandResponseStatus.failure) {
+              throw new RequestError("Command Failure")
+                .setResponse(response)
+                .setRequest(request);
+            }
+
+            if (
+              Date.now() >=
+              requestTimestamp + this.requestPollingTimeoutSeconds * 1000
+            ) {
+              throw new RequestError("Command Timeout")
+                .setResponse(response)
+                .setRequest(request);
+            }
+
+            if (
+              status === CommandResponseStatus.inProgress &&
+              type !== "connect"
+            ) {
+              await this.checkRequestPause();
+
+              const request = new Request(url)
+                .setMethod(RequestMethod.Get)
+                .setUpgradeRequired(false)
+                .setCheckRequestStatus(checkRequestStatus);
+
+              return this.sendRequest(request);
+            }
+
+            return new RequestResult(status).setResponse(response).getResult();
           }
-
-          if (
-            Date.now() >=
-            requestTimestamp + this.requestPollingTimeoutSeconds * 1000
-          ) {
-            throw new RequestError("Command Timeout")
-              .setResponse(response)
-              .setRequest(request);
-          }
-
-          if (
-            status === CommandResponseStatus.inProgress &&
-            type !== "connect"
-          ) {
-            await this.checkRequestPause();
-
-            const request = new Request(url)
-              .setMethod(RequestMethod.Get)
-              .setUpgradeRequired(false)
-              .setCheckRequestStatus(checkRequestStatus);
-
-            return this.sendRequest(request);
-          }
-
-          return new RequestResult(status).setResponse(response).getResult();
         }
-      }
 
-      return new RequestResult(CommandResponseStatus.success)
-        .setResponse(response)
-        .getResult();
-    } catch (error) {
-      if (error instanceof RequestError) {
-        throw error;
-      }
+        return new RequestResult(CommandResponseStatus.success)
+          .setResponse(response)
+          .getResult();
+      } catch (error) {
+        // If we received a 429 and we can/should retry, apply backoff and retry
+        const isAxios = axios.isAxiosError(error);
+        const status = isAxios ? error.response?.status : undefined;
+        const method = request.getMethod();
 
-      let errorObj = new RequestError();
+        if (
+          status === 429 &&
+          (method === RequestMethod.Get || retryPost) &&
+          attempt < max429Retries
+        ) {
+          attempt++;
+          // Determine delay: prefer Retry-After header if present
+          let delayMs = baseDelay * Math.pow(backoff, attempt - 1);
+          if (isAxios) {
+            const retryAfter =
+              error.response?.headers?.["retry-after"] ??
+              error.response?.headers?.["Retry-After"];
+            const parsed = this.parseRetryAfter(retryAfter);
+            if (parsed !== null) {
+              delayMs = parsed;
+            }
+          }
+          // Cap and add small jitter
+          delayMs =
+            Math.min(delayMs, maxDelay) + Math.floor(Math.random() * jitter);
 
-      if (axios.isAxiosError(error)) {
-        if (error.response) {
-          errorObj.message = `Request Failed with status ${error.response.status} - ${error.response.statusText}`;
-          errorObj.setResponse(error.response);
-          errorObj.setRequest(error.request);
-        } else if (error.request) {
-          errorObj.message = "No response";
-          errorObj.setRequest(error.request);
-        } else {
+          await this.delay(delayMs);
+          // loop and retry
+          continue;
+        }
+
+        if (error instanceof RequestError) {
+          throw error;
+        }
+
+        let errorObj = new RequestError();
+
+        if (isAxios) {
+          if (error.response) {
+            errorObj.message = `Request Failed with status ${error.response.status} - ${error.response.statusText}`;
+            errorObj.setResponse(error.response);
+            errorObj.setRequest(error.request);
+          } else if (error.request) {
+            errorObj.message = "No response";
+            errorObj.setRequest(error.request);
+          } else {
+            errorObj.message = error.message;
+          }
+        } else if (error instanceof Error) {
           errorObj.message = error.message;
         }
-      } else if (error instanceof Error) {
-        errorObj.message = error.message;
-      }
 
-      throw errorObj;
+        throw errorObj;
+      }
     }
+  }
+
+  private delay(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  // Parses Retry-After header which can be seconds (number) or http-date.
+  private parseRetryAfter(retryAfter: any): number | null {
+    if (!retryAfter) return null;
+    if (typeof retryAfter === "number") {
+      return retryAfter * 1000;
+    }
+    const asNum = Number(retryAfter);
+    if (!Number.isNaN(asNum)) {
+      return asNum * 1000;
+    }
+    const date = new Date(retryAfter);
+    const ts = date.getTime();
+    if (!Number.isNaN(ts)) {
+      const diff = ts - Date.now();
+      return diff > 0 ? diff : 0;
+    }
+    return null;
   }
 
   private async makeClientRequest(request: Request): Promise<RequestResponse> {

@@ -22,6 +22,13 @@ export interface OnStarConfig {
   checkRequestStatus?: boolean;
   requestPollingIntervalSeconds?: number;
   requestPollingTimeoutSeconds?: number;
+  // Rate limit / 429 handling configuration (optional)
+  max429Retries?: number; // default 3
+  initial429DelayMs?: number; // default 1000
+  backoffFactor?: number; // default 2
+  jitterMs?: number; // default 250
+  max429DelayMs?: number; // default 30000
+  retryOn429ForPost?: boolean; // default false; only GET retried by default
 }
 export interface GMAuthConfig {
   deviceId: string;
