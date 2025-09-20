@@ -25,6 +25,8 @@ import {
 } from "./types";
 import onStarAppConfig from "./onStarAppConfig.json";
 import axios from "axios";
+import fs from "fs";
+import path from "path";
 import { getGMAPIJWT } from "./auth/GMAuth";
 
 enum OnStarApiCommand {
@@ -227,33 +229,114 @@ class RequestService {
   }
 
   async diagnostics(options: DiagnosticsRequestOptions = {}): Promise<Result> {
-    const request = this.getCommandRequest(
-      OnStarApiCommand.Diagnostics,
-    ).setBody({
-      diagnosticsRequest: {
-        diagnosticItem: [
-          DiagnosticRequestItem.Odometer,
-          DiagnosticRequestItem.TirePressure,
-          DiagnosticRequestItem.AmbientAirTemperature,
-          DiagnosticRequestItem.LastTripDistance,
-        ],
-        ...options,
-      },
-    });
+    // Use eve-vcn active update API to fetch current metrics
+    const initResult = await this.getAccountVehicles();
+    const data: any = initResult.response?.data;
+    const token: string | undefined = data?.results?.[0]?.loginResponse?.token;
+    const relatedVehicles: any[] =
+      data?.results?.[0]?.getLoginInfoResponse?.relatedVehicles ?? [];
+    const rv = relatedVehicles.find(
+      (v: any) => v?.vehicleVIN?.toUpperCase() === this.config.vin,
+    );
+    const vehicleId: string | undefined = rv?.vehicleId;
+    const varch: string = (rv?.architecture || "globalb").toLowerCase();
 
-    return this.sendRequest(request);
+    if (!token) {
+      throw new Error("Missing x-gm-token from initSession response");
+    }
+    if (!vehicleId) {
+      throw new Error("Missing vehicleId for configured VIN");
+    }
+
+    const baseUrl =
+      "https://eve-vcn.ext.gm.com/api/gmone/v1/vehicle/performVehicleChargingMetricsQuery";
+    const query = `${this.buildInitQueryParams()}&varch=${encodeURIComponent(varch)}`;
+    const url = `${baseUrl}?${query}`;
+
+    const formBody = `vehicleId=${encodeURIComponent(
+      vehicleId,
+    )}&refreshTrigger=useEvVehicleTelemetry`;
+
+    const request = new Request(url)
+      .setMethod(RequestMethod.Post)
+      .setAuthRequired(false)
+      .setUpgradeRequired(false)
+      .setContentType("application/x-www-form-urlencoded")
+      .setHeaders({ "x-gm-token": token })
+      .setBody(formBody);
+
+    const newMetricsResult = await this.sendRequest(request);
+
+    // Best-effort: fetch legacy tire pressure via old diagnostics endpoint and blend
+    try {
+      const legacyReq = this.getCommandRequest(
+        OnStarApiCommand.Diagnostics,
+      ).setBody({
+        diagnosticsRequest: {
+          diagnosticItem: [DiagnosticRequestItem.TirePressure],
+        },
+      });
+
+      const legacyResult = await this.sendRequest(legacyReq);
+      const legacyData: any = legacyResult.response?.data;
+      const tp = legacyData?.commandResponse?.body?.diagnosticResponse;
+      if (tp && newMetricsResult.response && newMetricsResult.response.data) {
+        // Attach as a top-level array for compatibility
+        (newMetricsResult.response.data as any).diagnosticResponse = tp;
+      }
+    } catch {
+      // ignore legacy TP errors; keep new metrics response
+    }
+
+    return newMetricsResult;
   }
 
   async getAccountVehicles(): Promise<Result> {
-    const request = new Request(
-      `${this.getApiUrlForPath(
-        "/account/vehicles",
-      )}?includeCommands=true&includeEntitlements=true&includeModules=true&includeSharedVehicles=true`,
-    )
-      .setUpgradeRequired(false)
-      .setMethod(RequestMethod.Get);
+    // New API: Initialize session with eve-vcn to retrieve account + vehicles
+    const gmToken = this.readGMAccessToken();
 
-    return this.sendRequest(request);
+    const baseUrl = "https://eve-vcn.ext.gm.com/api/gmone/v1/admin/initSession";
+    const query = this.buildInitQueryParams();
+    const url = `${baseUrl}?${query}`;
+
+    const formBody = `token=${encodeURIComponent(gmToken)}&vehicleVIN=${encodeURIComponent(this.config.vin)}`;
+
+    const request = new Request(url)
+      .setMethod(RequestMethod.Post)
+      .setAuthRequired(false)
+      .setUpgradeRequired(false)
+      .setContentType("application/x-www-form-urlencoded")
+      .setBody(formBody);
+
+    const result = await this.sendRequest(request);
+
+    // Map vehicles to meet expected legacy format for compatibility
+    try {
+      const data: any = result.response?.data;
+      const relatedVehicles: any[] =
+        data?.results?.[0]?.getLoginInfoResponse?.relatedVehicles ?? [];
+      if (Array.isArray(relatedVehicles)) {
+        const mapped = relatedVehicles.map((rv: any) => ({
+          vin: rv?.vehicleVIN,
+          vehicleId: rv?.vehicleId,
+          make: rv?.makeName,
+          model: rv?.modelName,
+          modelYear: rv?.modelYear,
+          powertrain: rv?.powertrain,
+          architecture: rv?.architecture,
+          name: [rv?.makeName, rv?.modelName, rv?.modelYear]
+            .filter(Boolean)
+            .join(" "),
+        }));
+        if (data && typeof data === "object") {
+          data.vehicles = { vehicle: mapped };
+        }
+      }
+    } catch {
+      // best-effort mapping; ignore failures
+    }
+
+    return result;
   }
 
   async location(): Promise<Result> {
@@ -262,6 +345,55 @@ class RequestService {
 
   private getCommandRequest(command: OnStarApiCommand): Request {
     return new Request(this.getCommandUrl(command));
+  }
+
+  private readGMAccessToken(): string {
+    try {
+      const tokenPath = path.resolve(
+        this.gmAuthConfig.tokenLocation ?? "./",
+        "gm_tokens.json",
+      );
+      const raw = fs.readFileSync(tokenPath, "utf-8");
+      const parsed = JSON.parse(raw);
+      const token = parsed.access_token;
+      if (!token || typeof token !== "string") {
+        throw new Error("access_token missing in gm_tokens.json");
+      }
+      return token;
+    } catch (e: any) {
+      throw new Error(
+        `Unable to read GM access token for initSession: ${e?.message || e}`,
+      );
+    }
+  }
+
+  private buildInitQueryParams(): string {
+    // Build query string similar to mobile app observations
+    const params: Record<string, string> = {
+      vehicleVin: this.config.vin,
+      clientVersion: "7.18.0.8006",
+      clientType: "bev-myowner",
+      buildType: "r",
+      clientLocale: "en-US",
+      deviceId: this.config.deviceId,
+      os: "I",
+      ts: String(Date.now()),
+      sid: this.randomHex(8).toUpperCase(),
+      pid: this.randomHex(8).toUpperCase(),
+    };
+
+    return Object.entries(params)
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .join("&");
+  }
+
+  private randomHex(length: number): string {
+    const chars = "0123456789ABCDEF";
+    let out = "";
+    for (let i = 0; i < length; i++) {
+      out += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return out;
   }
 
   private getApiUrlForPath(path: string): string {
@@ -456,11 +588,12 @@ class RequestService {
         if (isAxios) {
           if (error.response) {
             errorObj.message = `Request Failed with status ${error.response.status} - ${error.response.statusText}`;
-            errorObj.setResponse(error.response);
-            errorObj.setRequest(error.request);
+            errorObj.setResponse({ data: error.response.data });
+            // Attach our logical Request, not axios' raw request, to avoid circular refs
+            errorObj.setRequest(request);
           } else if (error.request) {
             errorObj.message = "No response";
-            errorObj.setRequest(error.request);
+            errorObj.setRequest(request);
           } else {
             errorObj.message = error.message;
           }
@@ -503,9 +636,7 @@ class RequestService {
         ...headers,
         ...request.getHeaders(),
       },
-      // Disable Node automatic brotli/deflate handling to look like okhttp (gzip only)
-      decompress: false,
-      // Let axios decide agent unless provided by config client; we keep minimal here
+      // Let axios handle content-encoding (gzip/br/deflate) and JSON parsing
     };
 
     if (request.getMethod() === RequestMethod.Post) {
@@ -513,14 +644,15 @@ class RequestService {
         ...requestOptions.headers,
         "Content-Length": request.getBody().length,
       };
-
-      return this.client.post(
+      const axiosResp = await this.client.post(
         request.getUrl(),
         request.getBody(),
         requestOptions,
       );
+      return { data: (axiosResp as any).data };
     } else {
-      return this.client.get(request.getUrl(), requestOptions);
+      const axiosResp = await this.client.get(request.getUrl(), requestOptions);
+      return { data: (axiosResp as any).data };
     }
   }
 
