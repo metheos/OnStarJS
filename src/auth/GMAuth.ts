@@ -14,9 +14,6 @@ import { chromium, Browser, BrowserContext, Page } from "patchright";
 import { randomInt } from "crypto";
 import { execSync } from "child_process";
 
-// Import xvfb with explicit any type to avoid TypeScript issues
-const Xvfb = require("xvfb") as any;
-
 // Define an interface for the vehicle structure and the payload containing them
 interface Vehicle {
   vin: string;
@@ -86,6 +83,7 @@ export class GMAuth {
   private xvfb: any = null; // Xvfb instance for Linux virtual display
   private xvfbDisplay: string | null = null; // Store the DISPLAY value for Xvfb
   private cleanupInProgress: boolean = false; // Flag to prevent concurrent cleanup
+  private XvfbCtor: any = null; // Lazy-loaded Xvfb constructor on Linux
 
   constructor(config: GMAuthConfig) {
     this.config = config;
@@ -432,13 +430,26 @@ export class GMAuth {
           let displayNum = 99;
           let xvfbStarted = false;
 
+          // Lazy-load Xvfb constructor only on Linux to avoid ESM require issues
+          if (!this.XvfbCtor) {
+            try {
+              const mod: any = await import("xvfb");
+              this.XvfbCtor = mod?.default ?? mod;
+            } catch (e) {
+              console.error("❌ Failed to load xvfb module:", e);
+              throw new Error(
+                "Failed to load xvfb module. Ensure it's installed.",
+              );
+            }
+          }
+
           for (let attempt = 0; attempt < maxAttempts; attempt++) {
             try {
               console.log(
                 `🖥️ Attempting to start Xvfb on display :${displayNum}...`,
               );
 
-              this.xvfb = new Xvfb({
+              this.xvfb = new this.XvfbCtor({
                 silent: true,
                 displayNum: displayNum,
                 reuse: false,

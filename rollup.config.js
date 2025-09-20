@@ -3,6 +3,7 @@ import typescript from "@rollup/plugin-typescript";
 import pkg from "./package.json" with { type: "json" };
 import resolve from "@rollup/plugin-node-resolve";
 import commonJS from "@rollup/plugin-commonjs";
+import { builtinModules } from "module";
 
 export default {
   input: "src/index.ts",
@@ -19,9 +20,9 @@ export default {
     { file: pkg.main, format: "cjs", exports: "default" },
     { file: pkg.module, format: "esm", exports: "default" },
   ],
-  // external: [
-  //   ...Object.keys(pkg.dependencies || {}),
-  //   ...Object.keys(pkg.peerDependencies || {}),
-  //   "crypto",
-  // ],
+  external: [
+    ...Object.keys(pkg.dependencies || {}),
+    ...Object.keys(pkg.peerDependencies || {}),
+    ...builtinModules,
+  ],
 };

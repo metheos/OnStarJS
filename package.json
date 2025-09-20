@@ -20,8 +20,8 @@
     "test": "test"
   },
   "scripts": {
-    "build": "rm -rf dist && rollup -c",
-    "dev": "rm -rf dist && rollup -c -w",
+    "build": "rimraf dist && rollup -c",
+    "dev": "rimraf dist && rollup -c -w",
     "lint": "prettier --write .",
     "prepublishOnly": "pnpm run build",
     "release": "commit-and-tag-version --sign",
@@ -97,6 +97,7 @@
     "jest": "^30.1.3",
     "lint-staged": "^16.1.6",
     "prettier": "3.6.2",
+    "rimraf": "^6.0.1",
     "rollup": "^4.50.1",
     "ts-jest": "^29.4.1",
     "ts-mockito": "^2.6.1",
