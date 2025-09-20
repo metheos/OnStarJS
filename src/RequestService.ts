@@ -276,12 +276,12 @@ class RequestService {
 
   private async getHeaders(request: Request): Promise<any> {
     const headers: any = {
-      accept: "application/json",
-      "accept-language": "en-US,en;q=0.9",
-      "content-type": request.getContentType(),
-      host: "na-mobile-api.gm.com",
-      connection: "Keep-Alive",
+      accept: "*/*",
       "accept-encoding": "gzip, deflate, br",
+      "accept-language": "en-US,en;q=0.9",
+      connection: "Keep-Alive",
+      "content-type": request.getContentType(),
+      host: request.getUrl().split("/")[2],
       "user-agent": onStarAppConfig.userAgent,
     };
 
