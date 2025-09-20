@@ -276,13 +276,13 @@ class RequestService {
 
   private async getHeaders(request: Request): Promise<any> {
     const headers: any = {
-      Accept: "application/json",
-      "Accept-Language": "en-US",
-      "Content-Type": request.getContentType(),
-      Host: "na-mobile-api.gm.com",
-      Connection: "keep-alive",
-      "Accept-Encoding": "br, gzip, deflate",
-      "User-Agent": onStarAppConfig.userAgent,
+      accept: "application/json",
+      "accept-language": "en-US,en;q=0.9",
+      "content-type": request.getContentType(),
+      host: "na-mobile-api.gm.com",
+      connection: "Keep-Alive",
+      "accept-encoding": "gzip, deflate, br",
+      "user-agent": onStarAppConfig.userAgent,
     };
 
     if (request.isAuthRequired()) {
@@ -498,11 +498,14 @@ class RequestService {
 
   private async makeClientRequest(request: Request): Promise<RequestResponse> {
     const headers = await this.getHeaders(request);
-    let requestOptions = {
+    let requestOptions: any = {
       headers: {
         ...headers,
         ...request.getHeaders(),
       },
+      // Disable Node automatic brotli/deflate handling to look like okhttp (gzip only)
+      decompress: false,
+      // Let axios decide agent unless provided by config client; we keep minimal here
     };
 
     if (request.getMethod() === RequestMethod.Post) {

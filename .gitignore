@@ -18,6 +18,7 @@ testCredentials.json
 **/token*test*/
 **/token*location*/
 **/*token*folder*/
+new_api_reference/
 
 # Browser profiles and temp data
 temp-browser-profile/
