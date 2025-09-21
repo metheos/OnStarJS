@@ -229,14 +229,7 @@ class RequestService {
 
     const request = new Request(url)
       .setMethod(RequestMethod.Get)
-      .setContentType("application/json")
-      .setHeaders({
-        accept: "application/json",
-        "accept-encoding": "gzip",
-        "accept-language": "en-US",
-        appversion: "myOwner-chevrolet-android-7.17.0-0",
-        locale: "en-US",
-      });
+      .setContentType("application/json");
 
     return this.sendRequest(request);
   }
@@ -254,13 +247,6 @@ class RequestService {
     const request = new Request(url)
       .setMethod(RequestMethod.Post)
       .setContentType("text/plain; charset=utf-8")
-      .setHeaders({
-        accept: "application/json",
-        "accept-encoding": "gzip",
-        "accept-language": "en-US",
-        appversion: "myOwner-chevrolet-android-7.17.0-0",
-        locale: "en-US",
-      })
       .setBody(graphQL);
 
     const result = await this.sendRequest(request);
@@ -280,14 +266,7 @@ class RequestService {
     const makeReq = (sms: boolean) =>
       new Request(`${base}?sms=${sms ? "true" : "false"}&region=na`)
         .setMethod(RequestMethod.Get)
-        .setContentType("application/json")
-        .setHeaders({
-          accept: "application/json",
-          "accept-encoding": "gzip",
-          "accept-language": "en-US",
-          appversion: "myOwner-chevrolet-android-7.17.0-0",
-          locale: "en-US",
-        });
+        .setContentType("application/json");
 
     // Kick off a fresh location update
     let result = await this.sendRequest(makeReq(true));
@@ -332,17 +311,14 @@ class RequestService {
 
   private async getHeaders(request: Request): Promise<any> {
     const headers: any = {
-      accept: "*/*",
-      "accept-encoding": "gzip, deflate, br",
-      "accept-language": "en-US,en;q=0.9",
+      accept: "application/json",
+      "accept-encoding": "gzip",
+      "accept-language": "en-US",
+      appversion: "myOwner-chevrolet-android-7.17.0-0",
+      locale: "en-US",
       "content-type": request.getContentType(),
       "user-agent": onStarAppConfig.userAgent,
     };
-
-    const isLegacyApi = request.getUrl().includes(onStarAppConfig.serviceUrl);
-    if (isLegacyApi) {
-      headers["accept"] = "application/json";
-    }
 
     if (request.isAuthRequired()) {
       const authToken = await this.getAuthToken();
