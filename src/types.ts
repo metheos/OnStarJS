@@ -209,3 +209,74 @@ export interface GarageVehiclesResponse {
   extensions?: any;
   dataPresent?: boolean;
 }
+
+// Vehicle Health Status (v3 healthstatus) response types
+export interface HealthStatusElement {
+  name: string;
+  displayName: string;
+  description?: string | null;
+  status?: string | null;
+  statusColor?: string | null;
+  value?: string | null;
+  uom?: string | null;
+  cts?: string | null; // ISO datetime
+}
+
+export interface HealthStatusDiagnostic extends HealthStatusElement {
+  recommendedAction?: string | null;
+  diagnosticElements: HealthStatusElement[];
+}
+
+export interface AdvDiagnosticsSubsystem {
+  subSystemId: string;
+  subSystemName: string;
+  subSystemLabel?: string;
+  subSystemDescription?: string;
+  subSystemShortDesc?: string;
+  subSystemStatus?: string;
+  subSystemStatusColor?: string;
+  dtcList: any[]; // Keeping loose until we have examples
+}
+
+export interface AdvDiagnosticsSystem {
+  systemId: string;
+  systemName: string;
+  systemLabel?: string;
+  systemDescription?: string;
+  systemShortDesc?: string;
+  systemStatus?: string;
+  systemStatusColor?: string;
+  subSystems: AdvDiagnosticsSubsystem[];
+}
+
+export interface AdvDiagnosticsBlock {
+  name: string | null;
+  displayName: string | null;
+  advDiagnosticsStatus: string;
+  advDiagnosticsStatusColor: string;
+  recommendedAction: string;
+  cts: string; // ISO datetime
+  diagnosticSystems: AdvDiagnosticsSystem[];
+}
+
+export interface HealthStatusResponse {
+  name: string;
+  displayName: string;
+  description?: string | null;
+  status: string;
+  statusColor: string;
+  recommendedAction?: string | null;
+  recommendedLiveProbe?: boolean;
+  cts: string; // ISO datetime
+  diagnostics: HealthStatusDiagnostic[];
+  advDiagnostics?: AdvDiagnosticsBlock;
+}
+
+// Helper type to surface typed data payloads with our existing Result shape
+export type TypedResult<T> = Result & {
+  response?: {
+    data?: T;
+    // allow other fields if present, matching RequestResponse permissiveness
+    [k: string]: any;
+  };
+};

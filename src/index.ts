@@ -13,6 +13,8 @@ import {
   TrunkRequestOptions,
   ChargeOverrideOptions,
   GarageVehiclesResponse,
+  HealthStatusResponse,
+  TypedResult,
 } from "./types";
 
 class OnStar {
@@ -74,7 +76,9 @@ class OnStar {
     return this.requestService.setChargingProfile(options);
   }
 
-  async diagnostics(options?: DiagnosticsRequestOptions): Promise<Result> {
+  async diagnostics(
+    options?: DiagnosticsRequestOptions,
+  ): Promise<TypedResult<HealthStatusResponse>> {
     return this.requestService.diagnostics(options);
   }
 
@@ -88,3 +92,4 @@ class OnStar {
 }
 
 export default OnStar;
+export * from "./types";

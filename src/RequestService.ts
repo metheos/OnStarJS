@@ -49,7 +49,6 @@ class RequestService {
   private checkRequestStatus: boolean;
   private requestPollingTimeoutSeconds: number;
   private requestPollingIntervalSeconds: number;
-  private tokenRefreshPromise?: Promise<OAuthToken>;
 
   constructor(
     config: OnStarConfig,
@@ -223,15 +222,22 @@ class RequestService {
     return this.sendRequest(request);
   }
 
-  async diagnostics(options: DiagnosticsRequestOptions = {}): Promise<Result> {
+  async diagnostics(
+    options: DiagnosticsRequestOptions = {},
+  ): Promise<
+    import("./types").TypedResult<import("./types").HealthStatusResponse>
+  > {
     // vehicle health status API
     const url = `${onStarAppConfig.serviceUrl}/api/v1/vh/vehiclehealth/v1/healthstatus/${this.config.vin}`;
 
     const request = new Request(url)
       .setMethod(RequestMethod.Get)
-      .setContentType("application/json");
+      .setContentType("application/json")
+      .setCheckRequestStatus(false);
 
-    return this.sendRequest(request);
+    return this.sendRequest(request) as Promise<
+      import("./types").TypedResult<import("./types").HealthStatusResponse>
+    >;
   }
 
   async getAccountVehicles(): Promise<
@@ -249,17 +255,25 @@ class RequestService {
     const request = new Request(url)
       .setMethod(RequestMethod.Post)
       .setContentType("text/plain; charset=utf-8")
-      .setBody(graphQL);
+      .setBody(graphQL)
+      .setCheckRequestStatus(false);
 
     const result = await this.sendRequest(request);
+    const payload: any = result.response?.data;
     if (result.status !== CommandResponseStatus.success) {
       console.error("getAccountVehicles failed", {
         status: result.status,
-        data: result.response?.data,
+        data: payload,
       });
       throw new Error("getAccountVehicles request did not succeed");
     }
-    return result.response?.data as import("./types").GarageVehiclesResponse;
+    if (payload && Array.isArray(payload.errors) && payload.errors.length) {
+      console.error("getAccountVehicles GraphQL errors", {
+        errors: payload.errors,
+      });
+      throw new Error("getAccountVehicles GraphQL errors present");
+    }
+    return payload as import("./types").GarageVehiclesResponse;
   }
 
   async location(): Promise<Result> {
@@ -268,7 +282,8 @@ class RequestService {
     const makeReq = (sms: boolean) =>
       new Request(`${base}?sms=${sms ? "true" : "false"}&region=na`)
         .setMethod(RequestMethod.Get)
-        .setContentType("application/json");
+        .setContentType("application/json")
+        .setCheckRequestStatus(false);
 
     // Kick off a fresh location update
     let result = await this.sendRequest(makeReq(true));
