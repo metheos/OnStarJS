@@ -37,11 +37,10 @@ enum OnStarApiCommand {
   Connect = "connect",
   Diagnostics = "diagnostics",
   GetChargingProfile = "getChargingProfile",
-  LockDoor = "lockDoor",
+  LockDoor = "lock",
   SetChargingProfile = "setChargingProfile",
   Start = "start",
-  UnlockDoor = "unlockDoor",
-  Location = "location",
+  UnlockDoor = "unlock",
   LockTrunk = "lockTrunk",
   UnlockTrunk = "unlockTrunk",
 }
@@ -229,118 +228,96 @@ class RequestService {
   }
 
   async diagnostics(options: DiagnosticsRequestOptions = {}): Promise<Result> {
-    // Use eve-vcn active update API to fetch current metrics
-    const initResult = await this.getAccountVehicles();
-    const data: any = initResult.response?.data;
-    const token: string | undefined = data?.results?.[0]?.loginResponse?.token;
-    const relatedVehicles: any[] =
-      data?.results?.[0]?.getLoginInfoResponse?.relatedVehicles ?? [];
-    const rv = relatedVehicles.find(
-      (v: any) => v?.vehicleVIN?.toUpperCase() === this.config.vin,
-    );
-    const vehicleId: string | undefined = rv?.vehicleId;
-    const varch: string = (rv?.architecture || "globalb").toLowerCase();
-
-    if (!token) {
-      throw new Error("Missing x-gm-token from initSession response");
-    }
-    if (!vehicleId) {
-      throw new Error("Missing vehicleId for configured VIN");
-    }
-
-    const baseUrl =
-      "https://eve-vcn.ext.gm.com/api/gmone/v1/vehicle/performVehicleChargingMetricsQuery";
-    const query = `${this.buildInitQueryParams()}&varch=${encodeURIComponent(varch)}`;
-    const url = `${baseUrl}?${query}`;
-
-    const formBody = `vehicleId=${encodeURIComponent(
-      vehicleId,
-    )}&refreshTrigger=useEvVehicleTelemetry`;
+    // vehicle health status API
+    const url = `${onStarAppConfig.serviceUrl}/api/v1/vh/vehiclehealth/v1/healthstatus/${this.config.vin}`;
 
     const request = new Request(url)
-      .setMethod(RequestMethod.Post)
-      .setAuthRequired(false)
-      .setUpgradeRequired(false)
-      .setContentType("application/x-www-form-urlencoded")
-      .setHeaders({ "x-gm-token": token })
-      .setBody(formBody);
-
-    const newMetricsResult = await this.sendRequest(request);
-
-    // Best-effort: fetch legacy tire pressure via old diagnostics endpoint and blend
-    try {
-      const legacyReq = this.getCommandRequest(
-        OnStarApiCommand.Diagnostics,
-      ).setBody({
-        diagnosticsRequest: {
-          diagnosticItem: [DiagnosticRequestItem.TirePressure],
-        },
+      .setMethod(RequestMethod.Get)
+      .setContentType("application/json")
+      .setHeaders({
+        accept: "application/json",
+        "accept-encoding": "gzip",
+        "accept-language": "en-US",
+        appversion: "myOwner-chevrolet-android-7.17.0-0",
+        locale: "en-US",
       });
 
-      const legacyResult = await this.sendRequest(legacyReq);
-      const legacyData: any = legacyResult.response?.data;
-      const tp = legacyData?.commandResponse?.body?.diagnosticResponse;
-      if (tp && newMetricsResult.response && newMetricsResult.response.data) {
-        // Attach as a top-level array for compatibility
-        (newMetricsResult.response.data as any).diagnosticResponse = tp;
-      }
-    } catch {
-      // ignore legacy TP errors; keep new metrics response
-    }
-
-    return newMetricsResult;
+    return this.sendRequest(request);
   }
 
-  async getAccountVehicles(): Promise<Result> {
-    // New API: Initialize session with eve-vcn to retrieve account + vehicles
-    const gmToken = this.readGMAccessToken();
-
-    const baseUrl = "https://eve-vcn.ext.gm.com/api/gmone/v1/admin/initSession";
-    const query = this.buildInitQueryParams();
-    const url = `${baseUrl}?${query}`;
-
-    const formBody = `token=${encodeURIComponent(gmToken)}&vehicleVIN=${encodeURIComponent(this.config.vin)}`;
+  async getAccountVehicles(): Promise<any> {
+    // v3 GraphQL garage API per captured data
+    const url = `${onStarAppConfig.serviceUrl}/mbff/garage/v1`;
+    const graphQL =
+      "query getVehiclesMBFF {" +
+      "vehicles {" +
+      "vin vehicleId make model nickName year imageUrl onstarCapable vehicleType roleCode onstarStatusCode onstarAccountNumber preDelivery orderNum orderStatus" +
+      "}" +
+      "}";
 
     const request = new Request(url)
       .setMethod(RequestMethod.Post)
-      .setAuthRequired(false)
-      .setUpgradeRequired(false)
-      .setContentType("application/x-www-form-urlencoded")
-      .setBody(formBody);
+      .setContentType("text/plain; charset=utf-8")
+      .setHeaders({
+        accept: "application/json",
+        "accept-encoding": "gzip",
+        "accept-language": "en-US",
+        appversion: "myOwner-chevrolet-android-7.17.0-0",
+        locale: "en-US",
+      })
+      .setBody(graphQL);
 
     const result = await this.sendRequest(request);
-
-    // Map vehicles to meet expected legacy format for compatibility
-    try {
-      const data: any = result.response?.data;
-      const relatedVehicles: any[] =
-        data?.results?.[0]?.getLoginInfoResponse?.relatedVehicles ?? [];
-      if (Array.isArray(relatedVehicles)) {
-        const mapped = relatedVehicles.map((rv: any) => ({
-          vin: rv?.vehicleVIN,
-          vehicleId: rv?.vehicleId,
-          make: rv?.makeName,
-          model: rv?.modelName,
-          modelYear: rv?.modelYear,
-          powertrain: rv?.powertrain,
-          architecture: rv?.architecture,
-          name: [rv?.makeName, rv?.modelName, rv?.modelYear]
-            .filter(Boolean)
-            .join(" "),
-        }));
-        if (data && typeof data === "object") {
-          data.vehicles = { vehicle: mapped };
-        }
-      }
-    } catch {
-      // best-effort mapping; ignore failures
+    if (result.status !== CommandResponseStatus.success) {
+      console.error("getAccountVehicles failed", {
+        status: result.status,
+        data: result.response?.data,
+      });
+      throw new Error("getAccountVehicles request did not succeed");
     }
-
-    return result;
+    return result.response?.data;
   }
 
   async location(): Promise<Result> {
-    return this.sendRequest(this.getCommandRequest(OnStarApiCommand.Location));
+    const base = `${onStarAppConfig.serviceUrl}/veh/datadelivery/digitaltwin/v1/vehicles/${this.config.vin}`;
+
+    const makeReq = (sms: boolean) =>
+      new Request(`${base}?sms=${sms ? "true" : "false"}&region=na`)
+        .setMethod(RequestMethod.Get)
+        .setContentType("application/json")
+        .setHeaders({
+          accept: "application/json",
+          "accept-encoding": "gzip",
+          "accept-language": "en-US",
+          appversion: "myOwner-chevrolet-android-7.17.0-0",
+          locale: "en-US",
+        });
+
+    // Kick off a fresh location update
+    let result = await this.sendRequest(makeReq(true));
+    const timeoutMs = this.requestPollingTimeoutSeconds * 1000;
+    const intervalMs = this.requestPollingIntervalSeconds * 1000;
+    const startTs = Date.now();
+
+    // Try to poll until updatePending != PENDING
+    const getPending = (r: Result) => {
+      const data: any = r.response?.data;
+      return data?.telemetry?.data?.session?.updatePending as
+        | string
+        | undefined;
+    };
+
+    let pending = getPending(result);
+    if (pending === "PENDING") {
+      while (Date.now() - startTs < timeoutMs) {
+        await this.delay(intervalMs);
+        result = await this.sendRequest(makeReq(false));
+        pending = getPending(result);
+        if (pending && pending !== "PENDING") break;
+      }
+    }
+
+    return result;
   }
 
   private getCommandRequest(command: OnStarApiCommand): Request {
@@ -397,13 +374,11 @@ class RequestService {
   }
 
   private getApiUrlForPath(path: string): string {
-    return `${onStarAppConfig.serviceUrl}/api/v1${path}`;
+    return `${onStarAppConfig.serviceUrl}/veh/cmd/v3/${path}`;
   }
 
   private getCommandUrl(command: string): string {
-    return this.getApiUrlForPath(
-      `/account/vehicles/${this.config.vin}/commands/${command}`,
-    );
+    return this.getApiUrlForPath(`${command}/${this.config.vin}`);
   }
 
   private async getHeaders(request: Request): Promise<any> {
@@ -416,6 +391,11 @@ class RequestService {
       host: request.getUrl().split("/")[2],
       "user-agent": onStarAppConfig.userAgent,
     };
+
+    const isLegacyApi = request.getUrl().includes(onStarAppConfig.serviceUrl);
+    if (isLegacyApi) {
+      headers["accept"] = "application/json";
+    }
 
     if (request.isAuthRequired()) {
       const authToken = await this.getAuthToken();
@@ -552,6 +532,7 @@ class RequestService {
         const isAxios = axios.isAxiosError(error);
         const status = isAxios ? error.response?.status : undefined;
         const method = request.getMethod();
+        const methodStr = method === RequestMethod.Get ? "GET" : "POST";
 
         if (
           status === 429 &&
@@ -561,22 +542,51 @@ class RequestService {
           attempt++;
           // Determine delay: prefer Retry-After header if present
           let delayMs = baseDelay * Math.pow(backoff, attempt - 1);
+          let retryAfter: any = undefined;
+          let usedRetryAfter = false;
           if (isAxios) {
-            const retryAfter =
+            retryAfter =
               error.response?.headers?.["retry-after"] ??
               error.response?.headers?.["Retry-After"];
             const parsed = this.parseRetryAfter(retryAfter);
             if (parsed !== null) {
               delayMs = parsed;
+              usedRetryAfter = true;
             }
           }
           // Cap and add small jitter
           delayMs =
             Math.min(delayMs, maxDelay) + Math.floor(Math.random() * jitter);
 
+          console.warn("[throttle] 429 received; scheduling retry", {
+            url: request.getUrl(),
+            method: methodStr,
+            attempt,
+            maxRetries: max429Retries,
+            retryAfter,
+            usedRetryAfter,
+            delayMs,
+          });
+
           await this.delay(delayMs);
           // loop and retry
           continue;
+        }
+
+        if (status === 429) {
+          let reason = "not-eligible";
+          if (!(method === RequestMethod.Get || retryPost)) {
+            reason = "post-retry-disabled";
+          } else if (attempt >= max429Retries) {
+            reason = "max-retries-exceeded";
+          }
+          console.warn("[throttle] 429 received; not retrying", {
+            url: request.getUrl(),
+            method: methodStr,
+            attempt,
+            maxRetries: max429Retries,
+            reason,
+          });
         }
 
         if (error instanceof RequestError) {

@@ -2661,7 +2661,7 @@ export class GMAuth {
           grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
           subject_token: tokenSet.access_token,
           subject_token_type: "urn:ietf:params:oauth:token-type:access_token",
-          scope: "msso role_owner priv onstar gmoc user user_trailer",
+          scope: "onstar gmoc user_trailer user msso priv",
           device_id: this.config.deviceId,
         },
         {

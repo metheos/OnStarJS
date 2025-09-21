@@ -96,6 +96,30 @@
 				"$tsc"
 			],
 			"group": "build"
+		},
+		{
+			"label": "pnpm run:get-diagnostics",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"run:get-diagnostics"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "pnpm run:get-diagnostics (with mobiletoken)",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"run:get-diagnostics"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
 		}
 	]
 }
