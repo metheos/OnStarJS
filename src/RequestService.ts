@@ -234,7 +234,9 @@ class RequestService {
     return this.sendRequest(request);
   }
 
-  async getAccountVehicles(): Promise<any> {
+  async getAccountVehicles(): Promise<
+    import("./types").GarageVehiclesResponse
+  > {
     // v3 GraphQL garage API per captured data
     const url = `${onStarAppConfig.serviceUrl}/mbff/garage/v1`;
     const graphQL =
@@ -257,7 +259,7 @@ class RequestService {
       });
       throw new Error("getAccountVehicles request did not succeed");
     }
-    return result.response?.data;
+    return result.response?.data as import("./types").GarageVehiclesResponse;
   }
 
   async location(): Promise<Result> {

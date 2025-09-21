@@ -181,3 +181,31 @@ export enum ChargeOverrideMode {
 export interface ChargeOverrideOptions {
   mode?: ChargeOverrideMode;
 }
+
+// v3 Garage GraphQL response types
+export interface GarageVehicle {
+  vin: string;
+  vehicleId?: string;
+  make?: string;
+  model?: string;
+  nickName?: string | null;
+  year?: number | string;
+  imageUrl?: string | null;
+  onstarCapable?: boolean;
+  vehicleType?: string | null;
+  roleCode?: string | null;
+  onstarStatusCode?: string | number | null;
+  onstarAccountNumber?: string | null;
+  preDelivery?: boolean | null;
+  orderNum?: string | null;
+  orderStatus?: string | null;
+}
+
+export interface GarageVehiclesResponse {
+  errors?: any[];
+  data: {
+    vehicles: GarageVehicle[];
+  };
+  extensions?: any;
+  dataPresent?: boolean;
+}

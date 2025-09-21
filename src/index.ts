@@ -12,6 +12,7 @@ import {
   DoorRequestOptions,
   TrunkRequestOptions,
   ChargeOverrideOptions,
+  GarageVehiclesResponse,
 } from "./types";
 
 class OnStar {
@@ -23,7 +24,7 @@ class OnStar {
     return new OnStar(requestService);
   }
 
-  async getAccountVehicles(): Promise<any> {
+  async getAccountVehicles(): Promise<GarageVehiclesResponse> {
     return this.requestService.getAccountVehicles();
   }
 
