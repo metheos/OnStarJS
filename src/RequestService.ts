@@ -25,8 +25,6 @@ import {
 } from "./types";
 import onStarAppConfig from "./onStarAppConfig.json";
 import axios from "axios";
-import fs from "fs";
-import path from "path";
 import { getGMAPIJWT } from "./auth/GMAuth";
 
 enum OnStarApiCommand {
@@ -34,7 +32,6 @@ enum OnStarApiCommand {
   CancelAlert = "cancelAlert",
   CancelStart = "cancelStart",
   ChargeOverride = "chargeOverride",
-  Connect = "connect",
   Diagnostics = "diagnostics",
   GetChargingProfile = "getChargingProfile",
   LockDoor = "lock",
@@ -53,7 +50,6 @@ class RequestService {
   private requestPollingTimeoutSeconds: number;
   private requestPollingIntervalSeconds: number;
   private tokenRefreshPromise?: Promise<OAuthToken>;
-  private tokenUpgradePromise?: Promise<void>;
 
   constructor(
     config: OnStarConfig,
@@ -324,54 +320,7 @@ class RequestService {
     return new Request(this.getCommandUrl(command));
   }
 
-  private readGMAccessToken(): string {
-    try {
-      const tokenPath = path.resolve(
-        this.gmAuthConfig.tokenLocation ?? "./",
-        "gm_tokens.json",
-      );
-      const raw = fs.readFileSync(tokenPath, "utf-8");
-      const parsed = JSON.parse(raw);
-      const token = parsed.access_token;
-      if (!token || typeof token !== "string") {
-        throw new Error("access_token missing in gm_tokens.json");
-      }
-      return token;
-    } catch (e: any) {
-      throw new Error(
-        `Unable to read GM access token for initSession: ${e?.message || e}`,
-      );
-    }
-  }
-
-  private buildInitQueryParams(): string {
-    // Build query string similar to mobile app observations
-    const params: Record<string, string> = {
-      vehicleVin: this.config.vin,
-      clientVersion: "7.18.0.8006",
-      clientType: "bev-myowner",
-      buildType: "r",
-      clientLocale: "en-US",
-      deviceId: this.config.deviceId,
-      os: "I",
-      ts: String(Date.now()),
-      sid: this.randomHex(8).toUpperCase(),
-      pid: this.randomHex(8).toUpperCase(),
-    };
-
-    return Object.entries(params)
-      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-      .join("&");
-  }
-
-  private randomHex(length: number): string {
-    const chars = "0123456789ABCDEF";
-    let out = "";
-    for (let i = 0; i < length; i++) {
-      out += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return out;
-  }
+  // Legacy init helpers removed (readGMAccessToken, buildInitQueryParams, randomHex)
 
   private getApiUrlForPath(path: string): string {
     return `${onStarAppConfig.serviceUrl}/veh/cmd/v3/${path}`;
@@ -386,9 +335,7 @@ class RequestService {
       accept: "*/*",
       "accept-encoding": "gzip, deflate, br",
       "accept-language": "en-US,en;q=0.9",
-      connection: "Keep-Alive",
       "content-type": request.getContentType(),
-      host: request.getUrl().split("/")[2],
       "user-agent": onStarAppConfig.userAgent,
     };
 
@@ -399,27 +346,10 @@ class RequestService {
 
     if (request.isAuthRequired()) {
       const authToken = await this.getAuthToken();
-
-      if (request.isUpgradeRequired() && !authToken.upgraded) {
-        await this.connectAndUpgradeAuthToken();
-      }
-
       headers["Authorization"] = `Bearer ${authToken.access_token}`;
     }
 
     return headers;
-  }
-
-  private async connectRequest(): Promise<Result> {
-    const request = this.getCommandRequest(
-      OnStarApiCommand.Connect,
-    ).setUpgradeRequired(false);
-
-    return this.sendRequest(request);
-  }
-
-  private async upgradeRequest(): Promise<Result> {
-    throw new Error("Not Implemented");
   }
 
   async getAuthToken(): Promise<OAuthToken> {
@@ -439,30 +369,6 @@ class RequestService {
     }
 
     return this.authToken;
-  }
-
-  private async connectAndUpgradeAuthToken(): Promise<void> {
-    if (!this.tokenUpgradePromise) {
-      this.tokenUpgradePromise = new Promise(async (resolve, reject) => {
-        if (!this.authToken) {
-          return reject("Missing auth token");
-        }
-
-        try {
-          await this.connectRequest();
-          await this.upgradeRequest();
-
-          this.authToken.upgraded = true;
-          resolve();
-        } catch (e) {
-          reject(e);
-        }
-
-        this.tokenUpgradePromise = undefined;
-      });
-    }
-
-    return this.tokenUpgradePromise;
   }
 
   private async sendRequest(request: Request): Promise<Result> {
@@ -646,14 +552,9 @@ class RequestService {
         ...headers,
         ...request.getHeaders(),
       },
-      // Let axios handle content-encoding (gzip/br/deflate) and JSON parsing
     };
 
     if (request.getMethod() === RequestMethod.Post) {
-      requestOptions.headers = {
-        ...requestOptions.headers,
-        "Content-Length": request.getBody().length,
-      };
       const axiosResp = await this.client.post(
         request.getUrl(),
         request.getBody(),

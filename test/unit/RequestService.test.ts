@@ -401,11 +401,7 @@ describe("RequestService", () => {
     expect(headers).not.toHaveProperty("Authorization");
   });
 
-  test("upgradeRequest throws Not Implemented error", async () => {
-    await expect(requestService["upgradeRequest"]()).rejects.toThrow(
-      "Not Implemented",
-    );
-  });
+  // Removed legacy upgradeRequest test
 
   test("makeClientRequest with GET method", async () => {
     const request = new Request("https://foo.bar").setMethod(RequestMethod.Get);
@@ -421,24 +417,7 @@ describe("RequestService", () => {
     expect(response).toHaveProperty("data");
   });
 
-  test("connectRequest", async () => {
-    const result = await requestService["connectRequest"]();
-    expect(result.status).toEqual(CommandResponseStatus.success);
-  });
-
-  test("upgradeRequest", async () => {
-    await expect(requestService["upgradeRequest"]()).rejects.toThrow(
-      "Not Implemented",
-    );
-  });
-
-  test("connectAndUpgradeAuthToken", async () => {
-    jest.spyOn(requestService as any, "connectRequest").mockResolvedValue({});
-    jest.spyOn(requestService as any, "upgradeRequest").mockResolvedValue({});
-
-    await requestService["connectAndUpgradeAuthToken"]();
-    expect(requestService["authToken"]?.upgraded).toBeTruthy();
-  });
+  // Removed legacy connect/upgrade token tests
 
   test("checkRequestPause", async () => {
     jest.useFakeTimers();
