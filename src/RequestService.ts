@@ -6,10 +6,10 @@ import {
   AlertRequestAction,
   AlertRequestOptions,
   AlertRequestOverride,
-  ChargeOverrideMode,
-  ChargeOverrideOptions,
-  ChargingProfileChargeMode,
-  ChargingProfileRateType,
+  // ChargeOverrideMode,
+  // ChargeOverrideOptions,
+  // ChargingProfileChargeMode,
+  // ChargingProfileRateType,
   DoorRequestOptions,
   TrunkRequestOptions,
   HttpClient,
@@ -29,10 +29,10 @@ enum OnStarApiCommand {
   Alert = "alert",
   CancelAlert = "cancelAlert",
   CancelStart = "cancelStart",
-  ChargeOverride = "chargeOverride",
-  GetChargingProfile = "getChargingProfile",
+  // ChargeOverride = "chargeOverride",
+  // GetChargingProfile = "getChargingProfile",
   LockDoor = "lock",
-  SetChargingProfile = "setChargingProfile",
+  // SetChargingProfile = "setChargingProfile",
   Start = "start",
   UnlockDoor = "unlock",
   LockTrunk = "lockTrunk",
@@ -184,40 +184,40 @@ class RequestService {
     return this.sendRequest(request);
   }
 
-  async chargeOverride(options: ChargeOverrideOptions = {}): Promise<Result> {
-    const request = this.getCommandRequest(
-      OnStarApiCommand.ChargeOverride,
-    ).setBody({
-      chargeOverrideRequest: {
-        mode: ChargeOverrideMode.ChargeNow,
-        ...options,
-      },
-    });
+  // async chargeOverride(options: ChargeOverrideOptions = {}): Promise<Result> {
+  //   const request = this.getCommandRequest(
+  //     OnStarApiCommand.ChargeOverride,
+  //   ).setBody({
+  //     chargeOverrideRequest: {
+  //       mode: ChargeOverrideMode.ChargeNow,
+  //       ...options,
+  //     },
+  //   });
 
-    return this.sendRequest(request);
-  }
+  //   return this.sendRequest(request);
+  // }
 
-  async getChargingProfile(): Promise<Result> {
-    const request = this.getCommandRequest(OnStarApiCommand.GetChargingProfile);
+  // async getChargingProfile(): Promise<Result> {
+  //   const request = this.getCommandRequest(OnStarApiCommand.GetChargingProfile);
 
-    return this.sendRequest(request);
-  }
+  //   return this.sendRequest(request);
+  // }
 
-  async setChargingProfile(
-    options: SetChargingProfileRequestOptions = {},
-  ): Promise<Result> {
-    const request = this.getCommandRequest(
-      OnStarApiCommand.SetChargingProfile,
-    ).setBody({
-      chargingProfile: {
-        chargeMode: ChargingProfileChargeMode.Immediate,
-        rateType: ChargingProfileRateType.Midpeak,
-        ...options,
-      },
-    });
+  // async setChargingProfile(
+  //   options: SetChargingProfileRequestOptions = {},
+  // ): Promise<Result> {
+  //   const request = this.getCommandRequest(
+  //     OnStarApiCommand.SetChargingProfile,
+  //   ).setBody({
+  //     chargingProfile: {
+  //       chargeMode: ChargingProfileChargeMode.Immediate,
+  //       rateType: ChargingProfileRateType.Midpeak,
+  //       ...options,
+  //     },
+  //   });
 
-    return this.sendRequest(request);
-  }
+  //   return this.sendRequest(request);
+  // }
 
   async diagnostics(): Promise<
     import("./types").TypedResult<import("./types").HealthStatusResponse>

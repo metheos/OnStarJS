@@ -62,19 +62,19 @@ class OnStar {
     return this.requestService.cancelAlert();
   }
 
-  async chargeOverride(options?: ChargeOverrideOptions): Promise<Result> {
-    return this.requestService.chargeOverride(options);
-  }
+  // async chargeOverride(options?: ChargeOverrideOptions): Promise<Result> {
+  //   return this.requestService.chargeOverride(options);
+  // }
 
-  async getChargingProfile(): Promise<Result> {
-    return this.requestService.getChargingProfile();
-  }
+  // async getChargingProfile(): Promise<Result> {
+  //   return this.requestService.getChargingProfile();
+  // }
 
-  async setChargingProfile(
-    options?: SetChargingProfileRequestOptions,
-  ): Promise<Result> {
-    return this.requestService.setChargingProfile(options);
-  }
+  // async setChargingProfile(
+  //   options?: SetChargingProfileRequestOptions,
+  // ): Promise<Result> {
+  //   return this.requestService.setChargingProfile(options);
+  // }
 
   async diagnostics(): Promise<TypedResult<HealthStatusResponse>> {
     return this.requestService.diagnostics();

@@ -4,9 +4,9 @@ import { stdin as input, stdout as output } from "node:process";
 import OnStar, {
   AlertRequestAction,
   AlertRequestOverride,
-  ChargingProfileChargeMode,
-  ChargingProfileRateType,
-  ChargeOverrideMode,
+  //   ChargingProfileChargeMode,
+  //   ChargingProfileRateType,
+  //   ChargeOverrideMode,
 } from "../dist/index.mjs";
 
 function requireEnv(name) {
@@ -180,43 +180,43 @@ async function main() {
       label: "cancelAlert()",
       run: () => client.cancelAlert(),
     },
-    {
-      key: "chargeOverride",
-      label: "chargeOverride(options)",
-      run: async () => {
-        const mode = await promptEnum(
-          rl,
-          "mode",
-          Object.values(ChargeOverrideMode),
-          ChargeOverrideMode.ChargeNow,
-        );
-        return client.chargeOverride({ mode });
-      },
-    },
-    {
-      key: "getChargingProfile",
-      label: "getChargingProfile()",
-      run: () => client.getChargingProfile(),
-    },
-    {
-      key: "setChargingProfile",
-      label: "setChargingProfile(options)",
-      run: async () => {
-        const chargeMode = await promptEnum(
-          rl,
-          "chargeMode",
-          Object.values(ChargingProfileChargeMode),
-          ChargingProfileChargeMode.Immediate,
-        );
-        const rateType = await promptEnum(
-          rl,
-          "rateType",
-          Object.values(ChargingProfileRateType),
-          ChargingProfileRateType.Midpeak,
-        );
-        return client.setChargingProfile({ chargeMode, rateType });
-      },
-    },
+    // {
+    //   key: "chargeOverride",
+    //   label: "chargeOverride(options)",
+    //   run: async () => {
+    //     const mode = await promptEnum(
+    //       rl,
+    //       "mode",
+    //       Object.values(ChargeOverrideMode),
+    //       ChargeOverrideMode.ChargeNow,
+    //     );
+    //     return client.chargeOverride({ mode });
+    //   },
+    // },
+    // {
+    //   key: "getChargingProfile",
+    //   label: "getChargingProfile()",
+    //   run: () => client.getChargingProfile(),
+    // },
+    // {
+    //   key: "setChargingProfile",
+    //   label: "setChargingProfile(options)",
+    //   run: async () => {
+    //     const chargeMode = await promptEnum(
+    //       rl,
+    //       "chargeMode",
+    //       Object.values(ChargingProfileChargeMode),
+    //       ChargingProfileChargeMode.Immediate,
+    //     );
+    //     const rateType = await promptEnum(
+    //       rl,
+    //       "rateType",
+    //       Object.values(ChargingProfileRateType),
+    //       ChargingProfileRateType.Midpeak,
+    //     );
+    //     return client.setChargingProfile({ chargeMode, rateType });
+    //   },
+    // },
     {
       key: "toggleCheckRequestStatus",
       label: "toggle checkRequestStatus (client)",
