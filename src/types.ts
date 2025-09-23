@@ -114,37 +114,7 @@ export interface AlertRequestOptions {
   override?: AlertRequestOverride[];
 }
 
-export enum DiagnosticRequestItem {
-  AmbientAirTemperature = "AMBIENT AIR TEMPERATURE",
-  EngineCoolantTemp = "ENGINE COOLANT TEMP",
-  EngineRpm = "ENGINE RPM",
-  EvBatteryLevel = "EV BATTERY LEVEL",
-  EvChargeState = "EV CHARGE STATE",
-  EvEstimatedChargeEnd = "EV ESTIMATED CHARGE END",
-  EvPlugState = "EV PLUG STATE",
-  EvPlugVoltage = "EV PLUG VOLTAGE",
-  EvScheduledChargeStart = "EV SCHEDULED CHARGE START",
-  FuelTankInfo = "FUEL TANK INFO",
-  GetChargeMode = "GET CHARGE MODE",
-  GetCommuteSchedule = "GET COMMUTE SCHEDULE",
-  HandsFreeCalling = "HANDS FREE CALLING",
-  HotspotConfig = "HOTSPOT CONFIG",
-  HotspotStatus = "HOTSPOT STATUS",
-  IntermVoltBattVolt = "INTERM VOLT BATT VOLT",
-  LastTripDistance = "LAST TRIP DISTANCE",
-  LastTripFuelEconomy = "LAST TRIP FUEL ECONOMY",
-  LifetimeEvOdometer = "LIFETIME EV ODOMETER",
-  LifetimeFuelEcon = "LIFETIME FUEL ECON",
-  LifetimeFuelUsed = "LIFETIME FUEL USED",
-  Odometer = "ODOMETER",
-  OilLife = "OIL LIFE",
-  TirePressure = "TIRE PRESSURE",
-  VehicleRange = "VEHICLE RANGE",
-}
-
-export interface DiagnosticsRequestOptions {
-  diagnosticItem?: DiagnosticRequestItem[];
-}
+// DiagnosticsRequestOptions and DiagnosticRequestItem are no longer used
 
 export enum ChargingProfileChargeMode {
   DefaultImmediate = "DEFAULT_IMMEDIATE",

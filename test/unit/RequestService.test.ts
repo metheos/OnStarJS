@@ -103,22 +103,16 @@ describe("RequestService", () => {
     expect(result.status).toEqual(CommandResponseStatus.success);
   });
 
-  test("chargeOverride", async () => {
-    const result = await requestService.chargeOverride();
-
-    expect(result.status).toEqual(CommandResponseStatus.success);
+  test.skip("chargeOverride (disabled)", async () => {
+    // Charging APIs are currently disabled
   });
 
-  test("getChargingProfile", async () => {
-    const result = await requestService.getChargingProfile();
-
-    expect(result.status).toEqual(CommandResponseStatus.success);
+  test.skip("getChargingProfile (disabled)", async () => {
+    // Charging APIs are currently disabled
   });
 
-  test("setChargingProfile", async () => {
-    const result = await requestService.setChargingProfile();
-
-    expect(result.status).toEqual(CommandResponseStatus.success);
+  test.skip("setChargingProfile (disabled)", async () => {
+    // Charging APIs are currently disabled
   });
 
   test("diagnostics", async () => {

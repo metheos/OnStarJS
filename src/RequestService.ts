@@ -10,6 +10,7 @@ import {
   // ChargeOverrideOptions,
   // ChargingProfileChargeMode,
   // ChargingProfileRateType,
+  // SetChargingProfileRequestOptions,
   DoorRequestOptions,
   TrunkRequestOptions,
   HttpClient,
@@ -17,7 +18,6 @@ import {
   OnStarConfig,
   RequestResponse,
   Result,
-  SetChargingProfileRequestOptions,
   CommandResponseStatus,
   GMAuthConfig,
 } from "./types";
@@ -26,17 +26,17 @@ import axios from "axios";
 import { getGMAPIJWT } from "./auth/GMAuth";
 
 enum OnStarApiCommand {
+  LockDoor = "lock",
+  UnlockDoor = "unlock",
   Alert = "alert",
   CancelAlert = "cancelAlert",
-  CancelStart = "cancelStart",
-  // ChargeOverride = "chargeOverride",
-  // GetChargingProfile = "getChargingProfile",
-  LockDoor = "lock",
-  // SetChargingProfile = "setChargingProfile",
   Start = "start",
-  UnlockDoor = "unlock",
+  CancelStart = "cancelStart",
   LockTrunk = "lockTrunk",
   UnlockTrunk = "unlockTrunk",
+  // ChargeOverride = "chargeOverride",
+  // GetChargingProfile = "getChargingProfile",
+  // SetChargingProfile = "setChargingProfile",
 }
 
 class RequestService {
@@ -184,40 +184,10 @@ class RequestService {
     return this.sendRequest(request);
   }
 
-  // async chargeOverride(options: ChargeOverrideOptions = {}): Promise<Result> {
-  //   const request = this.getCommandRequest(
-  //     OnStarApiCommand.ChargeOverride,
-  //   ).setBody({
-  //     chargeOverrideRequest: {
-  //       mode: ChargeOverrideMode.ChargeNow,
-  //       ...options,
-  //     },
-  //   });
-
-  //   return this.sendRequest(request);
-  // }
-
-  // async getChargingProfile(): Promise<Result> {
-  //   const request = this.getCommandRequest(OnStarApiCommand.GetChargingProfile);
-
-  //   return this.sendRequest(request);
-  // }
-
-  // async setChargingProfile(
-  //   options: SetChargingProfileRequestOptions = {},
-  // ): Promise<Result> {
-  //   const request = this.getCommandRequest(
-  //     OnStarApiCommand.SetChargingProfile,
-  //   ).setBody({
-  //     chargingProfile: {
-  //       chargeMode: ChargingProfileChargeMode.Immediate,
-  //       rateType: ChargingProfileRateType.Midpeak,
-  //       ...options,
-  //     },
-  //   });
-
-  //   return this.sendRequest(request);
-  // }
+  // Charging-related APIs are temporarily disabled pending new API implementation
+  // async chargeOverride(options: ChargeOverrideOptions = {}): Promise<Result> { /* ... */ }
+  // async getChargingProfile(): Promise<Result> { /* ... */ }
+  // async setChargingProfile(options: SetChargingProfileRequestOptions = {}): Promise<Result> { /* ... */ }
 
   async diagnostics(): Promise<
     import("./types").TypedResult<import("./types").HealthStatusResponse>
@@ -436,18 +406,23 @@ class RequestService {
               status === CommandResponseStatus.inProgress &&
               type !== "connect"
             ) {
-              // Log once when the command is accepted and we begin polling
-              try {
-                console.log("info: Command accepted; polling for completion", {
-                  timestamp: new Date()
-                    .toISOString()
-                    .replace("T", " ")
-                    .slice(0, 19),
-                  requestId,
-                  url,
-                });
-              } catch (_) {
-                // no-op logging safety
+              // Log only for the initial POST; skip logs for subsequent polling GETs
+              if (request.getMethod() === RequestMethod.Post) {
+                try {
+                  console.log(
+                    "info: Command accepted; polling for completion",
+                    {
+                      timestamp: new Date()
+                        .toISOString()
+                        .replace("T", " ")
+                        .slice(0, 19),
+                      requestId,
+                      url,
+                    },
+                  );
+                } catch (_) {
+                  // no-op logging safety
+                }
               }
 
               await this.checkRequestPause();
