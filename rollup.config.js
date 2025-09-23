@@ -17,8 +17,8 @@ export default {
     }),
   ],
   output: [
-    { file: pkg.main, format: "cjs", exports: "default" },
-    { file: pkg.module, format: "esm", exports: "default" },
+    { file: pkg.main, format: "cjs", exports: "auto" },
+    { file: pkg.module, format: "esm", exports: "auto" },
   ],
   external: [
     ...Object.keys(pkg.dependencies || {}),

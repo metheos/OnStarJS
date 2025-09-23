@@ -38,6 +38,7 @@
     "setup:env:bash": "chmod +x scripts/setup-env.sh && ./scripts/setup-env.sh",
     "setup:credentials": "node scripts/credential-manager.js",
     "setup:interactive": "node scripts/credential-manager.js",
+    "run:request-service": "pnpm run build && node scripts/request-service-cli.mjs",
     "run:get-vehicles": "pnpm run build && node scripts/get-vehicles.mjs",
     "run:get-diagnostics": "pnpm run build && node scripts/get-diagnostics.mjs",
     "run:get-tire-pressure": "pnpm run build && node scripts/get-tire-pressure.mjs"
