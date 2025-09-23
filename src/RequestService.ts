@@ -378,12 +378,44 @@ class RequestService {
           request.getCheckRequestStatus() ?? this.checkRequestStatus;
 
         if (checkRequestStatus && typeof data === "object") {
-          const { commandResponse } = data;
+          // Support both legacy shape with { commandResponse } and v3 top-level shape
+          // Example v3 initial response:
+          // { requestId, requestTime, status: "IN_PROGRESS", url, error }
+          let status: CommandResponseStatus | undefined;
+          let url: string | undefined;
+          let type: string | undefined;
+          let requestTime: string | undefined;
+          let requestId: string | undefined;
 
-          if (commandResponse) {
-            const { requestTime, status, url, type } = commandResponse;
+          const anyData: any = data as any;
+          if (anyData.commandResponse) {
+            const {
+              requestTime: rt,
+              status: st,
+              url: u,
+              type: t,
+            } = anyData.commandResponse;
+            status = st as CommandResponseStatus;
+            url = u;
+            type = t;
+            requestTime = rt;
+            requestId = anyData.commandResponse.requestId;
+          } else if (
+            anyData.requestId &&
+            anyData.requestTime &&
+            anyData.status &&
+            anyData.url
+          ) {
+            // Normalize uppercase statuses to our enum
+            status = this.mapCommandStatus(anyData.status);
+            url = anyData.url;
+            type = anyData.type; // might be undefined
+            requestTime = anyData.requestTime;
+            requestId = anyData.requestId;
+          }
 
-            const requestTimestamp = new Date(requestTime).getTime();
+          if (status) {
+            const requestTimestamp = new Date(requestTime as string).getTime();
 
             if (status === CommandResponseStatus.failure) {
               throw new RequestError("Command Failure")
@@ -404,14 +436,28 @@ class RequestService {
               status === CommandResponseStatus.inProgress &&
               type !== "connect"
             ) {
+              // Log once when the command is accepted and we begin polling
+              try {
+                console.log("info: Command accepted; polling for completion", {
+                  timestamp: new Date()
+                    .toISOString()
+                    .replace("T", " ")
+                    .slice(0, 19),
+                  requestId,
+                  url,
+                });
+              } catch (_) {
+                // no-op logging safety
+              }
+
               await this.checkRequestPause();
 
-              const request = new Request(url)
+              const pollReq = new Request(url as string)
                 .setMethod(RequestMethod.Get)
                 .setUpgradeRequired(false)
                 .setCheckRequestStatus(checkRequestStatus);
 
-              return this.sendRequest(request);
+              return this.sendRequest(pollReq);
             }
 
             return new RequestResult(status).setResponse(response).getResult();
@@ -559,6 +605,20 @@ class RequestService {
     return new Promise((resolve) =>
       setTimeout(resolve, this.requestPollingIntervalSeconds * 1000),
     );
+  }
+
+  // Normalize API status strings to CommandResponseStatus
+  private mapCommandStatus(status: string): CommandResponseStatus {
+    if (!status) return CommandResponseStatus.inProgress;
+    const s = String(status).toLowerCase();
+    if (s === "success" || s === "completed" || s === "complete") {
+      return CommandResponseStatus.success;
+    }
+    if (s === "failure" || s === "failed" || s === "error") {
+      return CommandResponseStatus.failure;
+    }
+    // Many v3 responses use IN_PROGRESS in caps
+    return CommandResponseStatus.inProgress;
   }
 }
 

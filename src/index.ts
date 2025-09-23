@@ -76,10 +76,8 @@ class OnStar {
     return this.requestService.setChargingProfile(options);
   }
 
-  async diagnostics(
-    options?: DiagnosticsRequestOptions,
-  ): Promise<TypedResult<HealthStatusResponse>> {
-    return this.requestService.diagnostics(options);
+  async diagnostics(): Promise<TypedResult<HealthStatusResponse>> {
+    return this.requestService.diagnostics();
   }
 
   async location(): Promise<Result> {

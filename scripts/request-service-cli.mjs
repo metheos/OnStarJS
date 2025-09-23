@@ -101,6 +101,7 @@ async function main() {
   const rl = readline.createInterface({ input, output });
   console.log("\nOnStarJS RequestService Interactive CLI\n");
   console.log("Environment VIN:", config.vin);
+  let checkState = config.checkRequestStatus !== false;
 
   // Action registry — mirrors RequestService public API exposed via OnStar wrapper
   const actions = [
@@ -220,9 +221,9 @@ async function main() {
       key: "toggleCheckRequestStatus",
       label: "toggle checkRequestStatus (client)",
       run: async () => {
-        const current = config.checkRequestStatus !== false;
-        const next = !current;
+        const next = !checkState;
         client.setCheckRequestStatus(next);
+        checkState = next;
         logInfo("checkRequestStatus set", { value: next });
         return {
           status: "success",
