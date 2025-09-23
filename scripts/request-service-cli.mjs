@@ -33,7 +33,11 @@ function logInfo(msg, extra = {}) {
 async function promptEnumList(rl, label, values, defList = []) {
   const opts = values.join(", ");
   const defStr = defList && defList.length ? defList.join(",") : "";
-  const ans = (await rl.question(`${label} [${opts}] (comma-separated)${defStr ? ` [default: ${defStr}]` : ""}: `)).trim();
+  const ans = (
+    await rl.question(
+      `${label} [${opts}] (comma-separated)${defStr ? ` [default: ${defStr}]` : ""}: `,
+    )
+  ).trim();
   const chosen = (ans ? ans : defStr)
     .split(",")
     .map((s) => s.trim())
@@ -44,7 +48,11 @@ async function promptEnumList(rl, label, values, defList = []) {
 
 async function promptEnum(rl, label, values, defValue = undefined) {
   const opts = values.join(", ");
-  const ans = (await rl.question(`${label} [${opts}]${defValue ? ` [default: ${defValue}]` : ""}: `)).trim();
+  const ans = (
+    await rl.question(
+      `${label} [${opts}]${defValue ? ` [default: ${defValue}]` : ""}: `,
+    )
+  ).trim();
   const val = ans || defValue;
   if (val && values.includes(val)) return val;
   return defValue ?? values[0];
@@ -84,7 +92,8 @@ async function main() {
     backoffFactor: toNum(process.env.BACKOFF_FACTOR, 2),
     jitterMs: toNum(process.env.JITTER_MS, 500),
     max429DelayMs: toNum(process.env.MAX_429_DELAY_MS, 60000),
-    retryOn429ForPost: String(process.env.RETRY_POST_ON_429 || "").toLowerCase() === "true",
+    retryOn429ForPost:
+      String(process.env.RETRY_POST_ON_429 || "").toLowerCase() === "true",
   };
 
   const client = OnStar.create(config);
@@ -95,11 +104,23 @@ async function main() {
 
   // Action registry — mirrors RequestService public API exposed via OnStar wrapper
   const actions = [
-    { key: "getAccountVehicles", label: "getAccountVehicles()", run: () => client.getAccountVehicles() },
-    { key: "diagnostics", label: "diagnostics()", run: () => client.diagnostics() },
+    {
+      key: "getAccountVehicles",
+      label: "getAccountVehicles()",
+      run: () => client.getAccountVehicles(),
+    },
+    {
+      key: "diagnostics",
+      label: "diagnostics()",
+      run: () => client.diagnostics(),
+    },
     { key: "location", label: "location()", run: () => client.location() },
     { key: "start", label: "start()", run: () => client.start() },
-    { key: "cancelStart", label: "cancelStart()", run: () => client.cancelStart() },
+    {
+      key: "cancelStart",
+      label: "cancelStart()",
+      run: () => client.cancelStart(),
+    },
     {
       key: "lockDoor",
       label: "lockDoor(options)",
@@ -153,7 +174,11 @@ async function main() {
         return client.alert({ action: actions, delay, duration, override });
       },
     },
-    { key: "cancelAlert", label: "cancelAlert()", run: () => client.cancelAlert() },
+    {
+      key: "cancelAlert",
+      label: "cancelAlert()",
+      run: () => client.cancelAlert(),
+    },
     {
       key: "chargeOverride",
       label: "chargeOverride(options)",
@@ -167,7 +192,11 @@ async function main() {
         return client.chargeOverride({ mode });
       },
     },
-    { key: "getChargingProfile", label: "getChargingProfile()", run: () => client.getChargingProfile() },
+    {
+      key: "getChargingProfile",
+      label: "getChargingProfile()",
+      run: () => client.getChargingProfile(),
+    },
     {
       key: "setChargingProfile",
       label: "setChargingProfile(options)",
@@ -195,7 +224,10 @@ async function main() {
         const next = !current;
         client.setCheckRequestStatus(next);
         logInfo("checkRequestStatus set", { value: next });
-        return { status: "success", response: { data: { checkRequestStatus: next } } };
+        return {
+          status: "success",
+          response: { data: { checkRequestStatus: next } },
+        };
       },
     },
   ];
