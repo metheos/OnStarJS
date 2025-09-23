@@ -10,8 +10,6 @@ import {
   ChargeOverrideOptions,
   ChargingProfileChargeMode,
   ChargingProfileRateType,
-  DiagnosticRequestItem,
-  DiagnosticsRequestOptions,
   DoorRequestOptions,
   TrunkRequestOptions,
   HttpClient,
@@ -32,7 +30,6 @@ enum OnStarApiCommand {
   CancelAlert = "cancelAlert",
   CancelStart = "cancelStart",
   ChargeOverride = "chargeOverride",
-  Diagnostics = "diagnostics",
   GetChargingProfile = "getChargingProfile",
   LockDoor = "lock",
   SetChargingProfile = "setChargingProfile",
@@ -222,9 +219,7 @@ class RequestService {
     return this.sendRequest(request);
   }
 
-  async diagnostics(
-    options: DiagnosticsRequestOptions = {},
-  ): Promise<
+  async diagnostics(): Promise<
     import("./types").TypedResult<import("./types").HealthStatusResponse>
   > {
     // vehicle health status API
