@@ -132,6 +132,26 @@ async function main() {
       },
     },
     {
+      key: "alert",
+      label: "alert() (honk + flash)",
+      run: () => client.alert(),
+    },
+    {
+      key: "cancelAlert",
+      label: "cancelAlert()",
+      run: () => client.cancelAlert(),
+    },
+    {
+      key: "flashLights",
+      label: "flashLights() (flash only)",
+      run: () => client.flashLights(),
+    },
+    {
+      key: "stopLights",
+      label: "stopLights() (cancel flash)",
+      run: () => client.stopLights(),
+    },
+    {
       key: "setChargeLevelTarget",
       label: "setChargeLevelTarget(tcl, opts)",
       run: async () => {

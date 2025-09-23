@@ -193,6 +193,29 @@ class RequestService {
     return this.sendRequest(request);
   }
 
+  async flashLights(options: AlertRequestOptions = {}): Promise<Result> {
+    const request = this.getCommandRequest(OnStarApiCommand.Alert).setBody({
+      alertRequest: {
+        action: [AlertRequestAction.Flash],
+        delay: 0,
+        duration: 1,
+        override: [
+          AlertRequestOverride.DoorOpen,
+          AlertRequestOverride.IgnitionOn,
+        ],
+        ...options,
+      },
+    });
+
+    return this.sendRequest(request);
+  }
+
+  async stopLights(): Promise<Result> {
+    const request = this.getCommandRequest(OnStarApiCommand.CancelAlert);
+
+    return this.sendRequest(request);
+  }
+
   // Charging-related APIs are temporarily disabled pending new API implementation
   // async chargeOverride(options: ChargeOverrideOptions = {}): Promise<Result> { /* ... */ }
   // async getChargingProfile(): Promise<Result> { /* ... */ }

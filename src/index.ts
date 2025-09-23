@@ -60,6 +60,14 @@ class OnStar {
     return this.requestService.cancelAlert();
   }
 
+  async flashLights(options?: AlertRequestOptions): Promise<Result> {
+    return this.requestService.flashLights(options || {});
+  }
+
+  async stopLights(): Promise<Result> {
+    return this.requestService.stopLights();
+  }
+
   // async chargeOverride(options?: ChargeOverrideOptions): Promise<Result> {
   //   return this.requestService.chargeOverride(options);
   // }
