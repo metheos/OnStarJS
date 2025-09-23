@@ -1,19 +1,12 @@
 import "dotenv/config";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import OnStar, {
-  AlertRequestAction,
-  AlertRequestOverride,
-  //   ChargingProfileChargeMode,
-  //   ChargingProfileRateType,
-  //   ChargeOverrideMode,
-} from "../dist/index.mjs";
+import OnStar from "../dist/index.mjs";
+import { v4 as uuidv4 } from "uuid";
 
 function requireEnv(name) {
   const v = process.env[name];
-  if (!v) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
+  if (!v) throw new Error(`Missing required environment variable: ${name}`);
   return v;
 }
 
@@ -28,34 +21,6 @@ function logInfo(msg, extra = {}) {
     timestamp: new Date().toISOString().replace("T", " ").slice(0, 19),
     ...extra,
   });
-}
-
-async function promptEnumList(rl, label, values, defList = []) {
-  const opts = values.join(", ");
-  const defStr = defList && defList.length ? defList.join(",") : "";
-  const ans = (
-    await rl.question(
-      `${label} [${opts}] (comma-separated)${defStr ? ` [default: ${defStr}]` : ""}: `,
-    )
-  ).trim();
-  const chosen = (ans ? ans : defStr)
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  // Validate; keep only known values
-  return chosen.filter((v) => values.includes(v));
-}
-
-async function promptEnum(rl, label, values, defValue = undefined) {
-  const opts = values.join(", ");
-  const ans = (
-    await rl.question(
-      `${label} [${opts}]${defValue ? ` [default: ${defValue}]` : ""}: `,
-    )
-  ).trim();
-  const val = ans || defValue;
-  if (val && values.includes(val)) return val;
-  return defValue ?? values[0];
 }
 
 async function promptNumber(rl, label, def = 0) {
@@ -155,68 +120,60 @@ async function main() {
       },
     },
     {
-      key: "alert",
-      label: "alert(options)",
+      key: "setChargeLevelTarget",
+      label: "setChargeLevelTarget(tcl, opts)",
       run: async () => {
-        const actions = await promptEnumList(
-          rl,
-          "action",
-          Object.values(AlertRequestAction),
-          [AlertRequestAction.Honk, AlertRequestAction.Flash],
+        const tcl = await promptNumber(rl, "target charge level (1-100)", 80);
+        const useOpts =
+          (await rl.question("Provide advanced options? (y/N): "))
+            .trim()
+            .toLowerCase() === "y";
+
+        let opts = undefined;
+        if (useOpts) {
+          const noMetricsRefreshAns = (
+            await rl.question("noMetricsRefresh? (y/N): ")
+          )
+            .trim()
+            .toLowerCase();
+          const noMetricsRefresh = noMetricsRefreshAns === "y";
+          const clientRequestId =
+            (
+              await rl.question("clientRequestId (leave blank for random): ")
+            ).trim() || undefined;
+          const clientVersion =
+            (
+              await rl.question("clientVersion [default: 7.18.0.8006]: ")
+            ).trim() || undefined;
+          const osAns = (await rl.question("os metadata [A|I] [default: A]: "))
+            .trim()
+            .toUpperCase();
+          const os = osAns === "A" || osAns === "I" ? osAns : undefined;
+          opts = { noMetricsRefresh, clientRequestId, clientVersion, os };
+        }
+
+        const clientRequestId = opts?.clientRequestId || uuidv4();
+        const noMetricsRefresh =
+          typeof opts?.noMetricsRefresh === "boolean"
+            ? opts.noMetricsRefresh
+            : false;
+
+        // Preview only non-sensitive form fields; vehicleId is derived internally via initSession
+        const bodyPreview = new URLSearchParams({
+          tcl: String(Math.round(tcl)),
+          noMetricsRefresh: String(noMetricsRefresh),
+          clientRequestId,
+        });
+        console.log(
+          "\n=== Request Body (form-urlencoded preview) ===\n" +
+            bodyPreview.toString() +
+            "\n(Info) vehicleId is derived from initSession metrics inside the SDK and not shown here.\n",
         );
-        const delay = await promptNumber(rl, "delay (seconds)", 0);
-        const duration = await promptNumber(rl, "duration (seconds)", 1);
-        const override = await promptEnumList(
-          rl,
-          "override",
-          Object.values(AlertRequestOverride),
-          [AlertRequestOverride.DoorOpen, AlertRequestOverride.IgnitionOn],
-        );
-        return client.alert({ action: actions, delay, duration, override });
+
+        const finalOpts = Object.assign({}, opts || {}, { clientRequestId });
+        return client.setChargeLevelTarget(tcl, finalOpts);
       },
     },
-    {
-      key: "cancelAlert",
-      label: "cancelAlert()",
-      run: () => client.cancelAlert(),
-    },
-    // {
-    //   key: "chargeOverride",
-    //   label: "chargeOverride(options)",
-    //   run: async () => {
-    //     const mode = await promptEnum(
-    //       rl,
-    //       "mode",
-    //       Object.values(ChargeOverrideMode),
-    //       ChargeOverrideMode.ChargeNow,
-    //     );
-    //     return client.chargeOverride({ mode });
-    //   },
-    // },
-    // {
-    //   key: "getChargingProfile",
-    //   label: "getChargingProfile()",
-    //   run: () => client.getChargingProfile(),
-    // },
-    // {
-    //   key: "setChargingProfile",
-    //   label: "setChargingProfile(options)",
-    //   run: async () => {
-    //     const chargeMode = await promptEnum(
-    //       rl,
-    //       "chargeMode",
-    //       Object.values(ChargingProfileChargeMode),
-    //       ChargingProfileChargeMode.Immediate,
-    //     );
-    //     const rateType = await promptEnum(
-    //       rl,
-    //       "rateType",
-    //       Object.values(ChargingProfileRateType),
-    //       ChargingProfileRateType.Midpeak,
-    //     );
-    //     return client.setChargingProfile({ chargeMode, rateType });
-    //   },
-    // },
     {
       key: "toggleCheckRequestStatus",
       label: "toggle checkRequestStatus (client)",

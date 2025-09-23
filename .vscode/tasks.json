@@ -120,6 +120,17 @@
 				"$tsc"
 			],
 			"group": "build"
+		},
+		{
+			"label": "build-onstarjs",
+			"type": "shell",
+			"command": "pnpm run build",
+			"isBackground": false,
+			"problemMatcher": [
+				"$tsc",
+				"$eslint-stylish"
+			],
+			"group": "build"
 		}
 	]
 }

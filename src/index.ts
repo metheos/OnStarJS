@@ -81,6 +81,19 @@ class OnStar {
     return this.requestService.location();
   }
 
+  // EV: Set target charge level percentage
+  async setChargeLevelTarget(
+    tcl: number,
+    opts?: {
+      noMetricsRefresh?: boolean;
+      clientRequestId?: string;
+      clientVersion?: string;
+      os?: "A" | "I";
+    },
+  ): Promise<Result> {
+    return this.requestService.setChargeLevelTarget(tcl, opts);
+  }
+
   setCheckRequestStatus(checkStatus: boolean) {
     this.requestService.setCheckRequestStatus(checkStatus);
   }

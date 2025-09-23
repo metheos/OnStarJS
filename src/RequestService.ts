@@ -23,6 +23,7 @@ import {
 } from "./types";
 import onStarAppConfig from "./onStarAppConfig.json";
 import axios from "axios";
+import { v4 as uuidv4 } from "uuid";
 import { getGMAPIJWT } from "./auth/GMAuth";
 
 enum OnStarApiCommand {
@@ -46,6 +47,7 @@ class RequestService {
   private checkRequestStatus: boolean;
   private requestPollingTimeoutSeconds: number;
   private requestPollingIntervalSeconds: number;
+  private cachedVehicleId?: string;
 
   constructor(
     config: OnStarConfig,
@@ -188,6 +190,69 @@ class RequestService {
   // async chargeOverride(options: ChargeOverrideOptions = {}): Promise<Result> { /* ... */ }
   // async getChargingProfile(): Promise<Result> { /* ... */ }
   // async setChargingProfile(options: SetChargingProfileRequestOptions = {}): Promise<Result> { /* ... */ }
+
+  /**
+   * EV: Set the target charge level percentage (tcl)
+   * Always fetches a fresh short-lived EV session token before issuing the command.
+   */
+  async setChargeLevelTarget(
+    tcl: number,
+    opts?: {
+      noMetricsRefresh?: boolean;
+      clientRequestId?: string;
+      clientVersion?: string; // default 7.18.0.8006
+      os?: "A" | "I"; // Android or iOS indicator for EV API metadata
+    },
+  ): Promise<Result> {
+    if (tcl < 1 || tcl > 100 || !Number.isFinite(tcl)) {
+      throw new Error("tcl must be a number between 1 and 100");
+    }
+
+    const gmMobileToken = (await this.getAuthToken()).access_token;
+    const { token: evToken, vehicleId: sessionVehicleId } =
+      await this.initEVSessionToken(gmMobileToken);
+    const vehicleId = sessionVehicleId!; // must come from initSession metrics
+
+    const baseUrl = `https://eve-vcn.ext.gm.com/api/gmone/v1/vehicle/performSetChargingSettings`;
+    const clientVersion = opts?.clientVersion ?? "7.18.0.8006";
+    const os = opts?.os ?? "A"; // default Android metadata
+    const query = new URLSearchParams({
+      vehicleVin: this.config.vin,
+      clientVersion,
+      clientType: "bev-myowner",
+      buildType: "r",
+      clientLocale: "en-US",
+      deviceId: this.config.deviceId,
+      os,
+      ts: String(Date.now()),
+      varch: "globalb",
+      sid: this.randomHex(8).toUpperCase(),
+      pid: this.randomHex(8).toUpperCase(),
+    });
+
+    const bodyParams = new URLSearchParams({
+      tcl: String(Math.round(tcl)),
+      vehicleId,
+      noMetricsRefresh: String(opts?.noMetricsRefresh ?? false),
+      clientRequestId: opts?.clientRequestId ?? uuidv4(),
+    });
+
+    // VehicleId is derived exclusively from initSession metrics
+
+    const req = new Request(`${baseUrl}?${query.toString()}`)
+      .setMethod(RequestMethod.Post)
+      .setAuthRequired(false)
+      .setContentType("application/x-www-form-urlencoded")
+      .setHeaders({
+        accept: "*/*",
+        "x-gm-mobiletoken": gmMobileToken,
+        "x-gm-token": evToken,
+      })
+      .setBody(bodyParams.toString())
+      .setCheckRequestStatus(false); // EV API responds synchronously
+
+    return this.sendRequest(req);
+  }
 
   async diagnostics(): Promise<
     import("./types").TypedResult<import("./types").HealthStatusResponse>
@@ -533,6 +598,89 @@ class RequestService {
 
   private delay(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  // ===== EV API helpers =====
+  private async initEVSessionToken(
+    gmMobileToken: string,
+  ): Promise<{ token: string; vehicleId?: string }> {
+    // Build URL with required metadata
+    const baseUrl = `https://eve-vcn.ext.gm.com/api/gmone/v1/admin/initSession`;
+    const clientVersion = "7.18.0.8006";
+    const query = new URLSearchParams({
+      vehicleVin: this.config.vin,
+      clientVersion,
+      clientType: "bev-myowner",
+      buildType: "r",
+      clientLocale: "en-US",
+      deviceId: this.config.deviceId,
+      os: "I", // emulate iOS like captured traffic (works with either)
+      ts: String(Date.now()),
+      sid: this.randomHex(8).toUpperCase(),
+      pid: this.randomHex(8).toUpperCase(),
+    });
+
+    // Form body requires the GM mobile token
+    const bodyParams = new URLSearchParams({
+      token: gmMobileToken,
+      vehicleVIN: this.config.vin, // observed in captures
+    });
+
+    const req = new Request(`${baseUrl}?${query.toString()}`)
+      .setMethod(RequestMethod.Post)
+      .setAuthRequired(false)
+      .setContentType("application/x-www-form-urlencoded")
+      .setHeaders({
+        accept: "*/*",
+      })
+      .setBody(bodyParams.toString())
+      .setCheckRequestStatus(false);
+
+    const result = await this.sendRequest(req);
+    const data: any = result.response?.data;
+
+    const token: string | undefined = data?.results?.[0]?.loginResponse?.token;
+    const vehicleId: string | undefined =
+      data?.results?.[0]?.getVehicleChargingMetricsResponse?.vehicleId;
+
+    if (!token) {
+      throw new Error("Failed to initialize EV session token");
+    }
+    if (!vehicleId) {
+      throw new Error(
+        "EV vehicleId not found in initSession metrics; cannot proceed",
+      );
+    }
+    this.cachedVehicleId = vehicleId;
+    return { token, vehicleId };
+  }
+
+  private async ensureVehicleIdFromGarage(
+    vin: string,
+  ): Promise<string | undefined> {
+    if (this.cachedVehicleId) return this.cachedVehicleId;
+    try {
+      const garage = await this.getAccountVehicles();
+      const list = garage?.data?.vehicles ?? [];
+      const match = list.find((v: any) => v.vin?.toUpperCase() === vin);
+      if (match?.vehicleId) {
+        this.cachedVehicleId = match.vehicleId;
+        return this.cachedVehicleId;
+      }
+    } catch (_) {
+      // ignore and return undefined to allow caller to throw a clearer error
+    }
+    return undefined;
+  }
+
+  private randomHex(len: number): string {
+    const bytes = new Uint8Array(len / 2 + (len % 2));
+    for (let i = 0; i < bytes.length; i++)
+      bytes[i] = Math.floor(Math.random() * 256);
+    return Array.from(bytes)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("")
+      .slice(0, len);
   }
 
   // Parses Retry-After header which can be seconds (number) or http-date.
