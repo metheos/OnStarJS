@@ -81,7 +81,19 @@ async function main() {
       run: () => client.diagnostics(),
     },
     { key: "location", label: "location()", run: () => client.location() },
-    { key: "start", label: "start()", run: () => client.start() },
+    {
+      key: "start",
+      label: "start({ cabinTemperature })",
+      run: async () => {
+        const ans = (
+          await rl.question("Provide cabin temperature in C? (blank to skip): ")
+        ).trim();
+        if (!ans) return client.start();
+        const n = Number(ans);
+        if (!Number.isFinite(n)) return client.start();
+        return client.start({ cabinTemperature: Math.round(n) });
+      },
+    },
     {
       key: "cancelStart",
       label: "cancelStart()",

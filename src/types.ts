@@ -143,6 +143,12 @@ export interface TrunkRequestOptions {
   delay?: number;
 }
 
+// Engine start options
+export interface StartRequestOptions {
+  // Target cabin temperature in Celsius; optional
+  cabinTemperature?: number;
+}
+
 export enum ChargeOverrideMode {
   ChargeNow = "CHARGE_NOW",
   CancelOverride = "CANCEL_OVERRIDE",

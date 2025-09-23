@@ -103,8 +103,15 @@ class RequestService {
     return this;
   }
 
-  async start(): Promise<Result> {
+  async start(
+    options?: import("./types").StartRequestOptions,
+  ): Promise<Result> {
     const request = this.getCommandRequest(OnStarApiCommand.Start);
+    if (options && typeof options.cabinTemperature === "number") {
+      // EV/Remote start can accept an optional cabin temperature (Celsius)
+      const temp = Math.round(options.cabinTemperature);
+      request.setBody({ cabinTemperature: temp });
+    }
 
     return this.sendRequest(request);
   }

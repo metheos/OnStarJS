@@ -9,6 +9,7 @@ import {
   AlertRequestOptions,
   DoorRequestOptions,
   TrunkRequestOptions,
+  StartRequestOptions,
   GarageVehiclesResponse,
   HealthStatusResponse,
   TypedResult,
@@ -27,8 +28,8 @@ class OnStar {
     return this.requestService.getAccountVehicles();
   }
 
-  async start(): Promise<Result> {
-    return this.requestService.start();
+  async start(options?: StartRequestOptions): Promise<Result> {
+    return this.requestService.start(options);
   }
 
   async cancelStart(): Promise<Result> {
