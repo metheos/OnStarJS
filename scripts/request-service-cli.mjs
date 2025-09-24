@@ -207,6 +207,42 @@ async function main() {
       },
     },
     {
+      key: "stopCharging",
+      label: "stopCharging(opts)",
+      run: async () => {
+        const useOpts =
+          (await rl.question("Provide advanced options? (y/N): "))
+            .trim()
+            .toLowerCase() === "y";
+        let opts = undefined;
+        if (useOpts) {
+          const noMetricsRefreshAns = (
+            await rl.question("noMetricsRefresh? (y/N): ")
+          )
+            .trim()
+            .toLowerCase();
+          const noMetricsRefresh = noMetricsRefreshAns === "y";
+          const clientRequestId =
+            (
+              await rl.question("clientRequestId (leave blank for random): ")
+            ).trim() || undefined;
+          const clientVersion =
+            (
+              await rl.question("clientVersion [default: 7.18.0.8006]: ")
+            ).trim() || undefined;
+          const osAns = (await rl.question("os metadata [A|I] [default: A]: "))
+            .trim()
+            .toUpperCase();
+          const os = osAns === "A" || osAns === "I" ? osAns : undefined;
+          opts = { noMetricsRefresh, clientRequestId, clientVersion, os };
+        }
+        const finalOpts = Object.assign({}, opts || {}, {
+          clientRequestId: opts?.clientRequestId || uuidv4(),
+        });
+        return client.stopCharging(finalOpts);
+      },
+    },
+    {
       key: "toggleCheckRequestStatus",
       label: "toggle checkRequestStatus (client)",
       run: async () => {

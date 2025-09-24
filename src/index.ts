@@ -103,6 +103,16 @@ class OnStar {
     return this.requestService.setChargeLevelTarget(tcl, opts);
   }
 
+  // EV: Stop charging session
+  async stopCharging(opts?: {
+    noMetricsRefresh?: boolean;
+    clientRequestId?: string;
+    clientVersion?: string;
+    os?: "A" | "I";
+  }): Promise<Result> {
+    return this.requestService.stopCharging(opts);
+  }
+
   setCheckRequestStatus(checkStatus: boolean) {
     this.requestService.setCheckRequestStatus(checkStatus);
   }
