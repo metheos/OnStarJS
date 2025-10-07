@@ -779,4 +779,289 @@ describe("RequestService", () => {
     const elapsed = Date.now() - start;
     expect(elapsed).toBeGreaterThanOrEqual(90); // Allow some tolerance
   });
+
+  test("sendRequest handles v3 response format with top-level fields", async () => {
+    // V3 API returns requestId, status, url at top level (not nested in commandResponse)
+    httpClient.post = jest.fn().mockResolvedValue({
+      data: {
+        requestId: "req-123",
+        requestTime: new Date(Date.now() + 5000).toISOString(),
+        status: "SUCCESS",
+        url: "https://check-url.com",
+      },
+    });
+
+    const request = new Request("https://foo.bar")
+      .setMethod(RequestMethod.Post)
+      .setCheckRequestStatus(true);
+
+    const result = await requestService
+      .setClient(httpClient)
+      ["sendRequest"](request);
+
+    expect(result.status).toEqual(CommandResponseStatus.success);
+  });
+
+  test("sendRequest handles v3 response with IN_PROGRESS status", async () => {
+    const futureTime = new Date(Date.now() + 5000).toISOString();
+
+    // First call returns IN_PROGRESS, second returns SUCCESS
+    httpClient.post = jest
+      .fn()
+      .mockResolvedValueOnce({
+        data: {
+          requestId: "req-456",
+          requestTime: futureTime,
+          status: "IN_PROGRESS",
+          url: "https://check-url.com",
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          requestId: "req-456",
+          requestTime: futureTime,
+          status: "SUCCESS",
+          url: "https://check-url.com",
+        },
+      });
+
+    httpClient.get = jest.fn().mockResolvedValue({
+      data: {
+        requestId: "req-456",
+        requestTime: futureTime,
+        status: "SUCCESS",
+        url: "https://check-url.com",
+      },
+    });
+
+    const request = new Request("https://foo.bar")
+      .setMethod(RequestMethod.Post)
+      .setCheckRequestStatus(true);
+
+    const result = await requestService
+      .setClient(httpClient)
+      .setRequestPollingIntervalSeconds(0)
+      ["sendRequest"](request);
+
+    expect(result.status).toEqual(CommandResponseStatus.success);
+  });
+
+  test("sendRequest with v3 FAILURE status", async () => {
+    httpClient.post = jest.fn().mockResolvedValue({
+      data: {
+        requestId: "req-789",
+        requestTime: new Date(Date.now() + 5000).toISOString(),
+        status: "FAILURE",
+        url: "https://check-url.com",
+      },
+    });
+
+    const request = new Request("https://foo.bar")
+      .setMethod(RequestMethod.Post)
+      .setCheckRequestStatus(true);
+
+    await expect(
+      requestService.setClient(httpClient)["sendRequest"](request),
+    ).rejects.toThrow("Command Failure");
+  });
+
+  test("429 retry with Retry-After header (numeric)", async () => {
+    const error429 = {
+      isAxiosError: true,
+      response: {
+        status: 429,
+        statusText: "Too Many Requests",
+        headers: {
+          "retry-after": "2",
+        },
+        data: "Rate limited",
+      },
+      request: {},
+    };
+
+    // First call fails with 429, second succeeds
+    httpClient.get = jest
+      .fn()
+      .mockRejectedValueOnce(error429)
+      .mockResolvedValueOnce({
+        data: {
+          commandResponse: {
+            requestTime: Date.now() + 1000,
+            status: CommandResponseStatus.success,
+            url: commandResponseUrl,
+          },
+        },
+      });
+
+    const request = new Request("https://foo.bar")
+      .setMethod(RequestMethod.Get)
+      .setCheckRequestStatus(false);
+
+    const result = await requestService
+      .setClient(httpClient)
+      ["sendRequest"](request);
+
+    expect(result.status).toEqual(CommandResponseStatus.success);
+    expect(httpClient.get).toHaveBeenCalledTimes(2);
+  });
+
+  test("429 retry with Retry-After header (HTTP date)", async () => {
+    const futureDate = new Date(Date.now() + 3000);
+    const error429 = {
+      isAxiosError: true,
+      response: {
+        status: 429,
+        statusText: "Too Many Requests",
+        headers: {
+          "Retry-After": futureDate.toUTCString(),
+        },
+        data: "Rate limited",
+      },
+      request: {},
+    };
+
+    httpClient.get = jest
+      .fn()
+      .mockRejectedValueOnce(error429)
+      .mockResolvedValueOnce({
+        data: {
+          commandResponse: {
+            requestTime: Date.now() + 1000,
+            status: CommandResponseStatus.success,
+            url: commandResponseUrl,
+          },
+        },
+      });
+
+    const request = new Request("https://foo.bar")
+      .setMethod(RequestMethod.Get)
+      .setCheckRequestStatus(false);
+
+    const result = await requestService
+      .setClient(httpClient)
+      ["sendRequest"](request);
+
+    expect(result.status).toEqual(CommandResponseStatus.success);
+  });
+
+  test("429 with POST and retryOn429ForPost enabled", async () => {
+    const configWithRetry = {
+      ...testConfig,
+      retryOn429ForPost: true,
+      initial429DelayMs: 100,
+      max429Retries: 2,
+    };
+
+    const requestServiceWithRetry = new RequestService(
+      configWithRetry,
+      httpClient,
+    )
+      .setAuthToken(authToken)
+      .setRequestPollingIntervalSeconds(0);
+
+    jest
+      .spyOn(requestServiceWithRetry, "getAuthToken")
+      .mockResolvedValue(authToken as any);
+
+    const error429 = {
+      isAxiosError: true,
+      response: {
+        status: 429,
+        statusText: "Too Many Requests",
+        data: "Rate limited",
+      },
+      request: {},
+    };
+
+    httpClient.post = jest
+      .fn()
+      .mockRejectedValueOnce(error429)
+      .mockResolvedValueOnce({
+        data: {
+          commandResponse: {
+            requestTime: Date.now() + 1000,
+            status: CommandResponseStatus.success,
+            url: commandResponseUrl,
+          },
+        },
+      });
+
+    const request = new Request("https://foo.bar")
+      .setMethod(RequestMethod.Post)
+      .setCheckRequestStatus(false);
+
+    const result = await requestServiceWithRetry["sendRequest"](request);
+
+    expect(result.status).toEqual(CommandResponseStatus.success);
+    expect(httpClient.post).toHaveBeenCalledTimes(2);
+  });
+
+  test("429 exceeds max retries", async () => {
+    // Use a very short delay to speed up the test
+    const configWithShortDelay = {
+      ...testConfig,
+      initial429DelayMs: 1,
+      max429Retries: 2,
+    };
+
+    const fastRequestService = new RequestService(
+      configWithShortDelay,
+      httpClient,
+    )
+      .setAuthToken(authToken)
+      .setRequestPollingIntervalSeconds(0);
+
+    jest
+      .spyOn(fastRequestService, "getAuthToken")
+      .mockResolvedValue(authToken as any);
+
+    const error429 = {
+      isAxiosError: true,
+      response: {
+        status: 429,
+        statusText: "Too Many Requests",
+        data: "Rate limited",
+      },
+      request: {},
+    };
+
+    // Always return 429
+    httpClient.get = jest.fn().mockRejectedValue(error429);
+
+    const request = new Request("https://foo.bar")
+      .setMethod(RequestMethod.Get)
+      .setCheckRequestStatus(false);
+
+    await expect(
+      fastRequestService.setClient(httpClient)["sendRequest"](request),
+    ).rejects.toThrow("Request Failed with status 429");
+
+    // Should have tried max retries (2) + 1 initial attempt = 3 total
+    expect(httpClient.get).toHaveBeenCalledTimes(3);
+  });
+
+  test("429 with POST without retry enabled (default)", async () => {
+    const error429 = {
+      isAxiosError: true,
+      response: {
+        status: 429,
+        statusText: "Too Many Requests",
+        data: "Rate limited",
+      },
+      request: {},
+    };
+
+    httpClient.post = jest.fn().mockRejectedValue(error429);
+
+    const request = new Request("https://foo.bar")
+      .setMethod(RequestMethod.Post)
+      .setCheckRequestStatus(false);
+
+    await expect(
+      requestService.setClient(httpClient)["sendRequest"](request),
+    ).rejects.toThrow("Request Failed with status 429");
+
+    // Should only try once (no retry for POST by default)
+    expect(httpClient.post).toHaveBeenCalledTimes(1);
+  });
 });
