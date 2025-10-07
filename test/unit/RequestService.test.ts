@@ -420,4 +420,363 @@ describe("RequestService", () => {
     await expect(pausePromise).resolves.toBeUndefined();
     jest.useRealTimers();
   });
+
+  test("start with cabinTemperature option", async () => {
+    const result = await requestService.start({ cabinTemperature: 22.5 });
+    expect(result.status).toEqual(CommandResponseStatus.success);
+  });
+
+  test("flashLights", async () => {
+    const result = await requestService.flashLights();
+    expect(result.status).toEqual(CommandResponseStatus.success);
+  });
+
+  test("flashLights with options", async () => {
+    const result = await requestService.flashLights({
+      delay: 5,
+      duration: 2,
+    });
+    expect(result.status).toEqual(CommandResponseStatus.success);
+  });
+
+  test("stopLights", async () => {
+    const result = await requestService.stopLights();
+    expect(result.status).toEqual(CommandResponseStatus.success);
+  });
+
+  test("getAccountVehicles with errors in response", async () => {
+    httpClient.post = jest.fn().mockResolvedValue({
+      data: {
+        errors: [{ message: "GraphQL error" }],
+        data: { vehicles: [] },
+      },
+    });
+
+    await expect(
+      requestService.setClient(httpClient).getAccountVehicles(),
+    ).rejects.toThrow("getAccountVehicles GraphQL errors present");
+  });
+
+  test("getAccountVehicles with non-success status", async () => {
+    // Mock sendRequest to return failure status
+    const originalSendRequest = requestService["sendRequest"];
+    requestService["sendRequest"] = jest.fn().mockResolvedValue({
+      status: CommandResponseStatus.failure,
+      response: { data: {} },
+    });
+
+    await expect(
+      requestService.setClient(httpClient).getAccountVehicles(),
+    ).rejects.toThrow("getAccountVehicles request did not succeed");
+
+    // Restore original
+    requestService["sendRequest"] = originalSendRequest;
+  });
+
+  test("setChargeLevelTarget with valid tcl", async () => {
+    // Mock getAuthToken
+    jest
+      .spyOn(requestService, "getAuthToken")
+      .mockResolvedValue({ access_token: "mock-token" } as any);
+
+    // Mock initEVSessionToken
+    jest.spyOn(requestService as any, "initEVSessionToken").mockResolvedValue({
+      token: "ev-token",
+      vehicleId: "vehicle-123",
+    });
+
+    httpClient.post = jest.fn().mockResolvedValue({
+      data: { status: "success" },
+    });
+
+    const result = await requestService
+      .setClient(httpClient)
+      .setChargeLevelTarget(80);
+    expect(result.status).toEqual(CommandResponseStatus.success);
+  });
+
+  test("setChargeLevelTarget with all options", async () => {
+    jest
+      .spyOn(requestService, "getAuthToken")
+      .mockResolvedValue({ access_token: "mock-token" } as any);
+    jest.spyOn(requestService as any, "initEVSessionToken").mockResolvedValue({
+      token: "ev-token",
+      vehicleId: "vehicle-123",
+    });
+
+    httpClient.post = jest.fn().mockResolvedValue({
+      data: { status: "success" },
+    });
+
+    const result = await requestService
+      .setClient(httpClient)
+      .setChargeLevelTarget(75, {
+        noMetricsRefresh: true,
+        clientRequestId: "test-123",
+        clientVersion: "7.18.0.8006",
+        os: "I",
+      });
+    expect(result.status).toEqual(CommandResponseStatus.success);
+  });
+
+  test("setChargeLevelTarget with invalid tcl (too low)", async () => {
+    await expect(requestService.setChargeLevelTarget(0)).rejects.toThrow(
+      "tcl must be a number between 1 and 100",
+    );
+  });
+
+  test("setChargeLevelTarget with invalid tcl (too high)", async () => {
+    await expect(requestService.setChargeLevelTarget(101)).rejects.toThrow(
+      "tcl must be a number between 1 and 100",
+    );
+  });
+
+  test("setChargeLevelTarget with invalid tcl (not finite)", async () => {
+    await expect(requestService.setChargeLevelTarget(NaN)).rejects.toThrow(
+      "tcl must be a number between 1 and 100",
+    );
+  });
+
+  test("stopCharging", async () => {
+    jest
+      .spyOn(requestService, "getAuthToken")
+      .mockResolvedValue({ access_token: "mock-token" } as any);
+    jest.spyOn(requestService as any, "initEVSessionToken").mockResolvedValue({
+      token: "ev-token",
+      vehicleId: "vehicle-123",
+    });
+
+    httpClient.post = jest.fn().mockResolvedValue({
+      data: { status: "success" },
+    });
+
+    const result = await requestService.setClient(httpClient).stopCharging();
+    expect(result.status).toEqual(CommandResponseStatus.success);
+  });
+
+  test("stopCharging with options", async () => {
+    jest
+      .spyOn(requestService, "getAuthToken")
+      .mockResolvedValue({ access_token: "mock-token" } as any);
+    jest.spyOn(requestService as any, "initEVSessionToken").mockResolvedValue({
+      token: "ev-token",
+      vehicleId: "vehicle-123",
+    });
+
+    httpClient.post = jest.fn().mockResolvedValue({
+      data: { status: "success" },
+    });
+
+    const result = await requestService.setClient(httpClient).stopCharging({
+      noMetricsRefresh: false,
+      clientRequestId: "test-456",
+      clientVersion: "7.18.0.8006",
+      os: "A",
+    });
+    expect(result.status).toEqual(CommandResponseStatus.success);
+  });
+
+  test("initEVSessionToken success", async () => {
+    httpClient.post = jest.fn().mockResolvedValue({
+      data: {
+        results: [
+          {
+            loginResponse: { token: "ev-token-123" },
+            getVehicleChargingMetricsResponse: { vehicleId: "vehicle-456" },
+          },
+        ],
+      },
+    });
+
+    const result = await requestService
+      .setClient(httpClient)
+      ["initEVSessionToken"]("gm-token");
+    expect(result.token).toEqual("ev-token-123");
+    expect(result.vehicleId).toEqual("vehicle-456");
+  });
+
+  test("initEVSessionToken missing token", async () => {
+    httpClient.post = jest.fn().mockResolvedValue({
+      data: {
+        results: [
+          {
+            getVehicleChargingMetricsResponse: { vehicleId: "vehicle-456" },
+          },
+        ],
+      },
+    });
+
+    await expect(
+      requestService.setClient(httpClient)["initEVSessionToken"]("gm-token"),
+    ).rejects.toThrow("Failed to initialize EV session token");
+  });
+
+  test("initEVSessionToken missing vehicleId", async () => {
+    httpClient.post = jest.fn().mockResolvedValue({
+      data: {
+        results: [
+          {
+            loginResponse: { token: "ev-token-123" },
+          },
+        ],
+      },
+    });
+
+    await expect(
+      requestService.setClient(httpClient)["initEVSessionToken"]("gm-token"),
+    ).rejects.toThrow(
+      "EV vehicleId not found in initSession metrics; cannot proceed",
+    );
+  });
+
+  test("randomHex generates correct length", () => {
+    const hex8 = requestService["randomHex"](8);
+    expect(hex8).toHaveLength(8);
+    expect(hex8).toMatch(/^[0-9a-f]{8}$/);
+
+    const hex16 = requestService["randomHex"](16);
+    expect(hex16).toHaveLength(16);
+    expect(hex16).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  test("parseRetryAfter with number", () => {
+    const result = requestService["parseRetryAfter"](5);
+    expect(result).toEqual(5000);
+  });
+
+  test("parseRetryAfter with numeric string", () => {
+    const result = requestService["parseRetryAfter"]("10");
+    expect(result).toEqual(10000);
+  });
+
+  test("parseRetryAfter with date string", () => {
+    const futureDate = new Date(Date.now() + 5000).toUTCString();
+    const result = requestService["parseRetryAfter"](futureDate);
+    expect(result).toBeGreaterThan(0);
+    expect(result).toBeLessThanOrEqual(5000);
+  });
+
+  test("parseRetryAfter with past date", () => {
+    const pastDate = new Date(Date.now() - 5000).toUTCString();
+    const result = requestService["parseRetryAfter"](pastDate);
+    expect(result).toEqual(0);
+  });
+
+  test("parseRetryAfter with invalid value", () => {
+    const result = requestService["parseRetryAfter"]("invalid");
+    expect(result).toBeNull();
+  });
+
+  test("parseRetryAfter with null", () => {
+    const result = requestService["parseRetryAfter"](null);
+    expect(result).toBeNull();
+  });
+
+  test("mapCommandStatus with success", () => {
+    expect(requestService["mapCommandStatus"]("success")).toEqual(
+      CommandResponseStatus.success,
+    );
+    expect(requestService["mapCommandStatus"]("SUCCESS")).toEqual(
+      CommandResponseStatus.success,
+    );
+    expect(requestService["mapCommandStatus"]("completed")).toEqual(
+      CommandResponseStatus.success,
+    );
+    expect(requestService["mapCommandStatus"]("complete")).toEqual(
+      CommandResponseStatus.success,
+    );
+  });
+
+  test("mapCommandStatus with failure", () => {
+    expect(requestService["mapCommandStatus"]("failure")).toEqual(
+      CommandResponseStatus.failure,
+    );
+    expect(requestService["mapCommandStatus"]("FAILURE")).toEqual(
+      CommandResponseStatus.failure,
+    );
+    expect(requestService["mapCommandStatus"]("failed")).toEqual(
+      CommandResponseStatus.failure,
+    );
+    expect(requestService["mapCommandStatus"]("error")).toEqual(
+      CommandResponseStatus.failure,
+    );
+  });
+
+  test("mapCommandStatus with inProgress", () => {
+    expect(requestService["mapCommandStatus"]("in_progress")).toEqual(
+      CommandResponseStatus.inProgress,
+    );
+    expect(requestService["mapCommandStatus"]("IN_PROGRESS")).toEqual(
+      CommandResponseStatus.inProgress,
+    );
+    expect(requestService["mapCommandStatus"]("pending")).toEqual(
+      CommandResponseStatus.inProgress,
+    );
+  });
+
+  test("mapCommandStatus with empty string", () => {
+    expect(requestService["mapCommandStatus"]("")).toEqual(
+      CommandResponseStatus.inProgress,
+    );
+  });
+
+  test("ensureVehicleIdFromGarage with cached vehicleId", async () => {
+    requestService["cachedVehicleId"] = "cached-123";
+    const result = await requestService["ensureVehicleIdFromGarage"](
+      testConfig.vin,
+    );
+    expect(result).toEqual("cached-123");
+  });
+
+  test("ensureVehicleIdFromGarage finds vehicleId", async () => {
+    requestService["cachedVehicleId"] = undefined;
+    httpClient.post = jest.fn().mockResolvedValue({
+      data: {
+        data: {
+          vehicles: [
+            { vin: testConfig.vin.toUpperCase(), vehicleId: "found-456" },
+          ],
+        },
+      },
+    });
+
+    const result = await requestService
+      .setClient(httpClient)
+      ["ensureVehicleIdFromGarage"](testConfig.vin.toUpperCase());
+    expect(result).toEqual("found-456");
+    expect(requestService["cachedVehicleId"]).toEqual("found-456");
+  });
+
+  test("ensureVehicleIdFromGarage when vehicle not found", async () => {
+    requestService["cachedVehicleId"] = undefined;
+    httpClient.post = jest.fn().mockResolvedValue({
+      data: {
+        data: {
+          vehicles: [{ vin: "DIFFERENTVIN", vehicleId: "other-789" }],
+        },
+      },
+    });
+
+    const result = await requestService
+      .setClient(httpClient)
+      ["ensureVehicleIdFromGarage"](testConfig.vin.toUpperCase());
+    expect(result).toBeUndefined();
+  });
+
+  test("ensureVehicleIdFromGarage when getAccountVehicles throws", async () => {
+    requestService["cachedVehicleId"] = undefined;
+    httpClient.post = jest.fn().mockRejectedValue(new Error("API error"));
+
+    const result = await requestService
+      .setClient(httpClient)
+      ["ensureVehicleIdFromGarage"](testConfig.vin.toUpperCase());
+    expect(result).toBeUndefined();
+  });
+
+  test("delay helper function", async () => {
+    const start = Date.now();
+    await requestService["delay"](100);
+    const elapsed = Date.now() - start;
+    expect(elapsed).toBeGreaterThanOrEqual(90); // Allow some tolerance
+  });
 });

@@ -42,6 +42,44 @@ describe("OnStar", () => {
     await onStar.cancelAlert();
   });
 
+  test("flashLights", async () => {
+    await onStar.flashLights();
+  });
+
+  test("flashLights with options", async () => {
+    await onStar.flashLights({ delay: 5, duration: 2 });
+  });
+
+  test("stopLights", async () => {
+    await onStar.stopLights();
+  });
+
+  test("setChargeLevelTarget", async () => {
+    await onStar.setChargeLevelTarget(80);
+  });
+
+  test("setChargeLevelTarget with options", async () => {
+    await onStar.setChargeLevelTarget(80, {
+      noMetricsRefresh: true,
+      clientRequestId: "test-123",
+      clientVersion: "7.18.0.8006",
+      os: "I",
+    });
+  });
+
+  test("stopCharging", async () => {
+    await onStar.stopCharging();
+  });
+
+  test("stopCharging with options", async () => {
+    await onStar.stopCharging({
+      noMetricsRefresh: false,
+      clientRequestId: "test-456",
+      clientVersion: "7.18.0.8006",
+      os: "A",
+    });
+  });
+
   test.skip("chargeOverride (disabled)", async () => {
     // Charging APIs are currently disabled
   });
