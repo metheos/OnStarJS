@@ -284,6 +284,60 @@ class RequestService {
     return this.sendRequest(req);
   }
 
+  /**
+   * EV: Stop charging session
+   * Always initializes a fresh short-lived EV session token (like setChargeLevelTarget)
+   * so we derive the correct vehicleId from metrics. API responds synchronously.
+   */
+  async stopCharging(opts?: {
+    noMetricsRefresh?: boolean;
+    clientRequestId?: string;
+    clientVersion?: string; // default 7.18.0.8006
+    os?: "A" | "I"; // Android or iOS indicator for EV API metadata
+  }): Promise<Result> {
+    const gmMobileToken = (await this.getAuthToken()).access_token;
+    const { token: evToken, vehicleId: sessionVehicleId } =
+      await this.initEVSessionToken(gmMobileToken);
+    const vehicleId = sessionVehicleId!;
+
+    const baseUrl = `https://eve-vcn.ext.gm.com/api/gmone/v1/vehicle/performStopCharging`;
+    const clientVersion = opts?.clientVersion ?? "7.18.0.8006";
+    const os = opts?.os ?? "A";
+    const query = new URLSearchParams({
+      vehicleVin: this.config.vin,
+      clientVersion,
+      clientType: "bev-myowner",
+      buildType: "r",
+      clientLocale: "en-US",
+      deviceId: this.config.deviceId,
+      os,
+      ts: String(Date.now()),
+      varch: "globalb",
+      sid: this.randomHex(8).toUpperCase(),
+      pid: this.randomHex(8).toUpperCase(),
+    });
+
+    const bodyParams = new URLSearchParams({
+      vehicleId,
+      noMetricsRefresh: String(opts?.noMetricsRefresh ?? false),
+      clientRequestId: opts?.clientRequestId ?? uuidv4(),
+    });
+
+    const req = new Request(`${baseUrl}?${query.toString()}`)
+      .setMethod(RequestMethod.Post)
+      .setAuthRequired(false)
+      .setContentType("application/x-www-form-urlencoded")
+      .setHeaders({
+        accept: "*/*",
+        "x-gm-mobiletoken": gmMobileToken,
+        "x-gm-token": evToken,
+      })
+      .setBody(bodyParams.toString())
+      .setCheckRequestStatus(false); // EV API responds synchronously
+
+    return this.sendRequest(req);
+  }
+
   async diagnostics(): Promise<
     import("./types").TypedResult<import("./types").HealthStatusResponse>
   > {
