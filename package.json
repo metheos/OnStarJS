@@ -20,8 +20,8 @@
     "test": "test"
   },
   "scripts": {
-    "build": "rm -rf dist && rollup -c",
-    "dev": "rm -rf dist && rollup -c -w",
+    "build": "rimraf dist && rollup -c",
+    "dev": "rimraf dist && rollup -c -w",
     "lint": "prettier --write .",
     "prepublishOnly": "pnpm run build",
     "release": "commit-and-tag-version --sign",
@@ -37,7 +37,11 @@
     "setup:env": "node scripts/setup-env.js",
     "setup:env:bash": "chmod +x scripts/setup-env.sh && ./scripts/setup-env.sh",
     "setup:credentials": "node scripts/credential-manager.js",
-    "setup:interactive": "node scripts/credential-manager.js"
+    "setup:interactive": "node scripts/credential-manager.js",
+    "run:request-service": "pnpm run build && node scripts/request-service-cli.mjs",
+    "run:get-vehicles": "pnpm run build && node scripts/get-vehicles.mjs",
+    "run:get-diagnostics": "pnpm run build && node scripts/get-diagnostics.mjs",
+    "run:get-tire-pressure": "pnpm run build && node scripts/get-tire-pressure.mjs"
   },
   "lint-staged": {
     "*.{js,ts,md,yml}": [
@@ -96,6 +100,7 @@
     "jest": "^30.1.3",
     "lint-staged": "^16.1.6",
     "prettier": "3.6.2",
+    "rimraf": "^6.0.1",
     "rollup": "^4.50.1",
     "ts-jest": "^29.4.1",
     "ts-mockito": "^2.6.1",

@@ -4,6 +4,32 @@ This directory contains utilities for setting up your OnStarJS environment, part
 
 ## Scripts
 
+### `request-service-cli.mjs`
+
+Interactive runner for any public RequestService method with verbose JSON output. It reads credentials from your environment (supports `.env` via dotenv), then lets you pick an action and optionally enter parameters.
+
+Usage
+
+```bash
+pnpm run run:request-service
+```
+
+Environment variables required (same as other samples):
+
+- `DEVICEID` (uuid for the device)
+- `VIN` (vehicle VIN)
+- `ONSTAR_USERNAME`
+- `ONSTAR_PASSWORD`
+- `ONSTAR_PIN`
+- `ONSTAR_TOTPKEY`
+- Optional: `TOKEN_LOCATION`, request/429 knobs like `MAX_429_RETRIES`, `INITIAL_429_DELAY_MS`, `BACKOFF_FACTOR`, `JITTER_MS`, `MAX_429_DELAY_MS`, `CHECK_REQUEST_STATUS`, `REQUEST_POLL_INTERVAL_SECONDS`, `REQUEST_POLL_TIMEOUT_SECONDS`, `RETRY_POST_ON_429`.
+
+Notes
+
+- Builds the library before running to ensure `dist/` is up to date.
+- Shows full result payloads to help with debugging.
+- Includes a toggle to flip `checkRequestStatus` at runtime.
+
 ### `setup-env.js`
 
 #### Automatic environment setup

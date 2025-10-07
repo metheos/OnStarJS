@@ -1,0 +1,136 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "pnpm build",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"build"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "pnpm test:unit",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"test:unit"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "test"
+		},
+		{
+			"label": "pnpm test:functional",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"test:functional"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "test"
+		},
+		{
+			"label": "pnpm build (post-fix)",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"build"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "pnpm build (decompress on)",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"build"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "pnpm build (vehicles mapping)",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"build"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "pnpm build (diagnostics retrofit)",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"build"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "pnpm build (blend tire pressure)",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"build"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "pnpm run:get-diagnostics",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"run:get-diagnostics"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "pnpm run:get-diagnostics (with mobiletoken)",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"run:get-diagnostics"
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build"
+		},
+		{
+			"label": "build-onstarjs",
+			"type": "shell",
+			"command": "pnpm run build",
+			"isBackground": false,
+			"problemMatcher": [
+				"$tsc",
+				"$eslint-stylish"
+			],
+			"group": "build"
+		}
+	]
+}

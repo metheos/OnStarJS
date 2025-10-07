@@ -7,11 +7,12 @@ import {
   OnStarConfig,
   Result,
   AlertRequestOptions,
-  DiagnosticsRequestOptions,
-  SetChargingProfileRequestOptions,
   DoorRequestOptions,
   TrunkRequestOptions,
-  ChargeOverrideOptions,
+  StartRequestOptions,
+  GarageVehiclesResponse,
+  HealthStatusResponse,
+  TypedResult,
 } from "./types";
 
 class OnStar {
@@ -23,12 +24,12 @@ class OnStar {
     return new OnStar(requestService);
   }
 
-  async getAccountVehicles(): Promise<Result> {
+  async getAccountVehicles(): Promise<GarageVehiclesResponse> {
     return this.requestService.getAccountVehicles();
   }
 
-  async start(): Promise<Result> {
-    return this.requestService.start();
+  async start(options?: StartRequestOptions): Promise<Result> {
+    return this.requestService.start(options);
   }
 
   async cancelStart(): Promise<Result> {
@@ -59,26 +60,57 @@ class OnStar {
     return this.requestService.cancelAlert();
   }
 
-  async chargeOverride(options?: ChargeOverrideOptions): Promise<Result> {
-    return this.requestService.chargeOverride(options);
+  async flashLights(options?: AlertRequestOptions): Promise<Result> {
+    return this.requestService.flashLights(options || {});
   }
 
-  async getChargingProfile(): Promise<Result> {
-    return this.requestService.getChargingProfile();
+  async stopLights(): Promise<Result> {
+    return this.requestService.stopLights();
   }
 
-  async setChargingProfile(
-    options?: SetChargingProfileRequestOptions,
-  ): Promise<Result> {
-    return this.requestService.setChargingProfile(options);
-  }
+  // async chargeOverride(options?: ChargeOverrideOptions): Promise<Result> {
+  //   return this.requestService.chargeOverride(options);
+  // }
 
-  async diagnostics(options?: DiagnosticsRequestOptions): Promise<Result> {
-    return this.requestService.diagnostics(options);
+  // async getChargingProfile(): Promise<Result> {
+  //   return this.requestService.getChargingProfile();
+  // }
+
+  // async setChargingProfile(
+  //   options?: SetChargingProfileRequestOptions,
+  // ): Promise<Result> {
+  //   return this.requestService.setChargingProfile(options);
+  // }
+
+  async diagnostics(): Promise<TypedResult<HealthStatusResponse>> {
+    return this.requestService.diagnostics();
   }
 
   async location(): Promise<Result> {
     return this.requestService.location();
+  }
+
+  // EV: Set target charge level percentage
+  async setChargeLevelTarget(
+    tcl: number,
+    opts?: {
+      noMetricsRefresh?: boolean;
+      clientRequestId?: string;
+      clientVersion?: string;
+      os?: "A" | "I";
+    },
+  ): Promise<Result> {
+    return this.requestService.setChargeLevelTarget(tcl, opts);
+  }
+
+  // EV: Stop charging session
+  async stopCharging(opts?: {
+    noMetricsRefresh?: boolean;
+    clientRequestId?: string;
+    clientVersion?: string;
+    os?: "A" | "I";
+  }): Promise<Result> {
+    return this.requestService.stopCharging(opts);
   }
 
   setCheckRequestStatus(checkStatus: boolean) {
@@ -87,3 +119,4 @@ class OnStar {
 }
 
 export default OnStar;
+export * from "./types";

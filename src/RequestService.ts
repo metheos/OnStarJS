@@ -6,12 +6,11 @@ import {
   AlertRequestAction,
   AlertRequestOptions,
   AlertRequestOverride,
-  ChargeOverrideMode,
-  ChargeOverrideOptions,
-  ChargingProfileChargeMode,
-  ChargingProfileRateType,
-  DiagnosticRequestItem,
-  DiagnosticsRequestOptions,
+  // ChargeOverrideMode,
+  // ChargeOverrideOptions,
+  // ChargingProfileChargeMode,
+  // ChargingProfileRateType,
+  // SetChargingProfileRequestOptions,
   DoorRequestOptions,
   TrunkRequestOptions,
   HttpClient,
@@ -19,29 +18,26 @@ import {
   OnStarConfig,
   RequestResponse,
   Result,
-  SetChargingProfileRequestOptions,
   CommandResponseStatus,
   GMAuthConfig,
 } from "./types";
 import onStarAppConfig from "./onStarAppConfig.json";
 import axios from "axios";
+import { v4 as uuidv4 } from "uuid";
 import { getGMAPIJWT } from "./auth/GMAuth";
 
 enum OnStarApiCommand {
+  LockDoor = "lock",
+  UnlockDoor = "unlock",
   Alert = "alert",
   CancelAlert = "cancelAlert",
-  CancelStart = "cancelStart",
-  ChargeOverride = "chargeOverride",
-  Connect = "connect",
-  Diagnostics = "diagnostics",
-  GetChargingProfile = "getChargingProfile",
-  LockDoor = "lockDoor",
-  SetChargingProfile = "setChargingProfile",
   Start = "start",
-  UnlockDoor = "unlockDoor",
-  Location = "location",
+  CancelStart = "cancelStart",
   LockTrunk = "lockTrunk",
   UnlockTrunk = "unlockTrunk",
+  // ChargeOverride = "chargeOverride",
+  // GetChargingProfile = "getChargingProfile",
+  // SetChargingProfile = "setChargingProfile",
 }
 
 class RequestService {
@@ -51,8 +47,7 @@ class RequestService {
   private checkRequestStatus: boolean;
   private requestPollingTimeoutSeconds: number;
   private requestPollingIntervalSeconds: number;
-  private tokenRefreshPromise?: Promise<OAuthToken>;
-  private tokenUpgradePromise?: Promise<void>;
+  private cachedVehicleId?: string;
 
   constructor(
     config: OnStarConfig,
@@ -108,8 +103,15 @@ class RequestService {
     return this;
   }
 
-  async start(): Promise<Result> {
+  async start(
+    options?: import("./types").StartRequestOptions,
+  ): Promise<Result> {
     const request = this.getCommandRequest(OnStarApiCommand.Start);
+    if (options && typeof options.cabinTemperature === "number") {
+      // EV/Remote start can accept an optional cabin temperature (Celsius)
+      const temp = Math.round(options.cabinTemperature);
+      request.setBody({ cabinTemperature: temp });
+    }
 
     return this.sendRequest(request);
   }
@@ -191,51 +193,15 @@ class RequestService {
     return this.sendRequest(request);
   }
 
-  async chargeOverride(options: ChargeOverrideOptions = {}): Promise<Result> {
-    const request = this.getCommandRequest(
-      OnStarApiCommand.ChargeOverride,
-    ).setBody({
-      chargeOverrideRequest: {
-        mode: ChargeOverrideMode.ChargeNow,
-        ...options,
-      },
-    });
-
-    return this.sendRequest(request);
-  }
-
-  async getChargingProfile(): Promise<Result> {
-    const request = this.getCommandRequest(OnStarApiCommand.GetChargingProfile);
-
-    return this.sendRequest(request);
-  }
-
-  async setChargingProfile(
-    options: SetChargingProfileRequestOptions = {},
-  ): Promise<Result> {
-    const request = this.getCommandRequest(
-      OnStarApiCommand.SetChargingProfile,
-    ).setBody({
-      chargingProfile: {
-        chargeMode: ChargingProfileChargeMode.Immediate,
-        rateType: ChargingProfileRateType.Midpeak,
-        ...options,
-      },
-    });
-
-    return this.sendRequest(request);
-  }
-
-  async diagnostics(options: DiagnosticsRequestOptions = {}): Promise<Result> {
-    const request = this.getCommandRequest(
-      OnStarApiCommand.Diagnostics,
-    ).setBody({
-      diagnosticsRequest: {
-        diagnosticItem: [
-          DiagnosticRequestItem.Odometer,
-          DiagnosticRequestItem.TirePressure,
-          DiagnosticRequestItem.AmbientAirTemperature,
-          DiagnosticRequestItem.LastTripDistance,
+  async flashLights(options: AlertRequestOptions = {}): Promise<Result> {
+    const request = this.getCommandRequest(OnStarApiCommand.Alert).setBody({
+      alertRequest: {
+        action: [AlertRequestAction.Flash],
+        delay: 0,
+        duration: 1,
+        override: [
+          AlertRequestOverride.DoorOpen,
+          AlertRequestOverride.IgnitionOn,
         ],
         ...options,
       },
@@ -244,70 +210,253 @@ class RequestService {
     return this.sendRequest(request);
   }
 
-  async getAccountVehicles(): Promise<Result> {
-    const request = new Request(
-      `${this.getApiUrlForPath(
-        "/account/vehicles",
-      )}?includeCommands=true&includeEntitlements=true&includeModules=true&includeSharedVehicles=true`,
-    )
-      .setUpgradeRequired(false)
-      .setMethod(RequestMethod.Get);
+  async stopLights(): Promise<Result> {
+    const request = this.getCommandRequest(OnStarApiCommand.CancelAlert);
 
     return this.sendRequest(request);
   }
 
+  // Charging-related APIs are temporarily disabled pending new API implementation
+  // async chargeOverride(options: ChargeOverrideOptions = {}): Promise<Result> { /* ... */ }
+  // async getChargingProfile(): Promise<Result> { /* ... */ }
+  // async setChargingProfile(options: SetChargingProfileRequestOptions = {}): Promise<Result> { /* ... */ }
+
+  /**
+   * EV: Set the target charge level percentage (tcl)
+   * Always fetches a fresh short-lived EV session token before issuing the command.
+   */
+  async setChargeLevelTarget(
+    tcl: number,
+    opts?: {
+      noMetricsRefresh?: boolean;
+      clientRequestId?: string;
+      clientVersion?: string; // default 7.18.0.8006
+      os?: "A" | "I"; // Android or iOS indicator for EV API metadata
+    },
+  ): Promise<Result> {
+    if (tcl < 1 || tcl > 100 || !Number.isFinite(tcl)) {
+      throw new Error("tcl must be a number between 1 and 100");
+    }
+
+    const gmMobileToken = (await this.getAuthToken()).access_token;
+    const { token: evToken, vehicleId: sessionVehicleId } =
+      await this.initEVSessionToken(gmMobileToken);
+    const vehicleId = sessionVehicleId!; // must come from initSession metrics
+
+    const baseUrl = `https://eve-vcn.ext.gm.com/api/gmone/v1/vehicle/performSetChargingSettings`;
+    const clientVersion = opts?.clientVersion ?? "7.18.0.8006";
+    const os = opts?.os ?? "A"; // default Android metadata
+    const query = new URLSearchParams({
+      vehicleVin: this.config.vin,
+      clientVersion,
+      clientType: "bev-myowner",
+      buildType: "r",
+      clientLocale: "en-US",
+      deviceId: this.config.deviceId,
+      os,
+      ts: String(Date.now()),
+      varch: "globalb",
+      sid: this.randomHex(8).toUpperCase(),
+      pid: this.randomHex(8).toUpperCase(),
+    });
+
+    const bodyParams = new URLSearchParams({
+      tcl: String(Math.round(tcl)),
+      vehicleId,
+      noMetricsRefresh: String(opts?.noMetricsRefresh ?? false),
+      clientRequestId: opts?.clientRequestId ?? uuidv4(),
+    });
+
+    // VehicleId is derived exclusively from initSession metrics
+
+    const req = new Request(`${baseUrl}?${query.toString()}`)
+      .setMethod(RequestMethod.Post)
+      .setAuthRequired(false)
+      .setContentType("application/x-www-form-urlencoded")
+      .setHeaders({
+        accept: "*/*",
+        "x-gm-mobiletoken": gmMobileToken,
+        "x-gm-token": evToken,
+      })
+      .setBody(bodyParams.toString())
+      .setCheckRequestStatus(false); // EV API responds synchronously
+
+    return this.sendRequest(req);
+  }
+
+  /**
+   * EV: Stop charging session
+   * Always initializes a fresh short-lived EV session token (like setChargeLevelTarget)
+   * so we derive the correct vehicleId from metrics. API responds synchronously.
+   */
+  async stopCharging(opts?: {
+    noMetricsRefresh?: boolean;
+    clientRequestId?: string;
+    clientVersion?: string; // default 7.18.0.8006
+    os?: "A" | "I"; // Android or iOS indicator for EV API metadata
+  }): Promise<Result> {
+    const gmMobileToken = (await this.getAuthToken()).access_token;
+    const { token: evToken, vehicleId: sessionVehicleId } =
+      await this.initEVSessionToken(gmMobileToken);
+    const vehicleId = sessionVehicleId!;
+
+    const baseUrl = `https://eve-vcn.ext.gm.com/api/gmone/v1/vehicle/performStopCharging`;
+    const clientVersion = opts?.clientVersion ?? "7.18.0.8006";
+    const os = opts?.os ?? "A";
+    const query = new URLSearchParams({
+      vehicleVin: this.config.vin,
+      clientVersion,
+      clientType: "bev-myowner",
+      buildType: "r",
+      clientLocale: "en-US",
+      deviceId: this.config.deviceId,
+      os,
+      ts: String(Date.now()),
+      varch: "globalb",
+      sid: this.randomHex(8).toUpperCase(),
+      pid: this.randomHex(8).toUpperCase(),
+    });
+
+    const bodyParams = new URLSearchParams({
+      vehicleId,
+      noMetricsRefresh: String(opts?.noMetricsRefresh ?? false),
+      clientRequestId: opts?.clientRequestId ?? uuidv4(),
+    });
+
+    const req = new Request(`${baseUrl}?${query.toString()}`)
+      .setMethod(RequestMethod.Post)
+      .setAuthRequired(false)
+      .setContentType("application/x-www-form-urlencoded")
+      .setHeaders({
+        accept: "*/*",
+        "x-gm-mobiletoken": gmMobileToken,
+        "x-gm-token": evToken,
+      })
+      .setBody(bodyParams.toString())
+      .setCheckRequestStatus(false); // EV API responds synchronously
+
+    return this.sendRequest(req);
+  }
+
+  async diagnostics(): Promise<
+    import("./types").TypedResult<import("./types").HealthStatusResponse>
+  > {
+    // vehicle health status API
+    const url = `${onStarAppConfig.serviceUrl}/api/v1/vh/vehiclehealth/v1/healthstatus/${this.config.vin}`;
+
+    const request = new Request(url)
+      .setMethod(RequestMethod.Get)
+      .setContentType("application/json")
+      .setCheckRequestStatus(false);
+
+    return this.sendRequest(request) as Promise<
+      import("./types").TypedResult<import("./types").HealthStatusResponse>
+    >;
+  }
+
+  async getAccountVehicles(): Promise<
+    import("./types").GarageVehiclesResponse
+  > {
+    // v3 GraphQL garage API per captured data
+    const url = `${onStarAppConfig.serviceUrl}/mbff/garage/v1`;
+    const graphQL =
+      "query getVehiclesMBFF {" +
+      "vehicles {" +
+      "vin vehicleId make model nickName year imageUrl onstarCapable vehicleType roleCode onstarStatusCode onstarAccountNumber preDelivery orderNum orderStatus" +
+      "}" +
+      "}";
+
+    const request = new Request(url)
+      .setMethod(RequestMethod.Post)
+      .setContentType("text/plain; charset=utf-8")
+      .setBody(graphQL)
+      .setCheckRequestStatus(false);
+
+    const result = await this.sendRequest(request);
+    const payload: any = result.response?.data;
+    if (result.status !== CommandResponseStatus.success) {
+      console.error("getAccountVehicles failed", {
+        status: result.status,
+        data: payload,
+      });
+      throw new Error("getAccountVehicles request did not succeed");
+    }
+    if (payload && Array.isArray(payload.errors) && payload.errors.length) {
+      console.error("getAccountVehicles GraphQL errors", {
+        errors: payload.errors,
+      });
+      throw new Error("getAccountVehicles GraphQL errors present");
+    }
+    return payload as import("./types").GarageVehiclesResponse;
+  }
+
   async location(): Promise<Result> {
-    return this.sendRequest(this.getCommandRequest(OnStarApiCommand.Location));
+    const base = `${onStarAppConfig.serviceUrl}/veh/datadelivery/digitaltwin/v1/vehicles/${this.config.vin}`;
+
+    const makeReq = (sms: boolean) =>
+      new Request(`${base}?sms=${sms ? "true" : "false"}&region=na`)
+        .setMethod(RequestMethod.Get)
+        .setContentType("application/json")
+        .setCheckRequestStatus(false);
+
+    // Kick off a fresh location update
+    let result = await this.sendRequest(makeReq(true));
+    const timeoutMs = this.requestPollingTimeoutSeconds * 1000;
+    const intervalMs = this.requestPollingIntervalSeconds * 1000;
+    const startTs = Date.now();
+
+    // Try to poll until updatePending != PENDING
+    const getPending = (r: Result) => {
+      const data: any = r.response?.data;
+      return data?.telemetry?.data?.session?.updatePending as
+        | string
+        | undefined;
+    };
+
+    let pending = getPending(result);
+    if (pending === "PENDING") {
+      while (Date.now() - startTs < timeoutMs) {
+        await this.delay(intervalMs);
+        result = await this.sendRequest(makeReq(false));
+        pending = getPending(result);
+        if (pending && pending !== "PENDING") break;
+      }
+    }
+
+    return result;
   }
 
   private getCommandRequest(command: OnStarApiCommand): Request {
     return new Request(this.getCommandUrl(command));
   }
 
+  // Legacy init helpers removed (readGMAccessToken, buildInitQueryParams, randomHex)
+
   private getApiUrlForPath(path: string): string {
-    return `${onStarAppConfig.serviceUrl}/api/v1${path}`;
+    return `${onStarAppConfig.serviceUrl}/veh/cmd/v3/${path}`;
   }
 
   private getCommandUrl(command: string): string {
-    return this.getApiUrlForPath(
-      `/account/vehicles/${this.config.vin}/commands/${command}`,
-    );
+    return this.getApiUrlForPath(`${command}/${this.config.vin}`);
   }
 
   private async getHeaders(request: Request): Promise<any> {
     const headers: any = {
-      Accept: "application/json",
-      "Accept-Language": "en-US",
-      "Content-Type": request.getContentType(),
-      Host: "na-mobile-api.gm.com",
-      Connection: "keep-alive",
-      "Accept-Encoding": "br, gzip, deflate",
-      "User-Agent": onStarAppConfig.userAgent,
+      accept: "application/json",
+      "accept-encoding": "gzip",
+      "accept-language": "en-US",
+      appversion: "myOwner-chevrolet-android-7.17.0-0",
+      locale: "en-US",
+      "content-type": request.getContentType(),
+      "user-agent": onStarAppConfig.userAgent,
     };
 
     if (request.isAuthRequired()) {
       const authToken = await this.getAuthToken();
-
-      if (request.isUpgradeRequired() && !authToken.upgraded) {
-        await this.connectAndUpgradeAuthToken();
-      }
-
       headers["Authorization"] = `Bearer ${authToken.access_token}`;
     }
 
     return headers;
-  }
-
-  private async connectRequest(): Promise<Result> {
-    const request = this.getCommandRequest(
-      OnStarApiCommand.Connect,
-    ).setUpgradeRequired(false);
-
-    return this.sendRequest(request);
-  }
-
-  private async upgradeRequest(): Promise<Result> {
-    throw new Error("Not Implemented");
   }
 
   async getAuthToken(): Promise<OAuthToken> {
@@ -329,111 +478,317 @@ class RequestService {
     return this.authToken;
   }
 
-  private async connectAndUpgradeAuthToken(): Promise<void> {
-    if (!this.tokenUpgradePromise) {
-      this.tokenUpgradePromise = new Promise(async (resolve, reject) => {
-        if (!this.authToken) {
-          return reject("Missing auth token");
-        }
-
-        try {
-          await this.connectRequest();
-          await this.upgradeRequest();
-
-          this.authToken.upgraded = true;
-          resolve();
-        } catch (e) {
-          reject(e);
-        }
-
-        this.tokenUpgradePromise = undefined;
-      });
-    }
-
-    return this.tokenUpgradePromise;
-  }
-
   private async sendRequest(request: Request): Promise<Result> {
-    try {
-      const response = await this.makeClientRequest(request);
-      const { data } = response;
+    const max429Retries = this.config.max429Retries ?? 3;
+    const retryPost = this.config.retryOn429ForPost ?? false;
+    const baseDelay = this.config.initial429DelayMs ?? 1000;
+    const backoff = this.config.backoffFactor ?? 2;
+    const jitter = this.config.jitterMs ?? 250;
+    const maxDelay = this.config.max429DelayMs ?? 30000;
 
-      const checkRequestStatus =
-        request.getCheckRequestStatus() ?? this.checkRequestStatus;
+    let attempt = 0;
 
-      if (checkRequestStatus && typeof data === "object") {
-        const { commandResponse } = data;
+    while (true) {
+      try {
+        const response = await this.makeClientRequest(request);
+        const { data } = response;
 
-        if (commandResponse) {
-          const { requestTime, status, url, type } = commandResponse;
+        const checkRequestStatus =
+          request.getCheckRequestStatus() ?? this.checkRequestStatus;
 
-          const requestTimestamp = new Date(requestTime).getTime();
+        if (checkRequestStatus && typeof data === "object") {
+          // Support both legacy shape with { commandResponse } and v3 top-level shape
+          // Example v3 initial response:
+          // { requestId, requestTime, status: "IN_PROGRESS", url, error }
+          let status: CommandResponseStatus | undefined;
+          let url: string | undefined;
+          let type: string | undefined;
+          let requestTime: string | undefined;
+          let requestId: string | undefined;
 
-          if (status === CommandResponseStatus.failure) {
-            throw new RequestError("Command Failure")
-              .setResponse(response)
-              .setRequest(request);
-          }
-
-          if (
-            Date.now() >=
-            requestTimestamp + this.requestPollingTimeoutSeconds * 1000
+          const anyData: any = data as any;
+          if (anyData.commandResponse) {
+            const {
+              requestTime: rt,
+              status: st,
+              url: u,
+              type: t,
+            } = anyData.commandResponse;
+            status = st as CommandResponseStatus;
+            url = u;
+            type = t;
+            requestTime = rt;
+            requestId = anyData.commandResponse.requestId;
+          } else if (
+            anyData.requestId &&
+            anyData.requestTime &&
+            anyData.status &&
+            anyData.url
           ) {
-            throw new RequestError("Command Timeout")
-              .setResponse(response)
-              .setRequest(request);
+            // Normalize uppercase statuses to our enum
+            status = this.mapCommandStatus(anyData.status);
+            url = anyData.url;
+            type = anyData.type; // might be undefined
+            requestTime = anyData.requestTime;
+            requestId = anyData.requestId;
           }
 
-          if (
-            status === CommandResponseStatus.inProgress &&
-            type !== "connect"
-          ) {
-            await this.checkRequestPause();
+          if (status) {
+            const requestTimestamp = new Date(requestTime as string).getTime();
 
-            const request = new Request(url)
-              .setMethod(RequestMethod.Get)
-              .setUpgradeRequired(false)
-              .setCheckRequestStatus(checkRequestStatus);
+            if (status === CommandResponseStatus.failure) {
+              throw new RequestError("Command Failure")
+                .setResponse(response)
+                .setRequest(request);
+            }
 
-            return this.sendRequest(request);
+            if (
+              Date.now() >=
+              requestTimestamp + this.requestPollingTimeoutSeconds * 1000
+            ) {
+              throw new RequestError("Command Timeout")
+                .setResponse(response)
+                .setRequest(request);
+            }
+
+            if (
+              status === CommandResponseStatus.inProgress &&
+              type !== "connect"
+            ) {
+              // Log only for the initial POST; skip logs for subsequent polling GETs
+              if (request.getMethod() === RequestMethod.Post) {
+                try {
+                  console.log(
+                    "info: Command accepted; polling for completion",
+                    {
+                      timestamp: new Date()
+                        .toISOString()
+                        .replace("T", " ")
+                        .slice(0, 19),
+                      requestId,
+                      url,
+                    },
+                  );
+                } catch (_) {
+                  // no-op logging safety
+                }
+              }
+
+              await this.checkRequestPause();
+
+              const pollReq = new Request(url as string)
+                .setMethod(RequestMethod.Get)
+                .setUpgradeRequired(false)
+                .setCheckRequestStatus(checkRequestStatus);
+
+              return this.sendRequest(pollReq);
+            }
+
+            return new RequestResult(status).setResponse(response).getResult();
           }
-
-          return new RequestResult(status).setResponse(response).getResult();
         }
-      }
 
-      return new RequestResult(CommandResponseStatus.success)
-        .setResponse(response)
-        .getResult();
-    } catch (error) {
-      if (error instanceof RequestError) {
-        throw error;
-      }
+        return new RequestResult(CommandResponseStatus.success)
+          .setResponse(response)
+          .getResult();
+      } catch (error) {
+        // If we received a 429 and we can/should retry, apply backoff and retry
+        const isAxios = axios.isAxiosError(error);
+        const status = isAxios ? error.response?.status : undefined;
+        const method = request.getMethod();
+        const methodStr = method === RequestMethod.Get ? "GET" : "POST";
 
-      let errorObj = new RequestError();
+        if (
+          status === 429 &&
+          (method === RequestMethod.Get || retryPost) &&
+          attempt < max429Retries
+        ) {
+          attempt++;
+          // Determine delay: prefer Retry-After header if present
+          let delayMs = baseDelay * Math.pow(backoff, attempt - 1);
+          let retryAfter: any = undefined;
+          let usedRetryAfter = false;
+          if (isAxios) {
+            retryAfter =
+              error.response?.headers?.["retry-after"] ??
+              error.response?.headers?.["Retry-After"];
+            const parsed = this.parseRetryAfter(retryAfter);
+            if (parsed !== null) {
+              delayMs = parsed;
+              usedRetryAfter = true;
+            }
+          }
+          // Cap and add small jitter
+          delayMs =
+            Math.min(delayMs, maxDelay) + Math.floor(Math.random() * jitter);
 
-      if (axios.isAxiosError(error)) {
-        if (error.response) {
-          errorObj.message = `Request Failed with status ${error.response.status} - ${error.response.statusText}`;
-          errorObj.setResponse(error.response);
-          errorObj.setRequest(error.request);
-        } else if (error.request) {
-          errorObj.message = "No response";
-          errorObj.setRequest(error.request);
-        } else {
+          console.warn("[throttle] 429 received; scheduling retry", {
+            url: request.getUrl(),
+            method: methodStr,
+            attempt,
+            maxRetries: max429Retries,
+            retryAfter,
+            usedRetryAfter,
+            delayMs,
+          });
+
+          await this.delay(delayMs);
+          // loop and retry
+          continue;
+        }
+
+        if (status === 429) {
+          let reason = "not-eligible";
+          if (!(method === RequestMethod.Get || retryPost)) {
+            reason = "post-retry-disabled";
+          } else if (attempt >= max429Retries) {
+            reason = "max-retries-exceeded";
+          }
+          console.warn("[throttle] 429 received; not retrying", {
+            url: request.getUrl(),
+            method: methodStr,
+            attempt,
+            maxRetries: max429Retries,
+            reason,
+          });
+        }
+
+        if (error instanceof RequestError) {
+          throw error;
+        }
+
+        let errorObj = new RequestError();
+
+        if (isAxios) {
+          if (error.response) {
+            errorObj.message = `Request Failed with status ${error.response.status} - ${error.response.statusText}`;
+            errorObj.setResponse({ data: error.response.data });
+            // Attach our logical Request, not axios' raw request, to avoid circular refs
+            errorObj.setRequest(request);
+          } else if (error.request) {
+            errorObj.message = "No response";
+            errorObj.setRequest(request);
+          } else {
+            errorObj.message = error.message;
+          }
+        } else if (error instanceof Error) {
           errorObj.message = error.message;
         }
-      } else if (error instanceof Error) {
-        errorObj.message = error.message;
-      }
 
-      throw errorObj;
+        throw errorObj;
+      }
     }
+  }
+
+  private delay(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  // ===== EV API helpers =====
+  private async initEVSessionToken(
+    gmMobileToken: string,
+  ): Promise<{ token: string; vehicleId?: string }> {
+    // Build URL with required metadata
+    const baseUrl = `https://eve-vcn.ext.gm.com/api/gmone/v1/admin/initSession`;
+    const clientVersion = "7.18.0.8006";
+    const query = new URLSearchParams({
+      vehicleVin: this.config.vin,
+      clientVersion,
+      clientType: "bev-myowner",
+      buildType: "r",
+      clientLocale: "en-US",
+      deviceId: this.config.deviceId,
+      os: "I", // emulate iOS like captured traffic (works with either)
+      ts: String(Date.now()),
+      sid: this.randomHex(8).toUpperCase(),
+      pid: this.randomHex(8).toUpperCase(),
+    });
+
+    // Form body requires the GM mobile token
+    const bodyParams = new URLSearchParams({
+      token: gmMobileToken,
+      vehicleVIN: this.config.vin, // observed in captures
+    });
+
+    const req = new Request(`${baseUrl}?${query.toString()}`)
+      .setMethod(RequestMethod.Post)
+      .setAuthRequired(false)
+      .setContentType("application/x-www-form-urlencoded")
+      .setHeaders({
+        accept: "*/*",
+      })
+      .setBody(bodyParams.toString())
+      .setCheckRequestStatus(false);
+
+    const result = await this.sendRequest(req);
+    const data: any = result.response?.data;
+
+    const token: string | undefined = data?.results?.[0]?.loginResponse?.token;
+    const vehicleId: string | undefined =
+      data?.results?.[0]?.getVehicleChargingMetricsResponse?.vehicleId;
+
+    if (!token) {
+      throw new Error("Failed to initialize EV session token");
+    }
+    if (!vehicleId) {
+      throw new Error(
+        "EV vehicleId not found in initSession metrics; cannot proceed",
+      );
+    }
+    this.cachedVehicleId = vehicleId;
+    return { token, vehicleId };
+  }
+
+  private async ensureVehicleIdFromGarage(
+    vin: string,
+  ): Promise<string | undefined> {
+    if (this.cachedVehicleId) return this.cachedVehicleId;
+    try {
+      const garage = await this.getAccountVehicles();
+      const list = garage?.data?.vehicles ?? [];
+      const match = list.find((v: any) => v.vin?.toUpperCase() === vin);
+      if (match?.vehicleId) {
+        this.cachedVehicleId = match.vehicleId;
+        return this.cachedVehicleId;
+      }
+    } catch (_) {
+      // ignore and return undefined to allow caller to throw a clearer error
+    }
+    return undefined;
+  }
+
+  private randomHex(len: number): string {
+    const bytes = new Uint8Array(len / 2 + (len % 2));
+    for (let i = 0; i < bytes.length; i++)
+      bytes[i] = Math.floor(Math.random() * 256);
+    return Array.from(bytes)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("")
+      .slice(0, len);
+  }
+
+  // Parses Retry-After header which can be seconds (number) or http-date.
+  private parseRetryAfter(retryAfter: any): number | null {
+    if (!retryAfter) return null;
+    if (typeof retryAfter === "number") {
+      return retryAfter * 1000;
+    }
+    const asNum = Number(retryAfter);
+    if (!Number.isNaN(asNum)) {
+      return asNum * 1000;
+    }
+    const date = new Date(retryAfter);
+    const ts = date.getTime();
+    if (!Number.isNaN(ts)) {
+      const diff = ts - Date.now();
+      return diff > 0 ? diff : 0;
+    }
+    return null;
   }
 
   private async makeClientRequest(request: Request): Promise<RequestResponse> {
     const headers = await this.getHeaders(request);
-    let requestOptions = {
+    let requestOptions: any = {
       headers: {
         ...headers,
         ...request.getHeaders(),
@@ -441,18 +796,15 @@ class RequestService {
     };
 
     if (request.getMethod() === RequestMethod.Post) {
-      requestOptions.headers = {
-        ...requestOptions.headers,
-        "Content-Length": request.getBody().length,
-      };
-
-      return this.client.post(
+      const axiosResp = await this.client.post(
         request.getUrl(),
         request.getBody(),
         requestOptions,
       );
+      return { data: (axiosResp as any).data };
     } else {
-      return this.client.get(request.getUrl(), requestOptions);
+      const axiosResp = await this.client.get(request.getUrl(), requestOptions);
+      return { data: (axiosResp as any).data };
     }
   }
 
@@ -460,6 +812,20 @@ class RequestService {
     return new Promise((resolve) =>
       setTimeout(resolve, this.requestPollingIntervalSeconds * 1000),
     );
+  }
+
+  // Normalize API status strings to CommandResponseStatus
+  private mapCommandStatus(status: string): CommandResponseStatus {
+    if (!status) return CommandResponseStatus.inProgress;
+    const s = String(status).toLowerCase();
+    if (s === "success" || s === "completed" || s === "complete") {
+      return CommandResponseStatus.success;
+    }
+    if (s === "failure" || s === "failed" || s === "error") {
+      return CommandResponseStatus.failure;
+    }
+    // Many v3 responses use IN_PROGRESS in caps
+    return CommandResponseStatus.inProgress;
   }
 }
 

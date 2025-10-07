@@ -22,6 +22,13 @@ export interface OnStarConfig {
   checkRequestStatus?: boolean;
   requestPollingIntervalSeconds?: number;
   requestPollingTimeoutSeconds?: number;
+  // Rate limit / 429 handling configuration (optional)
+  max429Retries?: number; // default 3
+  initial429DelayMs?: number; // default 1000
+  backoffFactor?: number; // default 2
+  jitterMs?: number; // default 250
+  max429DelayMs?: number; // default 30000
+  retryOn429ForPost?: boolean; // default false; only GET retried by default
 }
 export interface GMAuthConfig {
   deviceId: string;
@@ -107,37 +114,7 @@ export interface AlertRequestOptions {
   override?: AlertRequestOverride[];
 }
 
-export enum DiagnosticRequestItem {
-  AmbientAirTemperature = "AMBIENT AIR TEMPERATURE",
-  EngineCoolantTemp = "ENGINE COOLANT TEMP",
-  EngineRpm = "ENGINE RPM",
-  EvBatteryLevel = "EV BATTERY LEVEL",
-  EvChargeState = "EV CHARGE STATE",
-  EvEstimatedChargeEnd = "EV ESTIMATED CHARGE END",
-  EvPlugState = "EV PLUG STATE",
-  EvPlugVoltage = "EV PLUG VOLTAGE",
-  EvScheduledChargeStart = "EV SCHEDULED CHARGE START",
-  FuelTankInfo = "FUEL TANK INFO",
-  GetChargeMode = "GET CHARGE MODE",
-  GetCommuteSchedule = "GET COMMUTE SCHEDULE",
-  HandsFreeCalling = "HANDS FREE CALLING",
-  HotspotConfig = "HOTSPOT CONFIG",
-  HotspotStatus = "HOTSPOT STATUS",
-  IntermVoltBattVolt = "INTERM VOLT BATT VOLT",
-  LastTripDistance = "LAST TRIP DISTANCE",
-  LastTripFuelEconomy = "LAST TRIP FUEL ECONOMY",
-  LifetimeEvOdometer = "LIFETIME EV ODOMETER",
-  LifetimeFuelEcon = "LIFETIME FUEL ECON",
-  LifetimeFuelUsed = "LIFETIME FUEL USED",
-  Odometer = "ODOMETER",
-  OilLife = "OIL LIFE",
-  TirePressure = "TIRE PRESSURE",
-  VehicleRange = "VEHICLE RANGE",
-}
-
-export interface DiagnosticsRequestOptions {
-  diagnosticItem?: DiagnosticRequestItem[];
-}
+// DiagnosticsRequestOptions and DiagnosticRequestItem are no longer used
 
 export enum ChargingProfileChargeMode {
   DefaultImmediate = "DEFAULT_IMMEDIATE",
@@ -166,6 +143,12 @@ export interface TrunkRequestOptions {
   delay?: number;
 }
 
+// Engine start options
+export interface StartRequestOptions {
+  // Target cabin temperature in Celsius; optional
+  cabinTemperature?: number;
+}
+
 export enum ChargeOverrideMode {
   ChargeNow = "CHARGE_NOW",
   CancelOverride = "CANCEL_OVERRIDE",
@@ -174,3 +157,102 @@ export enum ChargeOverrideMode {
 export interface ChargeOverrideOptions {
   mode?: ChargeOverrideMode;
 }
+
+// v3 Garage GraphQL response types
+export interface GarageVehicle {
+  vin: string;
+  vehicleId?: string;
+  make?: string;
+  model?: string;
+  nickName?: string | null;
+  year?: number | string;
+  imageUrl?: string | null;
+  onstarCapable?: boolean;
+  vehicleType?: string | null;
+  roleCode?: string | null;
+  onstarStatusCode?: string | number | null;
+  onstarAccountNumber?: string | null;
+  preDelivery?: boolean | null;
+  orderNum?: string | null;
+  orderStatus?: string | null;
+}
+
+export interface GarageVehiclesResponse {
+  errors?: any[];
+  data: {
+    vehicles: GarageVehicle[];
+  };
+  extensions?: any;
+  dataPresent?: boolean;
+}
+
+// Vehicle Health Status (v3 healthstatus) response types
+export interface HealthStatusElement {
+  name: string;
+  displayName: string;
+  description?: string | null;
+  status?: string | null;
+  statusColor?: string | null;
+  value?: string | null;
+  uom?: string | null;
+  cts?: string | null; // ISO datetime
+}
+
+export interface HealthStatusDiagnostic extends HealthStatusElement {
+  recommendedAction?: string | null;
+  diagnosticElements: HealthStatusElement[];
+}
+
+export interface AdvDiagnosticsSubsystem {
+  subSystemId: string;
+  subSystemName: string;
+  subSystemLabel?: string;
+  subSystemDescription?: string;
+  subSystemShortDesc?: string;
+  subSystemStatus?: string;
+  subSystemStatusColor?: string;
+  dtcList: any[]; // Keeping loose until we have examples
+}
+
+export interface AdvDiagnosticsSystem {
+  systemId: string;
+  systemName: string;
+  systemLabel?: string;
+  systemDescription?: string;
+  systemShortDesc?: string;
+  systemStatus?: string;
+  systemStatusColor?: string;
+  subSystems: AdvDiagnosticsSubsystem[];
+}
+
+export interface AdvDiagnosticsBlock {
+  name: string | null;
+  displayName: string | null;
+  advDiagnosticsStatus: string;
+  advDiagnosticsStatusColor: string;
+  recommendedAction: string;
+  cts: string; // ISO datetime
+  diagnosticSystems: AdvDiagnosticsSystem[];
+}
+
+export interface HealthStatusResponse {
+  name: string;
+  displayName: string;
+  description?: string | null;
+  status: string;
+  statusColor: string;
+  recommendedAction?: string | null;
+  recommendedLiveProbe?: boolean;
+  cts: string; // ISO datetime
+  diagnostics: HealthStatusDiagnostic[];
+  advDiagnostics?: AdvDiagnosticsBlock;
+}
+
+// Helper type to surface typed data payloads with our existing Result shape
+export type TypedResult<T> = Result & {
+  response?: {
+    data?: T;
+    // allow other fields if present, matching RequestResponse permissiveness
+    [k: string]: any;
+  };
+};

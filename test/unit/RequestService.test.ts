@@ -103,40 +103,114 @@ describe("RequestService", () => {
     expect(result.status).toEqual(CommandResponseStatus.success);
   });
 
-  test("chargeOverride", async () => {
-    const result = await requestService.chargeOverride();
-
-    expect(result.status).toEqual(CommandResponseStatus.success);
+  test.skip("chargeOverride (disabled)", async () => {
+    // Charging APIs are currently disabled
   });
 
-  test("getChargingProfile", async () => {
-    const result = await requestService.getChargingProfile();
-
-    expect(result.status).toEqual(CommandResponseStatus.success);
+  test.skip("getChargingProfile (disabled)", async () => {
+    // Charging APIs are currently disabled
   });
 
-  test("setChargingProfile", async () => {
-    const result = await requestService.setChargingProfile();
-
-    expect(result.status).toEqual(CommandResponseStatus.success);
+  test.skip("setChargingProfile (disabled)", async () => {
+    // Charging APIs are currently disabled
   });
 
   test("diagnostics", async () => {
-    const result = await requestService.diagnostics();
+    const healthPayload = {
+      name: "VEHICLE_STATUS",
+      status: "GOOD",
+      diagnostics: [],
+    };
+    httpClient.get = jest.fn().mockResolvedValue({ data: healthPayload });
+
+    const result = await requestService.setClient(httpClient).diagnostics();
 
     expect(result.status).toEqual(CommandResponseStatus.success);
+    expect(result.response?.data).toEqual(healthPayload);
+    // Confirm URL used is healthstatus with VIN
+    const urlCalled = (httpClient.get as jest.Mock).mock.calls[0][0];
+    expect(urlCalled).toContain("/api/v1/vh/vehiclehealth/v1/healthstatus/");
+    expect(urlCalled).toContain(testConfig.vin.toUpperCase());
   });
 
   test("getAccountVehicles", async () => {
-    const result = await requestService.getAccountVehicles();
+    // Override post for this test to simulate GraphQL v3 response
+    httpClient.post = jest.fn().mockResolvedValue({
+      data: {
+        errors: [],
+        data: {
+          vehicles: [
+            {
+              vin: "TESTVIN",
+              vehicleId: "123",
+              make: "Chevrolet",
+              model: "Blazer EV",
+              year: "2024",
+            },
+          ],
+        },
+        extensions: null,
+        dataPresent: true,
+      },
+    });
 
-    expect(result.status).toEqual(CommandResponseStatus.success);
+    const data = await requestService
+      .setClient(httpClient)
+      .getAccountVehicles();
+
+    expect(data).toHaveProperty("data.vehicles");
+    expect(Array.isArray((data as any).data.vehicles)).toBe(true);
   });
 
   test("location", async () => {
     const result = await requestService.location();
 
     expect(result.status).toEqual(CommandResponseStatus.success);
+  });
+
+  test("location triggers update then polls until ready", async () => {
+    // First GET returns PENDING, second returns NONE
+    const pendingPayload = {
+      vehicle: { vin: testConfig.vin, squishVin: "SQUISH" },
+      telemetry: {
+        data: { session: { updatePending: "PENDING" } },
+      },
+    };
+    const readyPayload = {
+      vehicle: { vin: testConfig.vin, squishVin: "SQUISH" },
+      telemetry: {
+        data: {
+          session: { updatePending: "NONE" },
+          position: { lat: 1.23, lng: 4.56, geohash: "abc" },
+        },
+      },
+    };
+
+    httpClient.get = jest
+      .fn()
+      .mockResolvedValueOnce({ data: pendingPayload })
+      .mockResolvedValueOnce({ data: readyPayload });
+
+    // Ensure we actually poll: non-zero timeout, zero interval to avoid delays
+    requestService
+      .setClient(httpClient)
+      .setRequestPollingTimeoutSeconds(5)
+      .setRequestPollingIntervalSeconds(0);
+
+    const result = await requestService.location();
+    expect(result.status).toEqual(CommandResponseStatus.success);
+    expect(
+      (result.response as any)?.data?.telemetry?.data?.session?.updatePending,
+    ).toEqual("NONE");
+
+    // Validate we called sms=true then sms=false
+    expect(
+      (httpClient.get as jest.Mock).mock.calls.length,
+    ).toBeGreaterThanOrEqual(2);
+    const firstUrl = (httpClient.get as jest.Mock).mock.calls[0][0];
+    const secondUrl = (httpClient.get as jest.Mock).mock.calls[1][0];
+    expect(firstUrl).toContain("sms=true");
+    expect(secondUrl).toContain("sms=false");
   });
 
   test("requestWithExpiredAuthToken", async () => {
@@ -321,11 +395,7 @@ describe("RequestService", () => {
     expect(headers).not.toHaveProperty("Authorization");
   });
 
-  test("upgradeRequest throws Not Implemented error", async () => {
-    await expect(requestService["upgradeRequest"]()).rejects.toThrow(
-      "Not Implemented",
-    );
-  });
+  // Removed legacy upgradeRequest test
 
   test("makeClientRequest with GET method", async () => {
     const request = new Request("https://foo.bar").setMethod(RequestMethod.Get);
@@ -341,24 +411,7 @@ describe("RequestService", () => {
     expect(response).toHaveProperty("data");
   });
 
-  test("connectRequest", async () => {
-    const result = await requestService["connectRequest"]();
-    expect(result.status).toEqual(CommandResponseStatus.success);
-  });
-
-  test("upgradeRequest", async () => {
-    await expect(requestService["upgradeRequest"]()).rejects.toThrow(
-      "Not Implemented",
-    );
-  });
-
-  test("connectAndUpgradeAuthToken", async () => {
-    jest.spyOn(requestService as any, "connectRequest").mockResolvedValue({});
-    jest.spyOn(requestService as any, "upgradeRequest").mockResolvedValue({});
-
-    await requestService["connectAndUpgradeAuthToken"]();
-    expect(requestService["authToken"]?.upgraded).toBeTruthy();
-  });
+  // Removed legacy connect/upgrade token tests
 
   test("checkRequestPause", async () => {
     jest.useFakeTimers();

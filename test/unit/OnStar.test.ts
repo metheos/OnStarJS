@@ -42,16 +42,16 @@ describe("OnStar", () => {
     await onStar.cancelAlert();
   });
 
-  test("chargeOverride", async () => {
-    await onStar.chargeOverride();
+  test.skip("chargeOverride (disabled)", async () => {
+    // Charging APIs are currently disabled
   });
 
-  test("getChargingProfile", async () => {
-    await onStar.getChargingProfile();
+  test.skip("getChargingProfile (disabled)", async () => {
+    // Charging APIs are currently disabled
   });
 
-  test("setChargingProfile", async () => {
-    await onStar.setChargingProfile();
+  test.skip("setChargingProfile (disabled)", async () => {
+    // Charging APIs are currently disabled
   });
 
   test("diagnostics", async () => {

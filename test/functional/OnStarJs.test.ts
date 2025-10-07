@@ -42,36 +42,40 @@ describe("OnStarJs", () => {
   });
 
   test("Unupgraded Command Successful", async () => {
-    const result = await onStar.getAccountVehicles();
-    // if (result.response) {
-    //   console.log(JSON.stringify(result.response.data, null, 2));
-    // }
+    const data = await onStar.getAccountVehicles();
+    // console.log(JSON.stringify(data, null, 2));
 
-    expect(result.status).toEqual("success");
-    expect(result.response?.data).toHaveProperty("vehicles");
+    expect(data).toHaveProperty("data.vehicles");
   }, 900000); // Increased timeout to 15 minutes to match Jest global timeout
 
   test("Upgraded Command Successful", async () => {
     const result = await onStar.cancelAlert();
 
     expect(result.status).toEqual("success");
-    expect(result.response?.data).toHaveProperty("commandResponse");
+    // v3 returns an immediate request envelope for the command
+    expect(result.response?.data).toHaveProperty("status");
+    expect(result.response?.data).toHaveProperty("requestId");
   });
 
-  test.skip("Diagnostics Request Successful", async () => {
-    onStar.setCheckRequestStatus(true);
-
+  test("Diagnostics Request Successful", async () => {
     const result = await onStar.diagnostics();
 
-    if (!result.response?.data || typeof result.response?.data === "string") {
+    const data = result.response?.data as any;
+    if (!data || typeof data !== "object") {
       throw new Error("Invalid response returned");
     }
-    // console.log(JSON.stringify(result.response.data, null, 2));
+    // console.log(JSON.stringify(data, null, 2));
 
     expect(result.status).toEqual("success");
-    expect(result.response?.data.commandResponse?.status).toEqual("success");
-    expect(result.response?.data.commandResponse?.body).toHaveProperty(
-      "diagnosticResponse",
-    );
+    expect(data).toHaveProperty("diagnostics");
+    expect(Array.isArray(data.diagnostics)).toBe(true);
+
+    if (data.diagnostics.length > 0) {
+      const d0 = data.diagnostics[0];
+      expect(d0).toHaveProperty("name");
+      expect(d0).toHaveProperty("displayName");
+      expect(d0).toHaveProperty("diagnosticElements");
+      expect(Array.isArray(d0.diagnosticElements)).toBe(true);
+    }
   }, 90000);
 });
