@@ -2,6 +2,37 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.10.0](https://github.com/BigThunderSR/OnStarJS/compare/v2.9.0...v2.10.0) (2025-10-07)
+
+
+### Features
+
+* **get-vehicles:** add script to fetch vehicle data with error handling and environment variable validation ([e858e80](https://github.com/BigThunderSR/OnStarJS/commit/e858e8037df4b50eb0fcb3c4680872af6d51467e))
+* **request-service-cli:** add interactive CLI for OnStar request service ([f133c64](https://github.com/BigThunderSR/OnStarJS/commit/f133c64ed0793d6c5b6f00b1ce5896c87120d534))
+* **RequestService, index, types:** add cabinTemperature option to start method for EV remote start ([20a7005](https://github.com/BigThunderSR/OnStarJS/commit/20a70059193219d82410f34780309860d598eded))
+* **RequestService, index, types:** enhance diagnostics and account vehicle retrieval; add HealthStatusResponse and TypedResult types ([3037b3f](https://github.com/BigThunderSR/OnStarJS/commit/3037b3fd6dda43d5f8f90b21271202767e935c8c))
+* **RequestService, index:** add flashLights and stopLights methods for enhanced vehicle control ([50b102c](https://github.com/BigThunderSR/OnStarJS/commit/50b102c7fd2a28fb191f66098bdec25aef91c25b))
+* **RequestService, index:** add setChargeLevelTarget method for EV charge level management ([2e252f8](https://github.com/BigThunderSR/OnStarJS/commit/2e252f8f0c1886bf55aa602c275269d653d14ea3))
+* **RequestService, index:** add stopCharging method for EV charging session management ([28797ad](https://github.com/BigThunderSR/OnStarJS/commit/28797ad09ae3c5507fa67f8140dd743e8a49c6c9))
+* **RequestService, index:** enhance diagnostics method to remove options parameter for simplified usage ([0807249](https://github.com/BigThunderSR/OnStarJS/commit/080724991d92fa9a6dc96309b6cbe14e6ac5941a))
+* **RequestService, index:** update getAccountVehicles method to use GarageVehiclesResponse type; add GarageVehiclesResponse interface ([7535255](https://github.com/BigThunderSR/OnStarJS/commit/753525524a4b469394d638abb63da0f8f7ce2ee0))
+* **RequestService:** add diagnostics and account vehicle retrieval; update scripts for diagnostics and location requests ([fedb1bd](https://github.com/BigThunderSR/OnStarJS/commit/fedb1bd06a335f49b8b06b7c8403a4c67ab0f2a2))
+* **RequestService:** implement 429 error handling with retry logic and configuration options ([449d8ce](https://github.com/BigThunderSR/OnStarJS/commit/449d8cedba246b6ec30848661c4ad503f9da92ec))
+* **RequestService:** implement diagnostics and account vehicle retrieval using new API; add utility functions for token handling and query parameter construction ([0c63061](https://github.com/BigThunderSR/OnStarJS/commit/0c63061b4841ec4dcc04943660e7cd94836123e6))
+* update build scripts to use rimraf for directory cleanup and add lazy-loading for Xvfb module ([5771d64](https://github.com/BigThunderSR/OnStarJS/commit/5771d64358020792b6de16730c0a196152d0099a))
+
+
+### Bug Fixes
+
+* **deps:** bump axios from 1.11.0 to 1.12.2 ([d1907da](https://github.com/BigThunderSR/OnStarJS/commit/d1907da2e89594f14f70038269fdef20508d708e))
+* **deps:** bump chromium-bidi from 7.2.0 to 7.3.2 ([fe67532](https://github.com/BigThunderSR/OnStarJS/commit/fe67532d0d33a905f7f55923ad1a344d37f04e31))
+* **deps:** bump chromium-bidi from 7.3.2 to 8.0.0 ([9ce5e1c](https://github.com/BigThunderSR/OnStarJS/commit/9ce5e1c26d63e1e88c15efa78a429ce325330045))
+* **deps:** bump chromium-bidi from 8.0.0 to 9.2.1 ([a80c4a6](https://github.com/BigThunderSR/OnStarJS/commit/a80c4a67d4517a1ec892abe7d56558e986227464))
+* **deps:** bump patchright from 1.52.5 to 1.56.0 ([54be0e6](https://github.com/BigThunderSR/OnStarJS/commit/54be0e6fc698442093496fa29224388212945e01))
+* **RequestService:** remove redundant headers from request methods for cleaner code ([efbf30f](https://github.com/BigThunderSR/OnStarJS/commit/efbf30f932b0cdaae20f490fcfeda7cd5401a7b4))
+* **RequestService:** standardize header casing and update user agent in config ([1df5864](https://github.com/BigThunderSR/OnStarJS/commit/1df586405bcd4debf765594b47c17c902399905f))
+* **RequestService:** update request headers for improved compatibility and dynamic host resolution ([049b0b0](https://github.com/BigThunderSR/OnStarJS/commit/049b0b047bb5fe4c52b940571cde8160d29ca09f))
+
 ## [2.9.0](https://github.com/BigThunderSR/OnStarJS/compare/v2.8.0...v2.9.0) (2025-07-30)
 
 
