@@ -110,6 +110,12 @@ For commands that return data like diagnostics or location, the data returned by
 
 ## Commands
 
+### Action Command API Compatibility
+
+Action commands (start, cancel start, lock/unlock doors and trunk, alert, cancel alert, flash lights, and stop lights) automatically use the latest API version (v3) and will fall back to the legacy API (v1) if the vehicle doesn't support the newer version. This ensures compatibility across all vehicle types (ICE, Hybrid, and EV) without requiring manual configuration.
+
+The library caches which API version works for your vehicle in memory during the session to optimize subsequent requests.
+
 <details>
 <summary>Get Account Vehicles</summary>
 
@@ -158,6 +164,34 @@ onStar.alert([options]);
 
 ```javascript
 onStar.cancelAlert();
+```
+
+</details>
+
+<details>
+<summary>Flash Lights</summary>
+
+Flashes the vehicle's lights without honking the horn.
+
+```javascript
+onStar.flashLights([options]);
+```
+
+| Option   | Default      | Valid Values               |
+| -------- | ------------ | -------------------------- |
+| delay    | 0            | Any integer (minutes)      |
+| duration | 1            | Any integer (minutes)      |
+| override | ["DoorOpen"] | ["DoorOpen", "IgnitionOn"] |
+
+</details>
+
+<details>
+<summary>Stop Lights</summary>
+
+Stops an active flash lights command.
+
+```javascript
+onStar.stopLights();
 ```
 
 </details>
