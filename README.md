@@ -44,13 +44,13 @@ If that fails, use:
 
 for email TOTP and then save the resulting token and provide the token location for use with <https://github.com/BigThunderSR/onstar2mqtt> and/or <https://github.com/BigThunderSR/homeassistant-addons-onstar2mqtt>.
 
-Additional comments are noted [here](https://github.com/samrum/OnStarJS/issues/233#issuecomment-2499264436).
+Additional comments are noted in [this issue comment](https://github.com/samrum/OnStarJS/issues/233#issuecomment-2499264436).
 
 **IMPORTANT: Valid system time is required for this process to work. Please ensure that your system (Docker host, Home Assistant etc.) time is valid using a mechanism such as NTP or Chrony before attempting to use the token authentication process.**
 
 ## Sample
 
-Use a random version 4 uuid as a deviceId. Generator available [here](https://www.uuidgenerator.net/version4).
+Use a random version 4 uuid as a deviceId. Generator available [at this link](https://www.uuidgenerator.net/version4).
 
 ```javascript
 import OnStar from "onstarjs";
@@ -110,6 +110,12 @@ For commands that return data like diagnostics or location, the data returned by
 
 ## Commands
 
+### Action Command API Compatibility
+
+Action commands (start, cancel start, lock/unlock doors and trunk, alert, cancel alert, flash lights, and stop lights) automatically use the latest API version (v3) and will fall back to the legacy API (v1) if the vehicle doesn't support the newer version. This ensures compatibility across all vehicle types (ICE, Hybrid, and EV) without requiring manual configuration.
+
+The library caches which API version works for your vehicle in memory during the session to optimize subsequent requests.
+
 <details>
 <summary>Get Account Vehicles</summary>
 
@@ -158,6 +164,34 @@ onStar.alert([options]);
 
 ```javascript
 onStar.cancelAlert();
+```
+
+</details>
+
+<details>
+<summary>Flash Lights</summary>
+
+Flashes the vehicle's lights without honking the horn.
+
+```javascript
+onStar.flashLights([options]);
+```
+
+| Option   | Default      | Valid Values               |
+| -------- | ------------ | -------------------------- |
+| delay    | 0            | Any integer (minutes)      |
+| duration | 1            | Any integer (minutes)      |
+| override | ["DoorOpen"] | ["DoorOpen", "IgnitionOn"] |
+
+</details>
+
+<details>
+<summary>Stop Lights</summary>
+
+Stops an active flash lights command.
+
+```javascript
+onStar.stopLights();
 ```
 
 </details>
