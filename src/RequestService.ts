@@ -25,6 +25,8 @@ import onStarAppConfig from "./onStarAppConfig.json";
 import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
 import { getGMAPIJWT } from "./auth/GMAuth";
+import * as fs from "fs";
+import * as path from "path";
 
 enum OnStarApiCommand {
   LockDoor = "lock",
@@ -48,6 +50,10 @@ class RequestService {
   private requestPollingTimeoutSeconds: number;
   private requestPollingIntervalSeconds: number;
   private cachedVehicleId?: string;
+  private cachedVehicleType?: string | null;
+  // Cache which API version works for action commands (v1 or v3)
+  // This is only cached in memory (not disk) as API support may change over time
+  private cachedActionCommandApiVersion?: "v1" | "v3";
 
   constructor(
     config: OnStarConfig,
@@ -106,72 +112,97 @@ class RequestService {
   async start(
     options?: import("./types").StartRequestOptions,
   ): Promise<Result> {
-    const request = this.getCommandRequest(OnStarApiCommand.Start);
+    // Try v3 API first, fallback to v1 API if v3 fails
+    // This handles vehicles where v3 API doesn't support remote start commands
+    const v3Url = this.getCommandUrl(OnStarApiCommand.Start);
+    const requestBody: any = {};
+
     if (options && typeof options.cabinTemperature === "number") {
       // EV/Remote start can accept an optional cabin temperature (Celsius)
       const temp = Math.round(options.cabinTemperature);
-      request.setBody({ cabinTemperature: temp });
+      requestBody.cabinTemperature = temp;
     }
 
-    return this.sendRequest(request);
+    return this.sendActionCommandWithFallback(
+      v3Url,
+      "start",
+      Object.keys(requestBody).length > 0 ? requestBody : undefined,
+    );
   }
 
   async cancelStart(): Promise<Result> {
-    const request = this.getCommandRequest(OnStarApiCommand.CancelStart);
+    // Try v3 API first, fallback to v1 API if v3 fails
+    // This handles vehicles where v3 API doesn't support cancelStart commands
+    const v3Url = this.getCommandUrl(OnStarApiCommand.CancelStart);
 
-    return this.sendRequest(request);
+    return this.sendActionCommandWithFallback(v3Url, "cancelStart");
   }
 
   async lockDoor(options: DoorRequestOptions = {}): Promise<Result> {
-    const request = this.getCommandRequest(OnStarApiCommand.LockDoor).setBody({
+    // Try v3 API first, fallback to v1 API if v3 fails
+    // This handles vehicles where v3 API doesn't support lock commands
+    const v3Url = this.getCommandUrl(OnStarApiCommand.LockDoor);
+    const requestBody = {
       lockDoorRequest: {
         delay: 0,
         ...options,
       },
-    });
+    };
 
-    return this.sendRequest(request);
+    return this.sendActionCommandWithFallback(v3Url, "lock", requestBody);
   }
 
   async unlockDoor(options: DoorRequestOptions = {}): Promise<Result> {
-    const request = this.getCommandRequest(OnStarApiCommand.UnlockDoor).setBody(
-      {
-        unlockDoorRequest: {
-          delay: 0,
-          ...options,
-        },
+    // Try v3 API first, fallback to v1 API if v3 fails
+    // This handles vehicles where v3 API doesn't support unlock commands
+    const v3Url = this.getCommandUrl(OnStarApiCommand.UnlockDoor);
+    const requestBody = {
+      unlockDoorRequest: {
+        delay: 0,
+        ...options,
       },
-    );
+    };
 
-    return this.sendRequest(request);
+    return this.sendActionCommandWithFallback(v3Url, "unlock", requestBody);
   }
 
   async lockTrunk(options: TrunkRequestOptions = {}): Promise<Result> {
-    const request = this.getCommandRequest(OnStarApiCommand.LockTrunk).setBody({
+    // Try v3 API first, fallback to v1 API if v3 fails
+    // This handles vehicles where v3 API doesn't support lockTrunk commands
+    const v3Url = this.getCommandUrl(OnStarApiCommand.LockTrunk);
+    const requestBody = {
       lockTrunkRequest: {
         delay: 0,
         ...options,
       },
-    });
+    };
 
-    return this.sendRequest(request);
+    return this.sendActionCommandWithFallback(v3Url, "lockTrunk", requestBody);
   }
 
   async unlockTrunk(options: DoorRequestOptions = {}): Promise<Result> {
-    const request = this.getCommandRequest(
-      OnStarApiCommand.UnlockTrunk,
-    ).setBody({
+    // Try v3 API first, fallback to v1 API if v3 fails
+    // This handles vehicles where v3 API doesn't support unlockTrunk commands
+    const v3Url = this.getCommandUrl(OnStarApiCommand.UnlockTrunk);
+    const requestBody = {
       unlockTrunkRequest: {
         delay: 0,
         ...options,
       },
-    });
+    };
 
-    return this.sendRequest(request);
+    return this.sendActionCommandWithFallback(
+      v3Url,
+      "unlockTrunk",
+      requestBody,
+    );
   }
 
   async alert(options: AlertRequestOptions = {}): Promise<Result> {
-    const request = this.getCommandRequest(OnStarApiCommand.Alert).setBody({
+    // Try v3 API first, fallback to v1 API if v3 fails
+    // This handles vehicles where v3 API doesn't support alert commands (e.g., some ICE vehicles)
+    const v3Url = this.getApiUrlForPath(`alert/${this.config.vin}`);
+    const requestBody = {
       alertRequest: {
         action: [AlertRequestAction.Honk, AlertRequestAction.Flash],
         delay: 0,
@@ -182,19 +213,24 @@ class RequestService {
         ],
         ...options,
       },
-    });
+    };
 
-    return this.sendRequest(request);
+    return this.sendActionCommandWithFallback(v3Url, "alert", requestBody);
   }
 
   async cancelAlert(): Promise<Result> {
-    const request = this.getCommandRequest(OnStarApiCommand.CancelAlert);
+    // Try v3 API first, fallback to v1 API if v3 fails
+    // This handles vehicles where v3 API doesn't support cancelAlert commands
+    const v3Url = this.getApiUrlForPath(`cancelAlert/${this.config.vin}`);
 
-    return this.sendRequest(request);
+    return this.sendActionCommandWithFallback(v3Url, "cancelAlert");
   }
 
   async flashLights(options: AlertRequestOptions = {}): Promise<Result> {
-    const request = this.getCommandRequest(OnStarApiCommand.Alert).setBody({
+    // Try v3 API first, fallback to v1 API if v3 fails
+    // This handles vehicles where v3 API doesn't support flashLights commands
+    const v3Url = this.getApiUrlForPath(`alert/${this.config.vin}`);
+    const requestBody = {
       alertRequest: {
         action: [AlertRequestAction.Flash],
         delay: 0,
@@ -205,15 +241,17 @@ class RequestService {
         ],
         ...options,
       },
-    });
+    };
 
-    return this.sendRequest(request);
+    return this.sendActionCommandWithFallback(v3Url, "alert", requestBody);
   }
 
   async stopLights(): Promise<Result> {
-    const request = this.getCommandRequest(OnStarApiCommand.CancelAlert);
+    // Try v3 API first, fallback to v1 API if v3 fails
+    // This handles vehicles where v3 API doesn't support stopLights/cancelAlert commands
+    const v3Url = this.getApiUrlForPath(`cancelAlert/${this.config.vin}`);
 
-    return this.sendRequest(request);
+    return this.sendActionCommandWithFallback(v3Url, "cancelAlert");
   }
 
   // Charging-related APIs are temporarily disabled pending new API implementation
@@ -428,6 +466,274 @@ class RequestService {
 
   private getCommandRequest(command: OnStarApiCommand): Request {
     return new Request(this.getCommandUrl(command));
+  }
+
+  // Legacy v1 API URL helpers for alert commands
+  private getV1CommandUrl(command: string): string {
+    return `${onStarAppConfig.serviceUrl}/api/v1/account/vehicles/${this.config.vin}/commands/${command}`;
+  }
+
+  /**
+   * Wrapper method that attempts an action command with v3 API first,
+   * then falls back to v1 API if v3 fails with specific errors.
+   * Uses memory caching to avoid redundant fallback attempts.
+   *
+   * @param v3Url - The v3 API endpoint URL
+   * @param v1Command - The v1 API command name (e.g., "alert", "lock")
+   * @param requestBody - The request body to send
+   * @returns Promise<Result> - The result from whichever API succeeds
+   */
+  private async sendActionCommandWithFallback(
+    v3Url: string,
+    v1Command: string,
+    requestBody?: any,
+  ): Promise<Result> {
+    // If we've already determined v1 works for this vehicle, skip v3 attempt
+    if (this.cachedActionCommandApiVersion === "v1") {
+      console.log(
+        `[ActionCommandFallback] Using cached v1 API for ${v1Command}`,
+      );
+      const v1Url = this.getV1CommandUrl(v1Command);
+      const request = new Request(v1Url);
+      if (requestBody) {
+        request.setBody(requestBody);
+      }
+      return this.sendRequest(request);
+    }
+
+    // Try v3 API first (modern API)
+    try {
+      console.log(`[ActionCommandFallback] Attempting v3 API for ${v1Command}`);
+      const v3Request = new Request(v3Url);
+      if (requestBody) {
+        v3Request.setBody(requestBody);
+      }
+      const result = await this.sendRequest(v3Request);
+
+      // If v3 succeeds, cache it and return
+      this.cachedActionCommandApiVersion = "v3";
+      console.log(
+        `[ActionCommandFallback] v3 API succeeded for ${v1Command}, caching preference`,
+      );
+      return result;
+    } catch (error) {
+      // Check if this is a 400 Bad Request or similar error that indicates
+      // the v3 API doesn't support this command for this vehicle
+      const shouldFallback = this.shouldFallbackToV1(error);
+
+      if (shouldFallback) {
+        console.log(
+          `[ActionCommandFallback] v3 API failed for ${v1Command}, falling back to v1 API`,
+        );
+
+        // Try v1 API as fallback
+        try {
+          const v1Url = this.getV1CommandUrl(v1Command);
+          const v1Request = new Request(v1Url);
+          if (requestBody) {
+            v1Request.setBody(requestBody);
+          }
+          const result = await this.sendRequest(v1Request);
+
+          // If v1 succeeds, cache it for future calls
+          this.cachedActionCommandApiVersion = "v1";
+          console.log(
+            `[ActionCommandFallback] v1 API succeeded for ${v1Command}, caching preference`,
+          );
+          return result;
+        } catch (v1Error) {
+          // If v1 also fails, throw the original v3 error since that's the "modern" API
+          console.log(
+            `[ActionCommandFallback] Both v3 and v1 APIs failed for ${v1Command}`,
+          );
+          throw error;
+        }
+      } else {
+        // If it's not a fallback-worthy error, just throw it
+        console.log(
+          `[ActionCommandFallback] v3 API error not suitable for fallback, rethrowing`,
+        );
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * Determines if an error from v3 API should trigger fallback to v1 API.
+   * Returns true for 400 Bad Request errors or other indicators that the
+   * v3 API doesn't support this command for this vehicle type.
+   *
+   * @param error - The error caught from v3 API attempt
+   * @returns boolean - True if should fallback to v1, false otherwise
+   */
+  private shouldFallbackToV1(error: any): boolean {
+    // If it's a RequestError, check the response status
+    if (error instanceof RequestError) {
+      const response = error.getResponse();
+      const data: any = response?.data;
+
+      // Check for 400 Bad Request
+      if (data?.status === 400 || data?.statusCode === 400) {
+        return true;
+      }
+
+      // Check for specific error messages that indicate v3 API incompatibility
+      const errorMessage = data?.message || data?.error || "";
+      if (
+        typeof errorMessage === "string" &&
+        (errorMessage.includes("Bad Request") ||
+          errorMessage.includes("not supported") ||
+          errorMessage.includes("invalid"))
+      ) {
+        return true;
+      }
+    }
+
+    // Check for axios-style errors with status codes
+    if (error?.response?.status === 400) {
+      return true;
+    }
+
+    // Don't fallback for other error types (network errors, timeouts, etc.)
+    return false;
+  }
+
+  // Determine if vehicle is ICE (Internal Combustion Engine) or EV/Hybrid
+  private async isICEVehicle(): Promise<boolean> {
+    // If we've already cached the vehicle type in memory, use it
+    if (this.cachedVehicleType !== undefined) {
+      const isICE = this.cachedVehicleType !== "EV";
+      console.log(
+        `[isICEVehicle] Using memory cached vehicle type: ${this.cachedVehicleType} -> isICE: ${isICE}`,
+      );
+      return isICE;
+    }
+
+    // Try to load from disk cache
+    const diskCachedType = this.loadVehicleTypeFromDisk();
+    if (diskCachedType) {
+      this.cachedVehicleType = diskCachedType;
+      const isICE = diskCachedType !== "EV";
+      console.log(
+        `[isICEVehicle] Using disk cached vehicle type: ${diskCachedType} -> isICE: ${isICE}`,
+      );
+      return isICE;
+    }
+
+    try {
+      // Get diagnostics data to determine engine type
+      const diagnosticsResult = await this.diagnostics();
+      const diagnostics = diagnosticsResult.response?.data;
+
+      if (diagnostics?.diagnostics) {
+        // Look for ENGINE_TYPE in nested diagnosticElements
+        for (const diagnostic of diagnostics.diagnostics) {
+          if (diagnostic.diagnosticElements) {
+            const engineTypeElement = diagnostic.diagnosticElements.find(
+              (el) => el.name === "ENGINE_TYPE",
+            );
+            if (engineTypeElement?.value) {
+              const engineType = engineTypeElement.value;
+              const isICE = engineType === "ICE";
+              this.cachedVehicleType = isICE ? "ICE" : "EV";
+              this.saveVehicleTypeToDisk(this.cachedVehicleType);
+              console.log(
+                `[isICEVehicle] Detected ENGINE_TYPE: ${engineType} -> isICE: ${isICE}`,
+              );
+              return isICE;
+            }
+          }
+        }
+
+        // Fallback: Look for fuel-related diagnostics (indicates ICE)
+        // or battery/electric-related diagnostics (indicates EV/Hybrid)
+        const hasFuelLevel = diagnostics.diagnostics.some(
+          (d) => d.name === "FUEL LEVEL" || d.displayName?.includes("Fuel"),
+        );
+        const hasEVBattery = diagnostics.diagnostics.some(
+          (d) =>
+            d.name?.includes("EV_") ||
+            d.displayName?.includes("Battery") ||
+            d.displayName?.includes("Electric") ||
+            d.name?.includes("CHARGE_LEVEL"),
+        );
+
+        if (hasEVBattery) {
+          this.cachedVehicleType = "EV";
+          this.saveVehicleTypeToDisk(this.cachedVehicleType);
+          console.log(
+            "[isICEVehicle] Detected EV/Hybrid vehicle from diagnostics -> isICE: false",
+          );
+          return false;
+        } else if (hasFuelLevel) {
+          this.cachedVehicleType = "ICE";
+          this.saveVehicleTypeToDisk(this.cachedVehicleType);
+          console.log(
+            "[isICEVehicle] Detected ICE vehicle from diagnostics (has fuel level) -> isICE: true",
+          );
+          return true;
+        }
+      }
+    } catch (error) {
+      console.warn(
+        "[isICEVehicle] Failed to determine vehicle type from diagnostics, defaulting to ICE (v1 API)",
+        error,
+      );
+    }
+
+    // Default to ICE (v1 API) if we can't determine vehicle type
+    this.cachedVehicleType = "ICE";
+    console.log(
+      "[isICEVehicle] Could not determine vehicle type, defaulting to ICE (v1 API)",
+    );
+    return true;
+  }
+
+  // Get the path for the vehicle type cache file
+  private getVehicleTypeCachePath(): string {
+    const tokenLocation = this.config.tokenLocation ?? "./";
+    return path.join(tokenLocation, `vehicle_type_${this.config.vin}.json`);
+  }
+
+  // Load vehicle type from disk cache
+  private loadVehicleTypeFromDisk(): string | null {
+    try {
+      const cachePath = this.getVehicleTypeCachePath();
+      if (fs.existsSync(cachePath)) {
+        const data = fs.readFileSync(cachePath, "utf-8");
+        const parsed = JSON.parse(data);
+        if (parsed.vehicleType && parsed.vin === this.config.vin) {
+          return parsed.vehicleType;
+        }
+      }
+    } catch (error) {
+      console.warn(
+        "[loadVehicleTypeFromDisk] Failed to load vehicle type from disk",
+        error,
+      );
+    }
+    return null;
+  }
+
+  // Save vehicle type to disk cache
+  private saveVehicleTypeToDisk(vehicleType: string): void {
+    try {
+      const cachePath = this.getVehicleTypeCachePath();
+      const data = {
+        vin: this.config.vin,
+        vehicleType: vehicleType,
+        cachedAt: new Date().toISOString(),
+      };
+      fs.writeFileSync(cachePath, JSON.stringify(data, null, 2), "utf-8");
+      console.log(
+        `[saveVehicleTypeToDisk] Saved vehicle type ${vehicleType} to ${cachePath}`,
+      );
+    } catch (error) {
+      console.warn(
+        "[saveVehicleTypeToDisk] Failed to save vehicle type to disk",
+        error,
+      );
+    }
   }
 
   // Legacy init helpers removed (readGMAccessToken, buildInitQueryParams, randomHex)
