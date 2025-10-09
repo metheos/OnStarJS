@@ -38,6 +38,10 @@ interface TokenSet {
   refresh_token?: string;
   expires_at?: number;
   expires_in?: number;
+  // Optional refresh token lifetime metadata (if provided by the IdP or inferred)
+  refresh_expires_in?: number;
+  refresh_expires_at?: number; // epoch seconds
+  refresh_obtained_at?: number; // epoch seconds when we stored the refresh token
 }
 
 interface GMAPITokenResponse {
@@ -3158,18 +3162,27 @@ export class GMAuth {
       }
 
       // Convert the openid-client TokenSet to our TokenSet format
+      const nowSec = Math.floor(Date.now() / 1000);
       const tokenSet: TokenSet = {
         access_token: openIdTokenSet.access_token,
         // Only include optional properties if they exist
         ...(openIdTokenSet.id_token && { id_token: openIdTokenSet.id_token }),
         ...(openIdTokenSet.refresh_token && {
           refresh_token: openIdTokenSet.refresh_token,
+          // Always record when we obtained a refresh token
+          refresh_obtained_at: nowSec,
         }),
         ...(openIdTokenSet.expires_at && {
           expires_at: openIdTokenSet.expires_at,
         }),
         ...(openIdTokenSet.expires_in && {
           expires_in: openIdTokenSet.expires_in,
+        }),
+        // Persist refresh token metadata if the provider exposes it
+        ...(typeof (openIdTokenSet as any).refresh_expires_in === "number" && {
+          refresh_expires_in: (openIdTokenSet as any).refresh_expires_in,
+          refresh_expires_at:
+            nowSec + (openIdTokenSet as any).refresh_expires_in,
         }),
       };
 
@@ -3221,27 +3234,87 @@ export class GMAuth {
         tokenSet = storedTokens;
       } else if (storedTokens.refresh_token) {
         // console.log("Refreshing MS access token");
-        const client = await this.setupOpenIDClient();
-        const refreshedTokens = await client.refresh(
-          storedTokens.refresh_token,
-        );
+        // Pre-check refresh token expiry if we have metadata
+        const rtExpired = (() => {
+          if (storedTokens.refresh_expires_at) {
+            return storedTokens.refresh_expires_at <= now + 60; // 1 min skew
+          }
+          // If no explicit expiry, but token is very old (e.g., > 60 days), assume expired
+          if (storedTokens.refresh_obtained_at) {
+            const maxAgeDays = 60; // conservative default
+            return (
+              storedTokens.refresh_obtained_at + maxAgeDays * 24 * 60 * 60 <=
+              now
+            );
+          }
+          return false;
+        })();
 
-        // Verify that the refreshed tokens contain the required access_token
-        if (!refreshedTokens.access_token) {
-          throw new Error("Refresh token response missing access_token");
+        if (rtExpired) {
+          console.warn(
+            "🔁 Reauth: refresh token expired by pre-check; skipping refresh",
+          );
+          if (this.debugMode) {
+            console.log(
+              "debug: now=%d, refresh_expires_at=%s, refresh_obtained_at=%s",
+              now,
+              storedTokens.refresh_expires_at ?? "n/a",
+              storedTokens.refresh_obtained_at ?? "n/a",
+            );
+          }
+          const newTokenSet = await this.doFullAuthSequence();
+          return newTokenSet;
         }
 
-        // Create a valid TokenSet object
-        tokenSet = {
-          access_token: refreshedTokens.access_token,
-          refresh_token: refreshedTokens.refresh_token,
-          id_token: refreshedTokens.id_token,
-          expires_in: refreshedTokens.expires_in,
-          expires_at: refreshedTokens.expires_at,
-        };
+        const client = await this.setupOpenIDClient();
+        try {
+          const refreshedTokens = await client.refresh(
+            storedTokens.refresh_token,
+          );
 
-        // console.log("Saving current MS tokens to ", this.MSTokenPath);
-        fs.writeFileSync(this.MSTokenPath, JSON.stringify(tokenSet));
+          // Verify that the refreshed tokens contain the required access_token
+          if (!refreshedTokens.access_token) {
+            throw new Error("Refresh token response missing access_token");
+          }
+
+          const nowSec = Math.floor(Date.now() / 1000);
+
+          // Create a valid TokenSet object and update refresh metadata if provided
+          tokenSet = {
+            access_token: refreshedTokens.access_token,
+            refresh_token: refreshedTokens.refresh_token,
+            id_token: refreshedTokens.id_token,
+            expires_in: refreshedTokens.expires_in,
+            expires_at: refreshedTokens.expires_at,
+            ...(typeof (refreshedTokens as any).refresh_expires_in ===
+              "number" && {
+              refresh_expires_in: (refreshedTokens as any).refresh_expires_in,
+              refresh_expires_at:
+                nowSec + (refreshedTokens as any).refresh_expires_in,
+              refresh_obtained_at: nowSec,
+            }),
+          };
+
+          // Persist
+          fs.writeFileSync(this.MSTokenPath, JSON.stringify(tokenSet));
+        } catch (e: any) {
+          // If the IdP says invalid_grant/expired, do a full re-auth
+          const msg = e?.error_description || e?.message || String(e);
+          const isInvalidGrant =
+            e?.error === "invalid_grant" || /invalid_grant/i.test(msg);
+          const isExpiredGrant = /AADB2C90080|expired/i.test(msg);
+          if (isInvalidGrant || isExpiredGrant) {
+            console.warn(
+              "🔁 Reauth: refresh rejected by IdP (invalid_grant/expired)",
+            );
+            if (this.debugMode) {
+              console.log("debug: provider error: %s", msg);
+            }
+            const newTokenSet = await this.doFullAuthSequence();
+            return newTokenSet;
+          }
+          throw e;
+        }
       } else {
         throw new Error("Token expired and no refresh token available.");
       }
