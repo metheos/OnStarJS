@@ -1064,4 +1064,571 @@ describe("RequestService", () => {
     // Should only try once (no retry for POST by default)
     expect(httpClient.post).toHaveBeenCalledTimes(1);
   });
+
+  // Tests for automatic v3→v1 API fallback mechanism
+  describe("Action Commands API Fallback", () => {
+    beforeEach(() => {
+      // Clear any cached API version before each test
+      requestService["cachedActionCommandApiVersion"] = undefined;
+    });
+
+    describe("Fallback Detection", () => {
+      test("shouldFallbackToV1 returns true for 400 status in response data", () => {
+        const error = new (require("../../src/RequestError").default)(
+          "Test error",
+        );
+        error.setResponse({ data: { status: 400 } });
+
+        const result = requestService["shouldFallbackToV1"](error);
+        expect(result).toBe(true);
+      });
+
+      test("shouldFallbackToV1 returns true for 400 statusCode in response data", () => {
+        const error = new (require("../../src/RequestError").default)(
+          "Test error",
+        );
+        error.setResponse({ data: { statusCode: 400 } });
+
+        const result = requestService["shouldFallbackToV1"](error);
+        expect(result).toBe(true);
+      });
+
+      test("shouldFallbackToV1 returns true for Bad Request message", () => {
+        const error = new (require("../../src/RequestError").default)(
+          "Test error",
+        );
+        error.setResponse({
+          data: { message: "Bad Request: Invalid command" },
+        });
+
+        const result = requestService["shouldFallbackToV1"](error);
+        expect(result).toBe(true);
+      });
+
+      test("shouldFallbackToV1 returns true for not supported message", () => {
+        const error = new (require("../../src/RequestError").default)(
+          "Test error",
+        );
+        error.setResponse({
+          data: { error: "Command not supported for this vehicle" },
+        });
+
+        const result = requestService["shouldFallbackToV1"](error);
+        expect(result).toBe(true);
+      });
+
+      test("shouldFallbackToV1 returns true for axios-style 400 error", () => {
+        const error = { response: { status: 400 } };
+
+        const result = requestService["shouldFallbackToV1"](error);
+        expect(result).toBe(true);
+      });
+
+      test("shouldFallbackToV1 returns false for network errors", () => {
+        const error = new Error("Network error");
+
+        const result = requestService["shouldFallbackToV1"](error);
+        expect(result).toBe(false);
+      });
+
+      test("shouldFallbackToV1 returns false for 500 server errors", () => {
+        const error = new (require("../../src/RequestError").default)(
+          "Server error",
+        );
+        error.setResponse({ data: { status: 500 } });
+
+        const result = requestService["shouldFallbackToV1"](error);
+        expect(result).toBe(false);
+      });
+
+      test("shouldFallbackToV1 returns false for timeout errors", () => {
+        const error = new (require("../../src/RequestError").default)(
+          "Timeout",
+        );
+
+        const result = requestService["shouldFallbackToV1"](error);
+        expect(result).toBe(false);
+      });
+    });
+
+    describe("Fallback Behavior for alert()", () => {
+      test("alert() tries v3 first and succeeds without fallback", async () => {
+        const requestTime = Date.now() + 1000;
+        httpClient.post = jest.fn().mockResolvedValue({
+          data: {
+            requestId: "test-123",
+            requestTime: new Date(requestTime).toISOString(),
+            status: "SUCCESS",
+            url: "test-url",
+          },
+        });
+
+        await requestService.alert();
+
+        // Should only call v3 API once
+        expect(httpClient.post).toHaveBeenCalledTimes(1);
+        const postCall = (httpClient.post as jest.Mock).mock.calls[0];
+        expect(postCall[0]).toContain("/veh/cmd/v3/alert/");
+
+        // Should cache v3 as the working version
+        expect(requestService["cachedActionCommandApiVersion"]).toBe("v3");
+      });
+
+      test("alert() falls back to v1 when v3 returns 400", async () => {
+        const requestTime = Date.now() + 1000;
+
+        // First call (v3) fails with 400
+        const v3Error = new (require("../../src/RequestError").default)(
+          "Bad Request",
+        );
+        v3Error.setResponse({ data: { status: 400, message: "Bad Request" } });
+
+        // Second call (v1) succeeds
+        const v1Success = {
+          data: {
+            commandResponse: {
+              requestTime: new Date(requestTime).toISOString(),
+              status: CommandResponseStatus.success,
+              url: "test-url",
+            },
+          },
+        };
+
+        httpClient.post = jest
+          .fn()
+          .mockRejectedValueOnce(v3Error) // v3 fails
+          .mockResolvedValueOnce(v1Success); // v1 succeeds
+
+        const result = await requestService.alert();
+
+        // Should try both v3 and v1
+        expect(httpClient.post).toHaveBeenCalledTimes(2);
+
+        // First call should be v3
+        const firstCall = (httpClient.post as jest.Mock).mock.calls[0];
+        expect(firstCall[0]).toContain("/veh/cmd/v3/alert/");
+
+        // Second call should be v1
+        const secondCall = (httpClient.post as jest.Mock).mock.calls[1];
+        expect(secondCall[0]).toContain("/api/v1/account/vehicles/");
+        expect(secondCall[0]).toContain("/commands/alert");
+
+        // Should cache v1 as the working version
+        expect(requestService["cachedActionCommandApiVersion"]).toBe("v1");
+        expect(result.status).toBe("success");
+      });
+
+      test("alert() uses cached v1 API on subsequent calls", async () => {
+        const requestTime = Date.now() + 1000;
+
+        // Set cache to indicate v1 works
+        requestService["cachedActionCommandApiVersion"] = "v1";
+
+        httpClient.post = jest.fn().mockResolvedValue({
+          data: {
+            commandResponse: {
+              requestTime: new Date(requestTime).toISOString(),
+              status: CommandResponseStatus.success,
+              url: "test-url",
+            },
+          },
+        });
+
+        await requestService.alert();
+
+        // Should only call v1 API, skipping v3 attempt
+        expect(httpClient.post).toHaveBeenCalledTimes(1);
+        const postCall = (httpClient.post as jest.Mock).mock.calls[0];
+        expect(postCall[0]).toContain("/api/v1/account/vehicles/");
+        expect(postCall[0]).toContain("/commands/alert");
+      });
+
+      test("alert() throws error when both v3 and v1 fail", async () => {
+        const v3Error = new (require("../../src/RequestError").default)(
+          "V3 Bad Request",
+        );
+        v3Error.setResponse({ data: { status: 400 } });
+
+        const v1Error = new (require("../../src/RequestError").default)(
+          "V1 Error",
+        );
+
+        httpClient.post = jest
+          .fn()
+          .mockRejectedValueOnce(v3Error)
+          .mockRejectedValueOnce(v1Error);
+
+        // Should throw the original v3 error
+        await expect(requestService.alert()).rejects.toThrow("V3 Bad Request");
+      });
+
+      test("alert() does not fallback for non-400 errors", async () => {
+        const serverError = new (require("../../src/RequestError").default)(
+          "Server Error",
+        );
+        serverError.setResponse({ data: { status: 500 } });
+
+        httpClient.post = jest.fn().mockRejectedValue(serverError);
+
+        // Should not attempt fallback for 500 error
+        await expect(requestService.alert()).rejects.toThrow("Server Error");
+        expect(httpClient.post).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe("Fallback Behavior for start()", () => {
+      test("start() falls back to v1 when v3 fails", async () => {
+        const requestTime = Date.now() + 1000;
+
+        const v3Error = new (require("../../src/RequestError").default)(
+          "Bad Request",
+        );
+        v3Error.setResponse({ data: { status: 400 } });
+
+        httpClient.post = jest
+          .fn()
+          .mockRejectedValueOnce(v3Error)
+          .mockResolvedValueOnce({
+            data: {
+              commandResponse: {
+                requestTime: new Date(requestTime).toISOString(),
+                status: CommandResponseStatus.success,
+                url: "test-url",
+              },
+            },
+          });
+
+        await requestService.start();
+
+        expect(httpClient.post).toHaveBeenCalledTimes(2);
+
+        const secondCall = (httpClient.post as jest.Mock).mock.calls[1];
+        expect(secondCall[0]).toContain("/api/v1/account/vehicles/");
+        expect(secondCall[0]).toContain("/commands/start");
+      });
+
+      test("start() passes cabin temperature to both APIs", async () => {
+        const requestTime = Date.now() + 1000;
+
+        const v3Error = new (require("../../src/RequestError").default)(
+          "Bad Request",
+        );
+        v3Error.setResponse({ data: { status: 400 } });
+
+        httpClient.post = jest
+          .fn()
+          .mockRejectedValueOnce(v3Error)
+          .mockResolvedValueOnce({
+            data: {
+              commandResponse: {
+                requestTime: new Date(requestTime).toISOString(),
+                status: CommandResponseStatus.success,
+                url: "test-url",
+              },
+            },
+          });
+
+        await requestService.start({ cabinTemperature: 22.5 });
+
+        // Check v3 call included temperature (body is JSON stringified)
+        const v3Call = (httpClient.post as jest.Mock).mock.calls[0];
+        expect(JSON.parse(v3Call[1])).toEqual({ cabinTemperature: 23 }); // Rounded
+
+        // Check v1 call included temperature (body is JSON stringified)
+        const v1Call = (httpClient.post as jest.Mock).mock.calls[1];
+        expect(JSON.parse(v1Call[1])).toEqual({ cabinTemperature: 23 });
+      });
+    });
+
+    describe("Fallback Behavior for lock/unlock commands", () => {
+      test("lockDoor() falls back to v1 when v3 fails", async () => {
+        const requestTime = Date.now() + 1000;
+
+        const v3Error = new (require("../../src/RequestError").default)(
+          "Bad Request",
+        );
+        v3Error.setResponse({ data: { status: 400 } });
+
+        httpClient.post = jest
+          .fn()
+          .mockRejectedValueOnce(v3Error)
+          .mockResolvedValueOnce({
+            data: {
+              commandResponse: {
+                requestTime: new Date(requestTime).toISOString(),
+                status: CommandResponseStatus.success,
+                url: "test-url",
+              },
+            },
+          });
+
+        await requestService.lockDoor();
+
+        const secondCall = (httpClient.post as jest.Mock).mock.calls[1];
+        expect(secondCall[0]).toContain("/api/v1/account/vehicles/");
+        expect(secondCall[0]).toContain("/commands/lock");
+      });
+
+      test("unlockDoor() falls back to v1 when v3 fails", async () => {
+        const requestTime = Date.now() + 1000;
+
+        const v3Error = new (require("../../src/RequestError").default)(
+          "Bad Request",
+        );
+        v3Error.setResponse({ data: { status: 400 } });
+
+        httpClient.post = jest
+          .fn()
+          .mockRejectedValueOnce(v3Error)
+          .mockResolvedValueOnce({
+            data: {
+              commandResponse: {
+                requestTime: new Date(requestTime).toISOString(),
+                status: CommandResponseStatus.success,
+                url: "test-url",
+              },
+            },
+          });
+
+        await requestService.unlockDoor();
+
+        const secondCall = (httpClient.post as jest.Mock).mock.calls[1];
+        expect(secondCall[0]).toContain("/api/v1/account/vehicles/");
+        expect(secondCall[0]).toContain("/commands/unlock");
+      });
+
+      test("lockTrunk() falls back to v1 when v3 fails", async () => {
+        const requestTime = Date.now() + 1000;
+
+        const v3Error = new (require("../../src/RequestError").default)(
+          "Bad Request",
+        );
+        v3Error.setResponse({ data: { status: 400 } });
+
+        httpClient.post = jest
+          .fn()
+          .mockRejectedValueOnce(v3Error)
+          .mockResolvedValueOnce({
+            data: {
+              commandResponse: {
+                requestTime: new Date(requestTime).toISOString(),
+                status: CommandResponseStatus.success,
+                url: "test-url",
+              },
+            },
+          });
+
+        await requestService.lockTrunk();
+
+        const secondCall = (httpClient.post as jest.Mock).mock.calls[1];
+        expect(secondCall[0]).toContain("/api/v1/account/vehicles/");
+        expect(secondCall[0]).toContain("/commands/lockTrunk");
+      });
+
+      test("unlockTrunk() falls back to v1 when v3 fails", async () => {
+        const requestTime = Date.now() + 1000;
+
+        const v3Error = new (require("../../src/RequestError").default)(
+          "Bad Request",
+        );
+        v3Error.setResponse({ data: { status: 400 } });
+
+        httpClient.post = jest
+          .fn()
+          .mockRejectedValueOnce(v3Error)
+          .mockResolvedValueOnce({
+            data: {
+              commandResponse: {
+                requestTime: new Date(requestTime).toISOString(),
+                status: CommandResponseStatus.success,
+                url: "test-url",
+              },
+            },
+          });
+
+        await requestService.unlockTrunk();
+
+        const secondCall = (httpClient.post as jest.Mock).mock.calls[1];
+        expect(secondCall[0]).toContain("/api/v1/account/vehicles/");
+        expect(secondCall[0]).toContain("/commands/unlockTrunk");
+      });
+    });
+
+    describe("Fallback Behavior for flashLights/cancelAlert/stopLights", () => {
+      test("flashLights() falls back to v1 when v3 fails", async () => {
+        const requestTime = Date.now() + 1000;
+
+        const v3Error = new (require("../../src/RequestError").default)(
+          "Bad Request",
+        );
+        v3Error.setResponse({ data: { status: 400 } });
+
+        httpClient.post = jest
+          .fn()
+          .mockRejectedValueOnce(v3Error)
+          .mockResolvedValueOnce({
+            data: {
+              commandResponse: {
+                requestTime: new Date(requestTime).toISOString(),
+                status: CommandResponseStatus.success,
+                url: "test-url",
+              },
+            },
+          });
+
+        await requestService.flashLights();
+
+        const secondCall = (httpClient.post as jest.Mock).mock.calls[1];
+        expect(secondCall[0]).toContain("/api/v1/account/vehicles/");
+        expect(secondCall[0]).toContain("/commands/alert");
+      });
+
+      test("cancelAlert() falls back to v1 when v3 fails", async () => {
+        const requestTime = Date.now() + 1000;
+
+        const v3Error = new (require("../../src/RequestError").default)(
+          "Bad Request",
+        );
+        v3Error.setResponse({ data: { status: 400 } });
+
+        httpClient.post = jest
+          .fn()
+          .mockRejectedValueOnce(v3Error)
+          .mockResolvedValueOnce({
+            data: {
+              commandResponse: {
+                requestTime: new Date(requestTime).toISOString(),
+                status: CommandResponseStatus.success,
+                url: "test-url",
+              },
+            },
+          });
+
+        await requestService.cancelAlert();
+
+        const secondCall = (httpClient.post as jest.Mock).mock.calls[1];
+        expect(secondCall[0]).toContain("/api/v1/account/vehicles/");
+        expect(secondCall[0]).toContain("/commands/cancelAlert");
+      });
+
+      test("stopLights() falls back to v1 when v3 fails", async () => {
+        const requestTime = Date.now() + 1000;
+
+        const v3Error = new (require("../../src/RequestError").default)(
+          "Bad Request",
+        );
+        v3Error.setResponse({ data: { status: 400 } });
+
+        httpClient.post = jest
+          .fn()
+          .mockRejectedValueOnce(v3Error)
+          .mockResolvedValueOnce({
+            data: {
+              commandResponse: {
+                requestTime: new Date(requestTime).toISOString(),
+                status: CommandResponseStatus.success,
+                url: "test-url",
+              },
+            },
+          });
+
+        await requestService.stopLights();
+
+        const secondCall = (httpClient.post as jest.Mock).mock.calls[1];
+        expect(secondCall[0]).toContain("/api/v1/account/vehicles/");
+        expect(secondCall[0]).toContain("/commands/cancelAlert");
+      });
+
+      test("cancelStart() falls back to v1 when v3 fails", async () => {
+        const requestTime = Date.now() + 1000;
+
+        const v3Error = new (require("../../src/RequestError").default)(
+          "Bad Request",
+        );
+        v3Error.setResponse({ data: { status: 400 } });
+
+        httpClient.post = jest
+          .fn()
+          .mockRejectedValueOnce(v3Error)
+          .mockResolvedValueOnce({
+            data: {
+              commandResponse: {
+                requestTime: new Date(requestTime).toISOString(),
+                status: CommandResponseStatus.success,
+                url: "test-url",
+              },
+            },
+          });
+
+        await requestService.cancelStart();
+
+        const secondCall = (httpClient.post as jest.Mock).mock.calls[1];
+        expect(secondCall[0]).toContain("/api/v1/account/vehicles/");
+        expect(secondCall[0]).toContain("/commands/cancelStart");
+      });
+    });
+
+    describe("Cache Sharing Across Commands", () => {
+      test("successful v3 for one command benefits other commands", async () => {
+        const requestTime = Date.now() + 1000;
+
+        // Mock successful v3 response
+        httpClient.post = jest.fn().mockResolvedValue({
+          data: {
+            requestId: "test-123",
+            requestTime: new Date(requestTime).toISOString(),
+            status: "SUCCESS",
+            url: "test-url",
+          },
+        });
+
+        // First command succeeds with v3
+        await requestService.alert();
+        expect(httpClient.post).toHaveBeenCalledTimes(1);
+        expect(requestService["cachedActionCommandApiVersion"]).toBe("v3");
+
+        // Second command should also use v3 without trying v1
+        await requestService.flashLights();
+        expect(httpClient.post).toHaveBeenCalledTimes(2);
+
+        const secondCall = (httpClient.post as jest.Mock).mock.calls[1];
+        expect(secondCall[0]).toContain("/veh/cmd/v3/alert/");
+      });
+
+      test("successful v1 fallback for one command benefits other commands", async () => {
+        const requestTime = Date.now() + 1000;
+
+        const v3Error = new (require("../../src/RequestError").default)(
+          "Bad Request",
+        );
+        v3Error.setResponse({ data: { status: 400 } });
+
+        // First command: v3 fails, v1 succeeds
+        httpClient.post = jest
+          .fn()
+          .mockRejectedValueOnce(v3Error)
+          .mockResolvedValue({
+            data: {
+              commandResponse: {
+                requestTime: new Date(requestTime).toISOString(),
+                status: CommandResponseStatus.success,
+                url: "test-url",
+              },
+            },
+          });
+
+        await requestService.lockDoor();
+        expect(httpClient.post).toHaveBeenCalledTimes(2); // v3 fail + v1 success
+        expect(requestService["cachedActionCommandApiVersion"]).toBe("v1");
+
+        // Second command should skip v3 and go straight to v1
+        await requestService.unlockDoor();
+        expect(httpClient.post).toHaveBeenCalledTimes(3); // Only one more call
+
+        const thirdCall = (httpClient.post as jest.Mock).mock.calls[2];
+        expect(thirdCall[0]).toContain("/api/v1/account/vehicles/");
+        expect(thirdCall[0]).toContain("/commands/unlock");
+      });
+    });
+  });
 });
