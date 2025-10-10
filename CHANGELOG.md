@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.11.0](https://github.com/BigThunderSR/OnStarJS/compare/v2.10.0...v2.11.0) (2025-10-10)
+
+
+### Features
+
+* **auth:** enhance TokenSet with refresh token metadata and improve expiry checks ([835d67d](https://github.com/BigThunderSR/OnStarJS/commit/835d67df121c71ca46501f94f75c4bdefb8baf6a))
+* **RequestService:** add automatic v3→v1 API fallback for action commands ([215853f](https://github.com/BigThunderSR/OnStarJS/commit/215853f5496d9b09a0d492298b1255a8dd3141fe))
+
+
+### Bug Fixes
+
+* **deps:** bump chromium-bidi from 9.2.1 to 10.1.0 ([18e3d0b](https://github.com/BigThunderSR/OnStarJS/commit/18e3d0b26c965916072f773063157a9bca4cabd9))
+
 ## [2.10.0](https://github.com/BigThunderSR/OnStarJS/compare/v2.9.0...v2.10.0) (2025-10-07)
 
 
