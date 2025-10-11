@@ -126,6 +126,51 @@ onStar.getAccountVehicles();
 </details>
 
 <details>
+<summary>Get Vehicle Details</summary>
+
+Returns detailed vehicle information including make, model, year, RPO codes, permissions, available vehicle commands, colors, metadata, and OnStar account info.
+
+```javascript
+onStar.getVehicleDetails([vin]);
+```
+
+| Option | Default        | Valid Values  |
+| ------ | -------------- | ------------- |
+| vin    | Configured VIN | Any valid VIN |
+
+</details>
+
+<details>
+<summary>Get OnStar Plan</summary>
+
+Returns OnStar subscription plan information including active plans, features, billing details, pricing, and available offers.
+
+```javascript
+onStar.getOnstarPlan([vin]);
+```
+
+| Option | Default        | Valid Values  |
+| ------ | -------------- | ------------- |
+| vin    | Configured VIN | Any valid VIN |
+
+</details>
+
+<details>
+<summary>Get Vehicle Recall Info</summary>
+
+Returns vehicle recall information including recall status, repair status, descriptions, and completion dates.
+
+```javascript
+onStar.getVehicleRecallInfo([vin]);
+```
+
+| Option | Default        | Valid Values  |
+| ------ | -------------- | ------------- |
+| vin    | Configured VIN | Any valid VIN |
+
+</details>
+
+<details>
 <summary>Start</summary>
 
 ```javascript
@@ -302,6 +347,22 @@ onStar.setChargingProfile([options]);
 | ---------- | ----------- | ---------------------------------------------------------------------------------------- |
 | chargeMode | "IMMEDIATE" | "DEFAULT_IMMEDIATE", "IMMEDIATE", "DEPARTURE_BASED", "RATE_BASED", "PHEV_AFTER_MIDNIGHT" |
 | rateType   | "MIDPEAK"   | "OFFPEAK", "MIDPEAK", "PEAK"                                                             |
+
+</details>
+
+<details>
+<summary>Get EV Charging Metrics</summary>
+
+Returns current EV charging metrics and status information for electric vehicles.
+
+```javascript
+onStar.getEVChargingMetrics([options]);
+```
+
+| Option        | Default       | Valid Values             |
+| ------------- | ------------- | ------------------------ |
+| clientVersion | "7.18.0.8006" | Any version string       |
+| os            | "A"           | "A" (Android), "I" (iOS) |
 
 </details>
 

@@ -186,6 +186,39 @@ export interface GarageVehiclesResponse {
   dataPresent?: boolean;
 }
 
+// v3 Garage GraphQL vehicleDetails response types (keep flexible for now)
+export interface VehicleDetailsResponse {
+  errors?: any[];
+  data: {
+    vehicleDetails: any; // schema is large; keep as any for now
+  };
+  extensions?: any;
+  dataPresent?: boolean;
+}
+
+// v3 Garage GraphQL plan info subset from vehicleDetails
+export interface OnstarPlanResponse {
+  errors?: any[];
+  data: {
+    vehicleDetails: any; // includes model/make/year and planExpiryInfo, planInfo, offers
+  };
+  extensions?: any;
+  dataPresent?: boolean;
+}
+
+// v3 Garage GraphQL vehicle recall info response
+export interface VehicleRecallInfoResponse {
+  errors?: any[];
+  data: {
+    vehicleDetails: {
+      recallInfo: any[] | null; // keeping flexible for now
+      [k: string]: any;
+    } | null;
+  };
+  extensions?: any;
+  dataPresent?: boolean;
+}
+
 // Vehicle Health Status (v3 healthstatus) response types
 export interface HealthStatusElement {
   name: string;

@@ -131,6 +131,33 @@
 				"$eslint-stylish"
 			],
 			"group": "build"
+		},
+		{
+			"label": "pnpm build",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"build"
+			],
+			"group": "build"
+		},
+		{
+			"label": "pnpm build (post-fix)",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"build"
+			],
+			"group": "build"
+		},
+		{
+			"label": "pnpm build (diagnostics retrofit)",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"build"
+			],
+			"group": "build"
 		}
 	]
 }

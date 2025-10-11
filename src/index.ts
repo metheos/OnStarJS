@@ -28,6 +28,18 @@ class OnStar {
     return this.requestService.getAccountVehicles();
   }
 
+  async getVehicleDetails(vin?: string) {
+    return this.requestService.getVehicleDetails(vin);
+  }
+
+  async getOnstarPlan(vin?: string) {
+    return this.requestService.getOnstarPlan(vin);
+  }
+
+  async getVehicleRecallInfo(vin?: string) {
+    return this.requestService.getVehicleRecallInfo(vin);
+  }
+
   async start(options?: StartRequestOptions): Promise<Result> {
     return this.requestService.start(options);
   }
@@ -111,6 +123,14 @@ class OnStar {
     os?: "A" | "I";
   }): Promise<Result> {
     return this.requestService.stopCharging(opts);
+  }
+
+  // EV: Get current charging metrics
+  async getEVChargingMetrics(opts?: {
+    clientVersion?: string;
+    os?: "A" | "I";
+  }): Promise<Result> {
+    return this.requestService.getEVChargingMetrics(opts);
   }
 
   setCheckRequestStatus(checkStatus: boolean) {
