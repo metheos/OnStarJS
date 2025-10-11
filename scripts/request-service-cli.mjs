@@ -76,6 +76,15 @@ async function main() {
       run: () => client.getAccountVehicles(),
     },
     {
+      key: "getVehicleDetails",
+      label: "getVehicleDetails(vin?)",
+      run: async () => {
+        const ans = (await rl.question("VIN (blank to use env VIN): ")).trim();
+        const vin = ans ? ans.toUpperCase() : undefined;
+        return client.getVehicleDetails(vin);
+      },
+    },
+    {
       key: "diagnostics",
       label: "diagnostics()",
       run: () => client.diagnostics(),

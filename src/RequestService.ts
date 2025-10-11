@@ -513,6 +513,46 @@ class RequestService {
     return payload as import("./types").GarageVehiclesResponse;
   }
 
+  async getVehicleDetails(
+    vin?: string,
+  ): Promise<import("./types").VehicleDetailsResponse> {
+    const url = `${onStarAppConfig.serviceUrl}/mbff/garage/v1`;
+    const qVin = (vin || this.config.vin).toUpperCase();
+    const graphQL =
+      "query getMbffGarageVehicleDetails {" +
+      `vehicleDetails(vin: "${qVin}") {` +
+      "vin make model year onstarCapable imageUrl rpoCodes orderDate permissions { userPermissions accountPermissions { acctNum permissions disabledPermissionsResponse { code reason } } devicePermissions { id permissions disabledPermissions { code reason } } } " +
+      "vehicleCommands { name url serviceId isEligible inEligibleReason metaData { supportedDiagnostics } } " +
+      "color { exteriorColor interiorTrimColor } " +
+      "vehicleMetaData { propulsionAndFuelType { fuelCategory propulsionType } unit { unitGen unitGenDescription } configuredCountry bodyStyle features extColor } " +
+      "onstarInfo { onStarStatus ownerAccount isShared associatedDate }" +
+      "}" +
+      "}";
+
+    const request = new Request(url)
+      .setMethod(RequestMethod.Post)
+      .setContentType("text/plain; charset=utf-8")
+      .setBody(graphQL)
+      .setCheckRequestStatus(false);
+
+    const result = await this.sendRequest(request);
+    const payload: any = result.response?.data;
+    if (result.status !== CommandResponseStatus.success) {
+      console.error("getVehicleDetails failed", {
+        status: result.status,
+        data: payload,
+      });
+      throw new Error("getVehicleDetails request did not succeed");
+    }
+    if (payload && Array.isArray(payload.errors) && payload.errors.length) {
+      console.error("getVehicleDetails GraphQL errors", {
+        errors: payload.errors,
+      });
+      throw new Error("getVehicleDetails GraphQL errors present");
+    }
+    return payload as import("./types").VehicleDetailsResponse;
+  }
+
   async location(): Promise<Result> {
     const base = `${onStarAppConfig.serviceUrl}/veh/datadelivery/digitaltwin/v1/vehicles/${this.config.vin}`;
 

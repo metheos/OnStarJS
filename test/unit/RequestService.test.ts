@@ -162,6 +162,61 @@ describe("RequestService", () => {
     expect(Array.isArray((data as any).data.vehicles)).toBe(true);
   });
 
+  test("getVehicleDetails success", async () => {
+    // Simulate GraphQL vehicleDetails response
+    httpClient.post = jest.fn().mockResolvedValue({
+      data: {
+        errors: [],
+        data: {
+          vehicleDetails: {
+            vin: testConfig.vin.toUpperCase(),
+            make: "Chevrolet",
+            model: "Blazer EV",
+            year: "2024",
+          },
+        },
+        extensions: null,
+        dataPresent: true,
+      },
+    });
+
+    const details = await requestService
+      .setClient(httpClient)
+      .getVehicleDetails();
+
+    expect(details).toHaveProperty("data.vehicleDetails.vin");
+    expect((details as any).data.vehicleDetails.vin).toBe(
+      testConfig.vin.toUpperCase(),
+    );
+  });
+
+  test("getVehicleDetails with errors in response", async () => {
+    httpClient.post = jest.fn().mockResolvedValue({
+      data: {
+        errors: [{ message: "GraphQL error" }],
+        data: { vehicleDetails: null },
+      },
+    });
+
+    await expect(
+      requestService.setClient(httpClient).getVehicleDetails(),
+    ).rejects.toThrow("getVehicleDetails GraphQL errors present");
+  });
+
+  test("getVehicleDetails with non-success status", async () => {
+    const originalSendRequest = requestService["sendRequest"];
+    requestService["sendRequest"] = jest.fn().mockResolvedValue({
+      status: CommandResponseStatus.failure,
+      response: { data: {} },
+    });
+
+    await expect(
+      requestService.setClient(httpClient).getVehicleDetails(),
+    ).rejects.toThrow("getVehicleDetails request did not succeed");
+
+    requestService["sendRequest"] = originalSendRequest;
+  });
+
   test("location", async () => {
     const result = await requestService.location();
 

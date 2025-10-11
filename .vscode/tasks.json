@@ -131,6 +131,15 @@
 				"$eslint-stylish"
 			],
 			"group": "build"
+		},
+		{
+			"label": "pnpm build",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"build"
+			],
+			"group": "build"
 		}
 	]
 }

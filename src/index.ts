@@ -28,6 +28,10 @@ class OnStar {
     return this.requestService.getAccountVehicles();
   }
 
+  async getVehicleDetails(vin?: string) {
+    return this.requestService.getVehicleDetails(vin);
+  }
+
   async start(options?: StartRequestOptions): Promise<Result> {
     return this.requestService.start(options);
   }

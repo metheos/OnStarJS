@@ -186,6 +186,16 @@ export interface GarageVehiclesResponse {
   dataPresent?: boolean;
 }
 
+// v3 Garage GraphQL vehicleDetails response types (keep flexible for now)
+export interface VehicleDetailsResponse {
+  errors?: any[];
+  data: {
+    vehicleDetails: any; // schema is large; keep as any for now
+  };
+  extensions?: any;
+  dataPresent?: boolean;
+}
+
 // Vehicle Health Status (v3 healthstatus) response types
 export interface HealthStatusElement {
   name: string;
