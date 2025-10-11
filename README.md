@@ -367,6 +367,43 @@ onStar.getEVChargingMetrics([options]);
 </details>
 
 <details>
+<summary>Set Charge Level Target</summary>
+
+Sets the target charge level percentage for electric vehicles.
+
+```javascript
+onStar.setChargeLevelTarget(tcl, [options]);
+```
+
+| Option           | Default        | Valid Values             |
+| ---------------- | -------------- | ------------------------ |
+| tcl              | (required)     | 0-100 (percentage)       |
+| noMetricsRefresh | false          | true, false              |
+| clientRequestId  | auto-generated | Any UUID string          |
+| clientVersion    | "7.18.0.8006"  | Any version string       |
+| os               | "A"            | "A" (Android), "I" (iOS) |
+
+</details>
+
+<details>
+<summary>Stop Charging</summary>
+
+Stops the current charging session for electric vehicles.
+
+```javascript
+onStar.stopCharging([options]);
+```
+
+| Option           | Default        | Valid Values             |
+| ---------------- | -------------- | ------------------------ |
+| noMetricsRefresh | false          | true, false              |
+| clientRequestId  | auto-generated | Any UUID string          |
+| clientVersion    | "7.18.0.8006"  | Any version string       |
+| os               | "A"            | "A" (Android), "I" (iOS) |
+
+</details>
+
+<details>
 <summary>Diagnostics</summary>
 
 ```javascript
