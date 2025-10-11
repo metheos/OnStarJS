@@ -199,20 +199,23 @@ class RequestService {
     // Try v3 API first, fallback to v1 API if v3 fails
     // This handles vehicles where v3 API doesn't support alert commands (e.g., some ICE vehicles)
     const v3Url = this.getApiUrlForPath(`alert/${this.config.vin}`);
-    const requestBody = {
-      alertRequest: {
-        action: [AlertRequestAction.Honk, AlertRequestAction.Flash],
-        delay: 0,
-        duration: 1,
-        override: [
-          AlertRequestOverride.DoorOpen,
-          AlertRequestOverride.IgnitionOn,
-        ],
-        ...options,
-      },
+    // v3 expects top-level fields; v1 expects nested under alertRequest
+    const v3Body = {
+      action: [AlertRequestAction.Honk, AlertRequestAction.Flash],
+      delay: 0,
+      duration: 1,
+      override: [
+        AlertRequestOverride.DoorOpen,
+        AlertRequestOverride.IgnitionOn,
+      ],
+      ...options,
     };
+    const v1Body = { alertRequest: { ...v3Body } };
 
-    return this.sendActionCommandWithFallback(v3Url, "alert", requestBody);
+    return this.sendActionCommandWithFallback(v3Url, "alert", {
+      __v3Body: v3Body,
+      __v1Body: v1Body,
+    });
   }
 
   async cancelAlert(): Promise<Result> {
@@ -227,20 +230,23 @@ class RequestService {
     // Try v3 API first, fallback to v1 API if v3 fails
     // This handles vehicles where v3 API doesn't support flashLights commands
     const v3Url = this.getApiUrlForPath(`alert/${this.config.vin}`);
-    const requestBody = {
-      alertRequest: {
-        action: [AlertRequestAction.Flash],
-        delay: 0,
-        duration: 1,
-        override: [
-          AlertRequestOverride.DoorOpen,
-          AlertRequestOverride.IgnitionOn,
-        ],
-        ...options,
-      },
+    // v3 expects top-level fields; v1 expects nested under alertRequest
+    const v3Body = {
+      action: [AlertRequestAction.Flash],
+      delay: 0,
+      duration: 1,
+      override: [
+        AlertRequestOverride.DoorOpen,
+        AlertRequestOverride.IgnitionOn,
+      ],
+      ...options,
     };
+    const v1Body = { alertRequest: { ...v3Body } };
 
-    return this.sendActionCommandWithFallback(v3Url, "alert", requestBody);
+    return this.sendActionCommandWithFallback(v3Url, "alert", {
+      __v3Body: v3Body,
+      __v1Body: v1Body,
+    });
   }
 
   async stopLights(): Promise<Result> {
@@ -485,6 +491,10 @@ class RequestService {
     v1Command: string,
     requestBody?: any,
   ): Promise<Result> {
+    // Allow callers to pass separate bodies for v3 and v1 to accommodate shape differences
+    // If requestBody has __v3Body/__v1Body, prefer those; otherwise use the same body for both
+    const v3Body = requestBody?.__v3Body ?? requestBody;
+    const v1Body = requestBody?.__v1Body ?? requestBody;
     // If we've already determined v1 works for this vehicle, skip v3 attempt
     if (this.cachedActionCommandApiVersion === "v1") {
       console.log(
@@ -492,8 +502,8 @@ class RequestService {
       );
       const v1Url = this.getV1CommandUrl(v1Command);
       const request = new Request(v1Url);
-      if (requestBody) {
-        request.setBody(requestBody);
+      if (v1Body) {
+        request.setBody(v1Body);
       }
       return this.sendRequest(request);
     }
@@ -502,8 +512,8 @@ class RequestService {
     try {
       console.log(`[ActionCommandFallback] Attempting v3 API for ${v1Command}`);
       const v3Request = new Request(v3Url);
-      if (requestBody) {
-        v3Request.setBody(requestBody);
+      if (v3Body) {
+        v3Request.setBody(v3Body);
       }
       const result = await this.sendRequest(v3Request);
 
@@ -527,8 +537,8 @@ class RequestService {
         try {
           const v1Url = this.getV1CommandUrl(v1Command);
           const v1Request = new Request(v1Url);
-          if (requestBody) {
-            v1Request.setBody(requestBody);
+          if (v1Body) {
+            v1Request.setBody(v1Body);
           }
           const result = await this.sendRequest(v1Request);
 
@@ -610,10 +620,11 @@ class RequestService {
       accept: "application/json",
       "accept-encoding": "gzip",
       "accept-language": "en-US",
-      appversion: "myOwner-chevrolet-android-7.17.0-0",
+      appversion: "myOwner-chevrolet-android-7.18.0-0",
       locale: "en-US",
       "content-type": request.getContentType(),
       "user-agent": onStarAppConfig.userAgent,
+      "push-request": "allow",
     };
 
     if (request.isAuthRequired()) {
