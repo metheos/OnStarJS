@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.11.1](https://github.com/BigThunderSR/OnStarJS/compare/v2.11.0...v2.11.1) (2025-10-11)
+
+
+### Bug Fixes
+
+* **deps:** bump chromium-bidi from 10.1.0 to 10.2.0 ([dc41a43](https://github.com/BigThunderSR/OnStarJS/commit/dc41a434c2a348fd3e4f0f22845cef3f41b80cbe))
+* **RequestService:** update alert command request structure for v3 and v1 API compatibility ([65ab9b3](https://github.com/BigThunderSR/OnStarJS/commit/65ab9b3a53516d2c0a19498f8b118a7a5a6a898d))
+
 ## [2.11.0](https://github.com/BigThunderSR/OnStarJS/compare/v2.10.0...v2.11.0) (2025-10-10)
 
 
