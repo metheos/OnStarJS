@@ -48,6 +48,9 @@ class RequestService {
   private requestPollingTimeoutSeconds: number;
   private requestPollingIntervalSeconds: number;
   private cachedVehicleId?: string;
+  // Cached EV session state (x-gm-token) and optional expiry
+  private evSessionToken?: string;
+  private evTokenExpiresAt?: number; // epoch ms, if decodable from JWT
   // Cache which API version works for action commands (v1 or v3)
   // This is only cached in memory (not disk) as API support may change over time
   private cachedActionCommandApiVersion?: "v1" | "v3";
@@ -280,9 +283,10 @@ class RequestService {
     }
 
     const gmMobileToken = (await this.getAuthToken()).access_token;
-    const { token: evToken, vehicleId: sessionVehicleId } =
-      await this.initEVSessionToken(gmMobileToken);
-    const vehicleId = sessionVehicleId!; // must come from initSession metrics
+    // Ensure we have a valid EV session token (cached or freshly initialized)
+    let { token: evToken, vehicleId: sessionVehicleId } =
+      await this.ensureEVSession(gmMobileToken);
+    let vehicleId = sessionVehicleId!; // must come from initSession metrics
 
     const baseUrl = `https://eve-vcn.ext.gm.com/api/gmone/v1/vehicle/performSetChargingSettings`;
     const clientVersion = opts?.clientVersion ?? "7.18.0.8006";
@@ -310,19 +314,31 @@ class RequestService {
 
     // VehicleId is derived exclusively from initSession metrics
 
-    const req = new Request(`${baseUrl}?${query.toString()}`)
-      .setMethod(RequestMethod.Post)
-      .setAuthRequired(false)
-      .setContentType("application/x-www-form-urlencoded")
-      .setHeaders({
-        accept: "*/*",
-        "x-gm-mobiletoken": gmMobileToken,
-        "x-gm-token": evToken,
-      })
-      .setBody(bodyParams.toString())
-      .setCheckRequestStatus(false); // EV API responds synchronously
+    const makeReq = (token: string) =>
+      new Request(`${baseUrl}?${query.toString()}`)
+        .setMethod(RequestMethod.Post)
+        .setAuthRequired(false)
+        .setContentType("application/x-www-form-urlencoded")
+        .setHeaders({
+          accept: "*/*",
+          "x-gm-mobiletoken": gmMobileToken,
+          "x-gm-token": token,
+        })
+        .setBody(bodyParams.toString())
+        .setCheckRequestStatus(false); // EV API responds synchronously
 
-    return this.sendRequest(req);
+    try {
+      return await this.sendRequest(makeReq(evToken));
+    } catch (err: any) {
+      if (this.isEVAuthError(err)) {
+        // Invalidate and retry once with a fresh EV session
+        this.invalidateEVSession();
+        ({ token: evToken, vehicleId: vehicleId } =
+          await this.ensureEVSession(gmMobileToken));
+        return this.sendRequest(makeReq(evToken));
+      }
+      throw err;
+    }
   }
 
   /**
@@ -337,9 +353,9 @@ class RequestService {
     os?: "A" | "I"; // Android or iOS indicator for EV API metadata
   }): Promise<Result> {
     const gmMobileToken = (await this.getAuthToken()).access_token;
-    const { token: evToken, vehicleId: sessionVehicleId } =
-      await this.initEVSessionToken(gmMobileToken);
-    const vehicleId = sessionVehicleId!;
+    let { token: evToken, vehicleId: sessionVehicleId } =
+      await this.ensureEVSession(gmMobileToken);
+    let vehicleId = sessionVehicleId!;
 
     const baseUrl = `https://eve-vcn.ext.gm.com/api/gmone/v1/vehicle/performStopCharging`;
     const clientVersion = opts?.clientVersion ?? "7.18.0.8006";
@@ -364,19 +380,85 @@ class RequestService {
       clientRequestId: opts?.clientRequestId ?? uuidv4(),
     });
 
-    const req = new Request(`${baseUrl}?${query.toString()}`)
-      .setMethod(RequestMethod.Post)
-      .setAuthRequired(false)
-      .setContentType("application/x-www-form-urlencoded")
-      .setHeaders({
-        accept: "*/*",
-        "x-gm-mobiletoken": gmMobileToken,
-        "x-gm-token": evToken,
-      })
-      .setBody(bodyParams.toString())
-      .setCheckRequestStatus(false); // EV API responds synchronously
+    const makeReq = (token: string) =>
+      new Request(`${baseUrl}?${query.toString()}`)
+        .setMethod(RequestMethod.Post)
+        .setAuthRequired(false)
+        .setContentType("application/x-www-form-urlencoded")
+        .setHeaders({
+          accept: "*/*",
+          "x-gm-mobiletoken": gmMobileToken,
+          "x-gm-token": token,
+        })
+        .setBody(bodyParams.toString())
+        .setCheckRequestStatus(false);
 
-    return this.sendRequest(req);
+    try {
+      return await this.sendRequest(makeReq(evToken));
+    } catch (err: any) {
+      if (this.isEVAuthError(err)) {
+        this.invalidateEVSession();
+        ({ token: evToken, vehicleId } =
+          await this.ensureEVSession(gmMobileToken));
+        return this.sendRequest(makeReq(evToken));
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * EV: Retrieve current vehicle charging metrics
+   * API responds synchronously with metrics payload.
+   */
+  async getEVChargingMetrics(opts?: {
+    clientVersion?: string; // default 7.18.0.8006
+    os?: "A" | "I"; // Android or iOS indicator for EV API metadata
+  }): Promise<Result> {
+    const gmMobileToken = (await this.getAuthToken()).access_token;
+    let { token: evToken, vehicleId } =
+      await this.ensureEVSession(gmMobileToken);
+
+    const baseUrl = `https://eve-vcn.ext.gm.com/api/gmone/v1/vehicle/getVehicleChargingMetrics`;
+    const clientVersion = opts?.clientVersion ?? "7.18.0.8006";
+    const os = opts?.os ?? "A";
+    const query = new URLSearchParams({
+      vehicleId: vehicleId!,
+      vehicleVin: this.config.vin,
+      clientVersion,
+      clientType: "bev-myowner",
+      buildType: "r",
+      clientLocale: "en-US",
+      deviceId: this.config.deviceId,
+      os,
+      ts: String(Date.now()),
+      varch: "globalb",
+      sid: this.randomHex(8).toUpperCase(),
+      pid: this.randomHex(8).toUpperCase(),
+    });
+
+    const makeReq = (token: string) =>
+      new Request(`${baseUrl}?${query.toString()}`)
+        .setMethod(RequestMethod.Get)
+        .setAuthRequired(false)
+        .setContentType("application/json")
+        .setHeaders({
+          accept: "*/*",
+          "x-gm-mobiletoken": gmMobileToken,
+          "x-gm-token": token,
+        })
+        .setCheckRequestStatus(false);
+
+    try {
+      return await this.sendRequest(makeReq(evToken));
+    } catch (err: any) {
+      if (this.isEVAuthError(err)) {
+        this.invalidateEVSession();
+        ({ token: evToken, vehicleId } =
+          await this.ensureEVSession(gmMobileToken));
+        return this.sendRequest(makeReq(evToken));
+      }
+      throw err;
+    }
   }
 
   async diagnostics(): Promise<
@@ -912,7 +994,59 @@ class RequestService {
       );
     }
     this.cachedVehicleId = vehicleId;
+    // Attempt to parse JWT exp from token for proactive refresh
+    const exp = this.decodeJwtExp(token);
+    if (exp) {
+      // subtract small skew (5s)
+      this.evTokenExpiresAt = exp * 1000 - 5000;
+    } else {
+      this.evTokenExpiresAt = undefined;
+    }
+    this.evSessionToken = token;
     return { token, vehicleId };
+  }
+
+  // Return cached EV session if present and not expired
+  private async ensureEVSession(
+    gmMobileToken: string,
+  ): Promise<{ token: string; vehicleId: string }> {
+    const cached = this.getValidEVSession();
+    if (cached) return cached;
+
+    const fresh = await this.initEVSessionToken(gmMobileToken);
+    return { token: fresh.token, vehicleId: this.cachedVehicleId! };
+  }
+
+  private getValidEVSession(): { token: string; vehicleId: string } | null {
+    if (!this.evSessionToken || !this.cachedVehicleId) return null;
+    if (this.evTokenExpiresAt && Date.now() >= this.evTokenExpiresAt)
+      return null;
+    return { token: this.evSessionToken, vehicleId: this.cachedVehicleId };
+  }
+
+  private invalidateEVSession() {
+    this.evSessionToken = undefined;
+    this.evTokenExpiresAt = undefined;
+    // Keep cachedVehicleId; it is stable for the VIN and useful across sessions
+  }
+
+  // Best-effort decode for JWT exp claim
+  private decodeJwtExp(token: string): number | undefined {
+    try {
+      const parts = token.split(".");
+      if (parts.length < 2) return undefined;
+      const payload = JSON.parse(
+        Buffer.from(
+          parts[1].replace(/-/g, "+").replace(/_/g, "/"),
+          "base64",
+        ).toString("utf8"),
+      );
+      const exp = payload?.exp;
+      if (typeof exp === "number" && isFinite(exp)) return exp;
+    } catch (_) {
+      // ignore
+    }
+    return undefined;
   }
 
   private async ensureVehicleIdFromGarage(
@@ -960,6 +1094,27 @@ class RequestService {
       return diff > 0 ? diff : 0;
     }
     return null;
+  }
+
+  // Detect EV token/auth errors that should trigger a refresh/retry
+  private isEVAuthError(err: any): boolean {
+    // RequestError wrapping axios-like response
+    if (err instanceof RequestError) {
+      const data: any = err.getResponse()?.data;
+      const status = (data as any)?.status ?? (data as any)?.statusCode;
+      if (status === 401 || status === 403) return true;
+      const msg = (data as any)?.message || (data as any)?.error;
+      if (typeof msg === "string" && /token|auth|unauthor/i.test(msg))
+        return true;
+      return false;
+    }
+    // Axios-like error object
+    const status = err?.response?.status;
+    if (status === 401 || status === 403) return true;
+    const msg = err?.response?.data?.message || err?.message;
+    if (typeof msg === "string" && /token|auth|unauthor/i.test(msg))
+      return true;
+    return false;
   }
 
   private async makeClientRequest(request: Request): Promise<RequestResponse> {

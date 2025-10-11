@@ -113,6 +113,14 @@ class OnStar {
     return this.requestService.stopCharging(opts);
   }
 
+  // EV: Get current charging metrics
+  async getEVChargingMetrics(opts?: {
+    clientVersion?: string;
+    os?: "A" | "I";
+  }): Promise<Result> {
+    return this.requestService.getEVChargingMetrics(opts);
+  }
+
   setCheckRequestStatus(checkStatus: boolean) {
     this.requestService.setCheckRequestStatus(checkStatus);
   }
