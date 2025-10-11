@@ -196,6 +196,16 @@ export interface VehicleDetailsResponse {
   dataPresent?: boolean;
 }
 
+// v3 Garage GraphQL plan info subset from vehicleDetails
+export interface OnstarPlanResponse {
+  errors?: any[];
+  data: {
+    vehicleDetails: any; // includes model/make/year and planExpiryInfo, planInfo, offers
+  };
+  extensions?: any;
+  dataPresent?: boolean;
+}
+
 // Vehicle Health Status (v3 healthstatus) response types
 export interface HealthStatusElement {
   name: string;

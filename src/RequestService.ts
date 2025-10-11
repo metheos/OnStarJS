@@ -553,6 +553,45 @@ class RequestService {
     return payload as import("./types").VehicleDetailsResponse;
   }
 
+  async getOnstarPlan(
+    vin?: string,
+  ): Promise<import("./types").OnstarPlanResponse> {
+    const url = `${onStarAppConfig.serviceUrl}/mbff/garage/v1`;
+    const qVin = (vin || this.config.vin).toUpperCase();
+    const graphQL =
+      "query getPlanInfo {" +
+      `vehicleDetails(vin: "${qVin}") {` +
+      "model make year " +
+      "planExpiryInfo { productCode planName startDate endDate expiryDate orderDate isTrial type billingCadence cancelDate status features { featureCode featureName priorityNumber featureCategoryCode } additionalInfo { radioId } } " +
+      "planInfo { productCode billingCadence status startDate endDate expiryDate cancelDate orderDate pricePlan productType isTrial orderItemTags offers { offerName associatedOfferingCode retailPrice billingCadence productRank discounts { name discountCategory price duration { uom value } } } } " +
+      "offers { productCode offerName associatedOfferingCode retailPrice billingCadence productRank discounts { name discountCategory price duration { uom value } } } " +
+      "}" +
+      "}";
+
+    const request = new Request(url)
+      .setMethod(RequestMethod.Post)
+      .setContentType("text/plain; charset=utf-8")
+      .setBody(graphQL)
+      .setCheckRequestStatus(false);
+
+    const result = await this.sendRequest(request);
+    const payload: any = result.response?.data;
+    if (result.status !== CommandResponseStatus.success) {
+      console.error("getOnstarPlan failed", {
+        status: result.status,
+        data: payload,
+      });
+      throw new Error("getOnstarPlan request did not succeed");
+    }
+    if (payload && Array.isArray(payload.errors) && payload.errors.length) {
+      console.error("getOnstarPlan GraphQL errors", {
+        errors: payload.errors,
+      });
+      throw new Error("getOnstarPlan GraphQL errors present");
+    }
+    return payload as import("./types").OnstarPlanResponse;
+  }
+
   async location(): Promise<Result> {
     const base = `${onStarAppConfig.serviceUrl}/veh/datadelivery/digitaltwin/v1/vehicles/${this.config.vin}`;
 

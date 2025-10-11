@@ -217,6 +217,58 @@ describe("RequestService", () => {
     requestService["sendRequest"] = originalSendRequest;
   });
 
+  test("getOnstarPlan success", async () => {
+    httpClient.post = jest.fn().mockResolvedValue({
+      data: {
+        errors: [],
+        data: {
+          vehicleDetails: {
+            model: "Blazer EV",
+            make: "Chevrolet",
+            year: "2024",
+            planInfo: [],
+            offers: [],
+          },
+        },
+        extensions: null,
+        dataPresent: true,
+      },
+    });
+
+    const data = await requestService.setClient(httpClient).getOnstarPlan();
+    expect(data).toHaveProperty("data.vehicleDetails");
+    expect(Array.isArray((data as any).data.vehicleDetails.planInfo)).toBe(
+      true,
+    );
+  });
+
+  test("getOnstarPlan with errors in response", async () => {
+    httpClient.post = jest.fn().mockResolvedValue({
+      data: {
+        errors: [{ message: "GraphQL error" }],
+        data: { vehicleDetails: null },
+      },
+    });
+
+    await expect(
+      requestService.setClient(httpClient).getOnstarPlan(),
+    ).rejects.toThrow("getOnstarPlan GraphQL errors present");
+  });
+
+  test("getOnstarPlan with non-success status", async () => {
+    const originalSendRequest = requestService["sendRequest"];
+    requestService["sendRequest"] = jest.fn().mockResolvedValue({
+      status: CommandResponseStatus.failure,
+      response: { data: {} },
+    });
+
+    await expect(
+      requestService.setClient(httpClient).getOnstarPlan(),
+    ).rejects.toThrow("getOnstarPlan request did not succeed");
+
+    requestService["sendRequest"] = originalSendRequest;
+  });
+
   test("location", async () => {
     const result = await requestService.location();
 

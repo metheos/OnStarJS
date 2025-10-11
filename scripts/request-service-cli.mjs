@@ -85,6 +85,15 @@ async function main() {
       },
     },
     {
+      key: "getOnstarPlan",
+      label: "getOnstarPlan(vin?)",
+      run: async () => {
+        const ans = (await rl.question("VIN (blank to use env VIN): ")).trim();
+        const vin = ans ? ans.toUpperCase() : undefined;
+        return client.getOnstarPlan(vin);
+      },
+    },
+    {
       key: "diagnostics",
       label: "diagnostics()",
       run: () => client.diagnostics(),
