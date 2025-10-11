@@ -116,7 +116,7 @@ Action commands (start, cancel start, lock/unlock doors and trunk, alert, cancel
 
 The library caches which API version works for your vehicle in memory during the session to optimize subsequent requests.
 
-<details>
+<details id="get-account-vehicles">
 <summary>Get Account Vehicles</summary>
 
 ```javascript
@@ -125,7 +125,7 @@ onStar.getAccountVehicles();
 
 </details>
 
-<details>
+<details id="get-vehicle-details">
 <summary>Get Vehicle Details</summary>
 
 Returns detailed vehicle information including make, model, year, RPO codes, permissions, available vehicle commands, colors, metadata, and OnStar account info.
@@ -140,7 +140,7 @@ onStar.getVehicleDetails([vin]);
 
 </details>
 
-<details>
+<details id="get-onstar-plan">
 <summary>Get OnStar Plan</summary>
 
 Returns OnStar subscription plan information including active plans, features, billing details, pricing, and available offers.
@@ -155,7 +155,7 @@ onStar.getOnstarPlan([vin]);
 
 </details>
 
-<details>
+<details id="get-vehicle-recall-info">
 <summary>Get Vehicle Recall Info</summary>
 
 Returns vehicle recall information including recall status, repair status, descriptions, and completion dates.
@@ -170,134 +170,20 @@ onStar.getVehicleRecallInfo([vin]);
 
 </details>
 
-<details>
-<summary>Start</summary>
+<details id="diagnostics">
+<summary>Diagnostics</summary>
+
+Returns comprehensive vehicle diagnostics including odometer, tire pressure, fuel economy, battery levels, and other vehicle health information.
+
+**Note:** The v3 API automatically returns all available diagnostic data. The previous `diagnosticItem` options parameter from the v1 API is no longer supported.
 
 ```javascript
-onStar.start();
+onStar.diagnostics();
 ```
 
 </details>
 
-<details>
-<summary>Cancel Start</summary>
-
-```javascript
-onStar.cancelStart();
-```
-
-</details>
-
-<details>
-<summary>Alert</summary>
-
-```javascript
-onStar.alert([options]);
-```
-
-| Option   | Default                    | Valid Values               |
-| -------- | -------------------------- | -------------------------- |
-| action   | ["Flash", "Honk"]          | ["Flash", "Honk"]          |
-| delay    | 0                          | Any integer (minutes)      |
-| duration | 1                          | Any integer (minutes)      |
-| override | ["DoorOpen", "IgnitionOn"] | ["DoorOpen", "IgnitionOn"] |
-
-</details>
-
-<details>
-<summary>Cancel Alert</summary>
-
-```javascript
-onStar.cancelAlert();
-```
-
-</details>
-
-<details>
-<summary>Flash Lights</summary>
-
-Flashes the vehicle's lights without honking the horn.
-
-```javascript
-onStar.flashLights([options]);
-```
-
-| Option   | Default      | Valid Values               |
-| -------- | ------------ | -------------------------- |
-| delay    | 0            | Any integer (minutes)      |
-| duration | 1            | Any integer (minutes)      |
-| override | ["DoorOpen"] | ["DoorOpen", "IgnitionOn"] |
-
-</details>
-
-<details>
-<summary>Stop Lights</summary>
-
-Stops an active flash lights command.
-
-```javascript
-onStar.stopLights();
-```
-
-</details>
-
-<details>
-<summary>Lock Door</summary>
-
-```javascript
-onStar.lockDoor([options]);
-```
-
-| Option | Default | Valid Values          |
-| ------ | ------- | --------------------- |
-| delay  | 0       | Any integer (minutes) |
-
-</details>
-
-<details>
-<summary>Unlock Door</summary>
-
-```javascript
-onStar.unlockDoor([options]);
-```
-
-| Option | Default | Valid Values          |
-| ------ | ------- | --------------------- |
-| delay  | 0       | Any integer (minutes) |
-
-</details>
-
-<details>
-<summary>Lock Trunk</summary>
-
-Locks the trunk but doesn't automatically close it.
-
-```javascript
-onStar.lockTrunk([options]);
-```
-
-| Option | Default | Valid Values          |
-| ------ | ------- | --------------------- |
-| delay  | 0       | Any integer (minutes) |
-
-</details>
-
-<details>
-<summary>Unlock Trunk</summary>
-
-Unlocks the trunk but doesn't automatically open it. All doors remain locked.
-
-```javascript
-onStar.unlockTrunk([options]);
-```
-
-| Option | Default | Valid Values          |
-| ------ | ------- | --------------------- |
-| delay  | 0       | Any integer (minutes) |
-
-</details>
-
-<details>
+<details id="location">
 <summary>Location</summary>
 
 Returns the location of the vehicle
@@ -314,43 +200,134 @@ Example Response
 
 </details>
 
-<details>
-<summary>Charge Override</summary>
+<details id="start">
+<summary>Start</summary>
 
 ```javascript
-onStar.chargeOverride([options]);
-```
-
-| Option | Default      | Valid Values                    |
-| ------ | ------------ | ------------------------------- |
-| mode   | "CHARGE_NOW" | "CHARGE_NOW", "CANCEL_OVERRIDE" |
-
-</details>
-
-<details>
-<summary>Get Charging Profile</summary>
-
-```javascript
-onStar.getChargingProfile();
+onStar.start();
 ```
 
 </details>
 
-<details>
-<summary>Set Charging Profile</summary>
+<details id="cancel-start">
+<summary>Cancel Start</summary>
 
 ```javascript
-onStar.setChargingProfile([options]);
+onStar.cancelStart();
 ```
-
-| Option     | Default     | Valid Values                                                                             |
-| ---------- | ----------- | ---------------------------------------------------------------------------------------- |
-| chargeMode | "IMMEDIATE" | "DEFAULT_IMMEDIATE", "IMMEDIATE", "DEPARTURE_BASED", "RATE_BASED", "PHEV_AFTER_MIDNIGHT" |
-| rateType   | "MIDPEAK"   | "OFFPEAK", "MIDPEAK", "PEAK"                                                             |
 
 </details>
 
-<details>
+<details id="alert">
+<summary>Alert</summary>
+
+```javascript
+onStar.alert([options]);
+```
+
+| Option   | Default                    | Valid Values               |
+| -------- | -------------------------- | -------------------------- |
+| action   | ["Flash", "Honk"]          | ["Flash", "Honk"]          |
+| delay    | 0                          | Any integer (minutes)      |
+| duration | 1                          | Any integer (minutes)      |
+| override | ["DoorOpen", "IgnitionOn"] | ["DoorOpen", "IgnitionOn"] |
+
+</details>
+
+<details id="cancel-alert">
+<summary>Cancel Alert</summary>
+
+```javascript
+onStar.cancelAlert();
+```
+
+</details>
+
+<details id="flash-lights">
+<summary>Flash Lights</summary>
+
+Flashes the vehicle's lights without honking the horn.
+
+```javascript
+onStar.flashLights([options]);
+```
+
+| Option   | Default      | Valid Values               |
+| -------- | ------------ | -------------------------- |
+| delay    | 0            | Any integer (minutes)      |
+| duration | 1            | Any integer (minutes)      |
+| override | ["DoorOpen"] | ["DoorOpen", "IgnitionOn"] |
+
+</details>
+
+<details id="stop-lights">
+<summary>Stop Lights</summary>
+
+Stops an active flash lights command.
+
+```javascript
+onStar.stopLights();
+```
+
+</details>
+
+<details id="lock-door">
+<summary>Lock Door</summary>
+
+```javascript
+onStar.lockDoor([options]);
+```
+
+| Option | Default | Valid Values          |
+| ------ | ------- | --------------------- |
+| delay  | 0       | Any integer (minutes) |
+
+</details>
+
+<details id="unlock-door">
+<summary>Unlock Door</summary>
+
+```javascript
+onStar.unlockDoor([options]);
+```
+
+| Option | Default | Valid Values          |
+| ------ | ------- | --------------------- |
+| delay  | 0       | Any integer (minutes) |
+
+</details>
+
+<details id="lock-trunk">
+<summary>Lock Trunk</summary>
+
+Locks the trunk but doesn't automatically close it.
+
+```javascript
+onStar.lockTrunk([options]);
+```
+
+| Option | Default | Valid Values          |
+| ------ | ------- | --------------------- |
+| delay  | 0       | Any integer (minutes) |
+
+</details>
+
+<details id="unlock-trunk">
+<summary>Unlock Trunk</summary>
+
+Unlocks the trunk but doesn't automatically open it. All doors remain locked.
+
+```javascript
+onStar.unlockTrunk([options]);
+```
+
+| Option | Default | Valid Values          |
+| ------ | ------- | --------------------- |
+| delay  | 0       | Any integer (minutes) |
+
+</details>
+
+<details id="get-ev-charging-metrics">
 <summary>Get EV Charging Metrics</summary>
 
 Returns current EV charging metrics and status information for electric vehicles.
@@ -366,7 +343,7 @@ onStar.getEVChargingMetrics([options]);
 
 </details>
 
-<details>
+<details id="set-charge-level-target">
 <summary>Set Charge Level Target</summary>
 
 Sets the target charge level percentage for electric vehicles.
@@ -385,7 +362,7 @@ onStar.setChargeLevelTarget(tcl, [options]);
 
 </details>
 
-<details>
+<details id="stop-charging">
 <summary>Stop Charging</summary>
 
 Stops the current charging session for electric vehicles.
@@ -404,14 +381,37 @@ onStar.stopCharging([options]);
 </details>
 
 <details>
-<summary>Diagnostics</summary>
+<summary>⚠️ Charge Override (Deprecated)</summary>
 
-Returns comprehensive vehicle diagnostics including odometer, tire pressure, fuel economy, battery levels, and other vehicle health information.
-
-**Note:** The v3 API automatically returns all available diagnostic data. The previous `diagnosticItem` options parameter from the v1 API is no longer supported.
+**Deprecated:** This v1 API method is no longer available. Use [`setChargeLevelTarget()`](#set-charge-level-target) and [`stopCharging()`](#stop-charging) instead for EV charging control.
 
 ```javascript
-onStar.diagnostics();
+// DEPRECATED - Do not use
+onStar.chargeOverride([options]);
+```
+
+</details>
+
+<details>
+<summary>⚠️ Get Charging Profile (Deprecated)</summary>
+
+**Deprecated:** This v1 API method is no longer available. Use [`getEVChargingMetrics()`](#get-ev-charging-metrics) instead to retrieve current charging information.
+
+```javascript
+// DEPRECATED - Do not use
+onStar.getChargingProfile();
+```
+
+</details>
+
+<details>
+<summary>⚠️ Set Charging Profile (Deprecated)</summary>
+
+**Deprecated:** This v1 API method is no longer available. Use [`setChargeLevelTarget()`](#set-charge-level-target) instead to configure EV charging settings.
+
+```javascript
+// DEPRECATED - Do not use
+onStar.setChargingProfile([options]);
 ```
 
 </details>
