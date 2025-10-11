@@ -269,6 +269,62 @@ describe("RequestService", () => {
     requestService["sendRequest"] = originalSendRequest;
   });
 
+  test("getVehicleRecallInfo success", async () => {
+    httpClient.post = jest.fn().mockResolvedValue({
+      data: {
+        errors: [],
+        data: {
+          vehicleDetails: {
+            recallInfo: [
+              {
+                recallId: "N252503010",
+                title: "Unintended Parking Brake Engagement",
+                type: "ZPSR",
+              },
+            ],
+          },
+        },
+        extensions: null,
+        dataPresent: true,
+      },
+    });
+
+    const data = await requestService
+      .setClient(httpClient)
+      .getVehicleRecallInfo();
+    expect(data).toHaveProperty("data.vehicleDetails.recallInfo");
+    expect(Array.isArray((data as any).data.vehicleDetails.recallInfo)).toBe(
+      true,
+    );
+  });
+
+  test("getVehicleRecallInfo with errors in response", async () => {
+    httpClient.post = jest.fn().mockResolvedValue({
+      data: {
+        errors: [{ message: "GraphQL error" }],
+        data: { vehicleDetails: null },
+      },
+    });
+
+    await expect(
+      requestService.setClient(httpClient).getVehicleRecallInfo(),
+    ).rejects.toThrow("getVehicleRecallInfo GraphQL errors present");
+  });
+
+  test("getVehicleRecallInfo with non-success status", async () => {
+    const originalSendRequest = requestService["sendRequest"];
+    requestService["sendRequest"] = jest.fn().mockResolvedValue({
+      status: CommandResponseStatus.failure,
+      response: { data: {} },
+    });
+
+    await expect(
+      requestService.setClient(httpClient).getVehicleRecallInfo(),
+    ).rejects.toThrow("getVehicleRecallInfo request did not succeed");
+
+    requestService["sendRequest"] = originalSendRequest;
+  });
+
   test("location", async () => {
     const result = await requestService.location();
 

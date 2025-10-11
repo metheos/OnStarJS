@@ -36,6 +36,10 @@ class OnStar {
     return this.requestService.getOnstarPlan(vin);
   }
 
+  async getVehicleRecallInfo(vin?: string) {
+    return this.requestService.getVehicleRecallInfo(vin);
+  }
+
   async start(options?: StartRequestOptions): Promise<Result> {
     return this.requestService.start(options);
   }

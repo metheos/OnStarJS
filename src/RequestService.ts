@@ -592,6 +592,42 @@ class RequestService {
     return payload as import("./types").OnstarPlanResponse;
   }
 
+  async getVehicleRecallInfo(
+    vin?: string,
+  ): Promise<import("./types").VehicleRecallInfoResponse> {
+    const url = `${onStarAppConfig.serviceUrl}/mbff/garage/v1`;
+    const qVin = (vin || this.config.vin).toUpperCase();
+    const graphQL =
+      "query getVehicleRecallInfo {" +
+      `vehicleDetails(vin: "${qVin}") {` +
+      "recallInfo { recallId title type typeDescription description recallStatus repairStatus repairStatusCode repairDescription safetyRiskDescription completedDate }" +
+      "}" +
+      "}";
+
+    const request = new Request(url)
+      .setMethod(RequestMethod.Post)
+      .setContentType("text/plain; charset=utf-8")
+      .setBody(graphQL)
+      .setCheckRequestStatus(false);
+
+    const result = await this.sendRequest(request);
+    const payload: any = result.response?.data;
+    if (result.status !== CommandResponseStatus.success) {
+      console.error("getVehicleRecallInfo failed", {
+        status: result.status,
+        data: payload,
+      });
+      throw new Error("getVehicleRecallInfo request did not succeed");
+    }
+    if (payload && Array.isArray(payload.errors) && payload.errors.length) {
+      console.error("getVehicleRecallInfo GraphQL errors", {
+        errors: payload.errors,
+      });
+      throw new Error("getVehicleRecallInfo GraphQL errors present");
+    }
+    return payload as import("./types").VehicleRecallInfoResponse;
+  }
+
   async location(): Promise<Result> {
     const base = `${onStarAppConfig.serviceUrl}/veh/datadelivery/digitaltwin/v1/vehicles/${this.config.vin}`;
 

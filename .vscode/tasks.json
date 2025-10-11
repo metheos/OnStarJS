@@ -149,6 +149,15 @@
 				"build"
 			],
 			"group": "build"
+		},
+		{
+			"label": "pnpm build (diagnostics retrofit)",
+			"type": "shell",
+			"command": "pnpm",
+			"args": [
+				"build"
+			],
+			"group": "build"
 		}
 	]
 }

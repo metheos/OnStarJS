@@ -206,6 +206,19 @@ export interface OnstarPlanResponse {
   dataPresent?: boolean;
 }
 
+// v3 Garage GraphQL vehicle recall info response
+export interface VehicleRecallInfoResponse {
+  errors?: any[];
+  data: {
+    vehicleDetails: {
+      recallInfo: any[] | null; // keeping flexible for now
+      [k: string]: any;
+    } | null;
+  };
+  extensions?: any;
+  dataPresent?: boolean;
+}
+
 // Vehicle Health Status (v3 healthstatus) response types
 export interface HealthStatusElement {
   name: string;
