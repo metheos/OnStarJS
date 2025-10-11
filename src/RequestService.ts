@@ -929,6 +929,22 @@ class RequestService {
           } else {
             errorObj.message = error.message;
           }
+        } else if ((error as any)?.response?.status) {
+          // Non-axios-like error but carrying a response with status
+          const resp: any = (error as any).response;
+          const status = resp.status;
+          const statusText = resp.statusText || "";
+          errorObj.message =
+            `Request Failed with status ${status}$${statusText ? " - " + statusText : ""}`.replace(
+              "$$",
+              "",
+            );
+          // Ensure we pass a data object with status so downstream logic can inspect it
+          const data = resp.data;
+          const normalized =
+            data && typeof data === "object" ? { ...data, status } : { status };
+          errorObj.setResponse({ data: normalized });
+          errorObj.setRequest(request);
         } else if (error instanceof Error) {
           errorObj.message = error.message;
         }
