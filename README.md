@@ -121,7 +121,7 @@ The library caches which API version works for your vehicle in memory during the
 <details id="get-account-vehicles">
 <summary>Get Account Vehicles</summary>
 
-Returns a list of all vehicles associated with your OnStar account, including VINs and supported commands.
+Returns a list of all vehicles associated with your OnStar account, including VINs, make, model, year, and OnStar account status.
 
 ```javascript
 onStar.getAccountVehicles();
@@ -207,7 +207,7 @@ Example Response
 <details id="start">
 <summary>Start</summary>
 
-Remotely starts the vehicle's engine.
+Starts the vehicle's engine remotely.
 
 ```javascript
 onStar.start();
@@ -229,7 +229,7 @@ onStar.cancelStart();
 <details id="alert">
 <summary>Alert</summary>
 
-Triggers vehicle alerts by flashing lights and/or honking the horn.
+Triggers the vehicle's alerts remotely by flashing lights and/or honking the horn.
 
 ```javascript
 onStar.alert([options]);
@@ -258,7 +258,7 @@ onStar.cancelAlert();
 <details id="flash-lights">
 <summary>Flash Lights</summary>
 
-Flashes the vehicle's lights without honking the horn.
+Flashes the vehicle's lights remotely without honking the horn.
 
 ```javascript
 onStar.flashLights([options]);
@@ -286,7 +286,7 @@ onStar.stopLights();
 <details id="lock-door">
 <summary>Lock Door</summary>
 
-Remotely locks all vehicle doors.
+Locks all the vehicle's doors remotely.
 
 ```javascript
 onStar.lockDoor([options]);
@@ -301,7 +301,7 @@ onStar.lockDoor([options]);
 <details id="unlock-door">
 <summary>Unlock Door</summary>
 
-Remotely unlocks all vehicle doors.
+Unlocks all the vehicle's doors remotely.
 
 ```javascript
 onStar.unlockDoor([options]);
@@ -316,7 +316,7 @@ onStar.unlockDoor([options]);
 <details id="lock-trunk">
 <summary>Lock Trunk</summary>
 
-Locks the trunk but doesn't automatically close it.
+Locks the vehicle's trunk remotely but doesn't automatically close it.
 
 ```javascript
 onStar.lockTrunk([options]);
@@ -331,7 +331,7 @@ onStar.lockTrunk([options]);
 <details id="unlock-trunk">
 <summary>Unlock Trunk</summary>
 
-Unlocks the trunk but doesn't automatically open it. All doors remain locked.
+Unlocks the vehicle's trunk remotely but doesn't automatically open it. All doors remain locked.
 
 ```javascript
 onStar.unlockTrunk([options]);
