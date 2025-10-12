@@ -700,6 +700,99 @@ describe("RequestService", () => {
     );
   });
 
+  test("setChargeLevelTarget retries on EV auth error (401)", async () => {
+    jest
+      .spyOn(requestService, "getAuthToken")
+      .mockResolvedValue({ access_token: "mock-token" } as any);
+    const ensureSpy = jest
+      .spyOn(requestService as any, "ensureEVSession")
+      .mockResolvedValueOnce({ token: "ev-token-1", vehicleId: "veh-1" })
+      .mockResolvedValueOnce({ token: "ev-token-2", vehicleId: "veh-1" });
+    const invalidateSpy = jest.spyOn(
+      requestService as any,
+      "invalidateEVSession",
+    );
+
+    const authErr = { response: { status: 401 } };
+    httpClient.post = jest
+      .fn()
+      .mockRejectedValueOnce(authErr)
+      .mockResolvedValueOnce({ data: { status: "success" } });
+
+    const result = await requestService
+      .setClient(httpClient)
+      .setChargeLevelTarget(80);
+
+    expect(result.status).toEqual(CommandResponseStatus.success);
+    expect(httpClient.post).toHaveBeenCalledTimes(2);
+    expect(ensureSpy).toHaveBeenCalledTimes(2);
+    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("setChargeLevelTarget retries on EV auth error (403)", async () => {
+    jest
+      .spyOn(requestService, "getAuthToken")
+      .mockResolvedValue({ access_token: "mock-token" } as any);
+    jest
+      .spyOn(requestService as any, "ensureEVSession")
+      .mockResolvedValueOnce({ token: "ev-token-1", vehicleId: "veh-1" })
+      .mockResolvedValueOnce({ token: "ev-token-2", vehicleId: "veh-1" });
+
+    const authErr = { response: { status: 403 } };
+    httpClient.post = jest
+      .fn()
+      .mockRejectedValueOnce(authErr)
+      .mockResolvedValueOnce({ data: { status: "success" } });
+
+    const result = await requestService
+      .setClient(httpClient)
+      .setChargeLevelTarget(75);
+
+    expect(result.status).toEqual(CommandResponseStatus.success);
+    expect(httpClient.post).toHaveBeenCalledTimes(2);
+  });
+
+  test("setChargeLevelTarget retries on auth message error", async () => {
+    jest
+      .spyOn(requestService, "getAuthToken")
+      .mockResolvedValue({ access_token: "mock-token" } as any);
+    jest
+      .spyOn(requestService as any, "ensureEVSession")
+      .mockResolvedValueOnce({ token: "ev-token-1", vehicleId: "veh-1" })
+      .mockResolvedValueOnce({ token: "ev-token-2", vehicleId: "veh-1" });
+
+    const authErr = {
+      response: { status: 400, data: { message: "Unauthorized access" } },
+    };
+    httpClient.post = jest
+      .fn()
+      .mockRejectedValueOnce(authErr)
+      .mockResolvedValueOnce({ data: { status: "success" } });
+
+    const result = await requestService
+      .setClient(httpClient)
+      .setChargeLevelTarget(90);
+
+    expect(result.status).toEqual(CommandResponseStatus.success);
+  });
+
+  test("setChargeLevelTarget throws non-EV auth errors", async () => {
+    jest
+      .spyOn(requestService, "getAuthToken")
+      .mockResolvedValue({ access_token: "mock-token" } as any);
+    jest.spyOn(requestService as any, "ensureEVSession").mockResolvedValue({
+      token: "ev-token",
+      vehicleId: "vehicle-123",
+    });
+
+    const networkErr = new Error("Network timeout");
+    httpClient.post = jest.fn().mockRejectedValue(networkErr);
+
+    await expect(
+      requestService.setClient(httpClient).setChargeLevelTarget(80),
+    ).rejects.toThrow("Network timeout");
+  });
+
   test("stopCharging", async () => {
     jest
       .spyOn(requestService, "getAuthToken")
@@ -737,6 +830,116 @@ describe("RequestService", () => {
       os: "A",
     });
     expect(result.status).toEqual(CommandResponseStatus.success);
+  });
+
+  test("stopCharging retries on EV auth error (401)", async () => {
+    jest
+      .spyOn(requestService, "getAuthToken")
+      .mockResolvedValue({ access_token: "mock-token" } as any);
+    const ensureSpy = jest
+      .spyOn(requestService as any, "ensureEVSession")
+      .mockResolvedValueOnce({ token: "ev-token-1", vehicleId: "veh-1" })
+      .mockResolvedValueOnce({ token: "ev-token-2", vehicleId: "veh-1" });
+    const invalidateSpy = jest.spyOn(
+      requestService as any,
+      "invalidateEVSession",
+    );
+
+    const authErr = { response: { status: 401 } };
+    httpClient.post = jest
+      .fn()
+      .mockRejectedValueOnce(authErr)
+      .mockResolvedValueOnce({ data: { status: "success" } });
+
+    const result = await requestService.setClient(httpClient).stopCharging();
+
+    expect(result.status).toEqual(CommandResponseStatus.success);
+    expect(httpClient.post).toHaveBeenCalledTimes(2);
+    expect(ensureSpy).toHaveBeenCalledTimes(2);
+    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("stopCharging retries on EV auth error (403)", async () => {
+    jest
+      .spyOn(requestService, "getAuthToken")
+      .mockResolvedValue({ access_token: "mock-token" } as any);
+    jest
+      .spyOn(requestService as any, "ensureEVSession")
+      .mockResolvedValueOnce({ token: "ev-token-1", vehicleId: "veh-1" })
+      .mockResolvedValueOnce({ token: "ev-token-2", vehicleId: "veh-1" });
+
+    const authErr = { response: { status: 403 } };
+    httpClient.post = jest
+      .fn()
+      .mockRejectedValueOnce(authErr)
+      .mockResolvedValueOnce({ data: { status: "success" } });
+
+    const result = await requestService.setClient(httpClient).stopCharging();
+    expect(result.status).toEqual(CommandResponseStatus.success);
+    expect(httpClient.post).toHaveBeenCalledTimes(2);
+  });
+
+  test("stopCharging retries on EV auth error (token message)", async () => {
+    jest
+      .spyOn(requestService, "getAuthToken")
+      .mockResolvedValue({ access_token: "mock-token" } as any);
+    jest
+      .spyOn(requestService as any, "ensureEVSession")
+      .mockResolvedValueOnce({ token: "ev-token-1", vehicleId: "veh-1" })
+      .mockResolvedValueOnce({ token: "ev-token-2", vehicleId: "veh-1" });
+
+    const authErr = {
+      response: { status: 400, data: { message: "Invalid token" } },
+    };
+    httpClient.post = jest
+      .fn()
+      .mockRejectedValueOnce(authErr)
+      .mockResolvedValueOnce({ data: { status: "success" } });
+
+    const result = await requestService.setClient(httpClient).stopCharging();
+    expect(result.status).toEqual(CommandResponseStatus.success);
+  });
+
+  test("stopCharging throws non-EV auth errors", async () => {
+    jest
+      .spyOn(requestService, "getAuthToken")
+      .mockResolvedValue({ access_token: "mock-token" } as any);
+    jest.spyOn(requestService as any, "ensureEVSession").mockResolvedValue({
+      token: "ev-token",
+      vehicleId: "vehicle-123",
+    });
+
+    const networkErr = new Error("Network error");
+    httpClient.post = jest.fn().mockRejectedValue(networkErr);
+
+    await expect(
+      requestService.setClient(httpClient).stopCharging(),
+    ).rejects.toThrow("Network error");
+  });
+
+  test("stopCharging retries on axios-like 401 error", async () => {
+    jest
+      .spyOn(requestService, "getAuthToken")
+      .mockResolvedValue({ access_token: "mock-token" } as any);
+    jest
+      .spyOn(requestService as any, "ensureEVSession")
+      .mockResolvedValueOnce({ token: "ev-token-1", vehicleId: "veh-1" })
+      .mockResolvedValueOnce({ token: "ev-token-2", vehicleId: "veh-1" });
+
+    // Axios-like error structure (without response.data)
+    const authErr = {
+      response: {
+        status: 401,
+      },
+    };
+    httpClient.post = jest
+      .fn()
+      .mockRejectedValueOnce(authErr)
+      .mockResolvedValueOnce({ data: { status: "success" } });
+
+    const result = await requestService.setClient(httpClient).stopCharging();
+    expect(result.status).toEqual(CommandResponseStatus.success);
+    expect(httpClient.post).toHaveBeenCalledTimes(2);
   });
 
   test("getEVChargingMetrics returns data and uses ensureEVSession", async () => {
