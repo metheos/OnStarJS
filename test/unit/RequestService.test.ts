@@ -917,6 +917,31 @@ describe("RequestService", () => {
     ).rejects.toThrow("Network error");
   });
 
+  test("stopCharging retries on axios-like 401 error", async () => {
+    jest
+      .spyOn(requestService, "getAuthToken")
+      .mockResolvedValue({ access_token: "mock-token" } as any);
+    jest
+      .spyOn(requestService as any, "ensureEVSession")
+      .mockResolvedValueOnce({ token: "ev-token-1", vehicleId: "veh-1" })
+      .mockResolvedValueOnce({ token: "ev-token-2", vehicleId: "veh-1" });
+
+    // Axios-like error structure (without response.data)
+    const authErr = {
+      response: {
+        status: 401,
+      },
+    };
+    httpClient.post = jest
+      .fn()
+      .mockRejectedValueOnce(authErr)
+      .mockResolvedValueOnce({ data: { status: "success" } });
+
+    const result = await requestService.setClient(httpClient).stopCharging();
+    expect(result.status).toEqual(CommandResponseStatus.success);
+    expect(httpClient.post).toHaveBeenCalledTimes(2);
+  });
+
   test("getEVChargingMetrics returns data and uses ensureEVSession", async () => {
     jest
       .spyOn(requestService, "getAuthToken")
