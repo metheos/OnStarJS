@@ -471,8 +471,6 @@ Because of this, the test will require actual OnStar credentials to run. To prov
 
 ## Credits
 
-Made possible by [mikenemat](https://github.com/mikenemat/)'s work in [gm-onstar-probe](https://github.com/mikenemat/gm-onstar-probe). Their work describing the process for remote start enabled the rest of the methods implemented here.
-
-[samrum/OnStarJS](https://github.com/samrum/OnStarJS) for the original OnStarJS
-
-New GMAuth functionality implemented by [metheos](https://github.com/metheos/)
+- [mikenemat](https://github.com/mikenemat/)'s [gm-onstar-probe](https://github.com/mikenemat/gm-onstar-probe) - Their work describing the process for remote start enabled the rest of the methods implemented here
+- [samrum/OnStarJS](https://github.com/samrum/OnStarJS) - Original OnStarJS implementation
+- [metheos](https://github.com/metheos/) - New GMAuth functionality, TOTP authentication implementation, and v3 API support
