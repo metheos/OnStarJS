@@ -4,6 +4,7 @@
 [![Create Github Release](https://github.com/BigThunderSR/OnStarJS/actions/workflows/release.yml/badge.svg)](https://github.com/BigThunderSR/OnStarJS/actions/workflows/release.yml)
 [![Publish Package](https://github.com/BigThunderSR/OnStarJS/actions/workflows/publish.yml/badge.svg)](https://github.com/BigThunderSR/OnStarJS/actions/workflows/publish.yml)
 [![Coverage Status](https://img.shields.io/coveralls/github/BigThunderSR/OnStarJS?branch=master)](https://coveralls.io/github/BigThunderSR/OnStarJS?branch=master&kill_cache=1)
+
 <!-- [![Coverage Status](https://coveralls.io/repos/github/BigThunderSR/OnStarJS/badge.svg?branch=master)](https://coveralls.io/github/BigThunderSR/OnStarJS?branch=master&kill_cache=1) -->
 <!-- [![npm version](https://badge.fury.io/js/onstarjs2.svg?icon=si%3Anpm)](https://badge.fury.io/js/onstarjs2?icon=si%3Anpm) -->
 <!-- [![Build Status](https://github.com/BigThunderSR/OnStarJS/workflows/build/badge.svg)](https://github.com/BigThunderSR/OnStarJS/actions?query=workflow%3Abuild) -->
@@ -189,7 +190,7 @@ onStar.diagnostics();
 <details id="location">
 <summary>Location</summary>
 
-Returns the location of the vehicle
+Returns the vehicle's current location.
 
 ```javascript
 onStar.location();
@@ -442,7 +443,7 @@ onStar.setChargingProfile([options]);
 
 ### All
 
-Run both unit and functional tests
+Run both unit and functional tests.
 
 `pnpm test`
 
@@ -456,7 +457,7 @@ Run both unit and functional tests
 
 ### Reauth
 
-Tests the re-authentication flow by simulating expired tokens and browser reinitialization scenarios. This is particularly useful testing for long-running applications that need to re-authenticate periodically.
+Tests the re-authentication flow by simulating expired tokens and browser reinitialization scenarios. This is particularly useful for testing long-running applications that need to re-authenticate periodically.
 
 `pnpm test:reauth`
 
