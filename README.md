@@ -119,6 +119,8 @@ The library caches which API version works for your vehicle in memory during the
 <details id="get-account-vehicles">
 <summary>Get Account Vehicles</summary>
 
+Returns a list of all vehicles associated with your OnStar account, including VINs and supported commands.
+
 ```javascript
 onStar.getAccountVehicles();
 ```
@@ -203,6 +205,8 @@ Example Response
 <details id="start">
 <summary>Start</summary>
 
+Remotely starts the vehicle's engine.
+
 ```javascript
 onStar.start();
 ```
@@ -212,6 +216,8 @@ onStar.start();
 <details id="cancel-start">
 <summary>Cancel Start</summary>
 
+Cancels a remote start command that is currently active.
+
 ```javascript
 onStar.cancelStart();
 ```
@@ -220,6 +226,8 @@ onStar.cancelStart();
 
 <details id="alert">
 <summary>Alert</summary>
+
+Triggers vehicle alerts by flashing lights and/or honking the horn.
 
 ```javascript
 onStar.alert([options]);
@@ -236,6 +244,8 @@ onStar.alert([options]);
 
 <details id="cancel-alert">
 <summary>Cancel Alert</summary>
+
+Cancels an active alert command.
 
 ```javascript
 onStar.cancelAlert();
@@ -274,6 +284,8 @@ onStar.stopLights();
 <details id="lock-door">
 <summary>Lock Door</summary>
 
+Remotely locks all vehicle doors.
+
 ```javascript
 onStar.lockDoor([options]);
 ```
@@ -286,6 +298,8 @@ onStar.lockDoor([options]);
 
 <details id="unlock-door">
 <summary>Unlock Door</summary>
+
+Remotely unlocks all vehicle doors.
 
 ```javascript
 onStar.unlockDoor([options]);
