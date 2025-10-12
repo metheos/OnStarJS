@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.12.0](https://github.com/BigThunderSR/OnStarJS/compare/v2.11.1...v2.12.0) (2025-10-12)
+
+
+### Features
+
+* **OnStar:** add method to retrieve current EV charging metrics ([a1104ce](https://github.com/BigThunderSR/OnStarJS/commit/a1104ce5abcae4d0cb3d0e536cae78445b4680b5))
+* **RequestService:** add getOnstarPlan method and corresponding tests ([6f61437](https://github.com/BigThunderSR/OnStarJS/commit/6f61437d5da6933ea7c2ec89e3f2648ff026be79))
+* **RequestService:** add getVehicleDetails method and corresponding tests ([1628b82](https://github.com/BigThunderSR/OnStarJS/commit/1628b82792f7cee1f78415b2b1207bdbe77a9edb))
+* **RequestService:** add getVehicleRecallInfo method and corresponding tests ([7b6c29a](https://github.com/BigThunderSR/OnStarJS/commit/7b6c29aa2b74a356b5ddc5aa4629831d1dfacfb8))
+* **RequestService:** add interactive option to retrieve EV charging metrics ([346225e](https://github.com/BigThunderSR/OnStarJS/commit/346225e516d23016dc71b8ec1505ebacbbb1d35d))
+* **RequestService:** add tests ([36024e4](https://github.com/BigThunderSR/OnStarJS/commit/36024e4bc8ac75a3140dc69a821a8030224ad21b))
+
 ## [2.11.1](https://github.com/BigThunderSR/OnStarJS/compare/v2.11.0...v2.11.1) (2025-10-11)
 
 
