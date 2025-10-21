@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.12.1](https://github.com/BigThunderSR/OnStarJS/compare/v2.12.0...v2.12.1) (2025-10-21)
+
+
+### Bug Fixes
+
+* **deps:** bump chromium-bidi from 10.2.0 to 10.6.0 ([c80dc0f](https://github.com/BigThunderSR/OnStarJS/commit/c80dc0fc99477d121e02fb292b2ee37ca4d3be2e))
+* **deps:** bump patchright from 1.56.0 to 1.56.1 ([05c14f8](https://github.com/BigThunderSR/OnStarJS/commit/05c14f891a48b3f5ec7addf7d4a48a0ba570facf))
+
 ## [2.12.0](https://github.com/BigThunderSR/OnStarJS/compare/v2.11.1...v2.12.0) (2025-10-12)
 
 
