@@ -1126,10 +1126,10 @@ class RequestService {
     }
     this.cachedVehicleId = vehicleId;
     // Attempt to parse JWT exp from token for proactive refresh
-    const exp = this.decodeJwtExp(token);
-    if (exp) {
+    const expMs = this.decodeJwtExpMs(token);
+    if (expMs) {
       // subtract small skew (5s)
-      this.evTokenExpiresAt = exp * 1000 - 5000;
+      this.evTokenExpiresAt = expMs - 5000;
     } else {
       this.evTokenExpiresAt = undefined;
     }
@@ -1161,8 +1161,8 @@ class RequestService {
     // Keep cachedVehicleId; it is stable for the VIN and useful across sessions
   }
 
-  // Best-effort decode for JWT exp claim
-  private decodeJwtExp(token: string): number | undefined {
+  // Best-effort decode for JWT exp claim; returns expiration in milliseconds
+  private decodeJwtExpMs(token: string): number | undefined {
     try {
       const parts = token.split(".");
       if (parts.length < 2) return undefined;
@@ -1173,7 +1173,10 @@ class RequestService {
         ).toString("utf8"),
       );
       const exp = payload?.exp;
-      if (typeof exp === "number" && isFinite(exp)) return exp;
+      if (typeof exp === "number" && isFinite(exp)) {
+        // Heuristic: if exp looks like seconds (< 1e12), convert to ms; if already ms, use as-is
+        return exp > 1e12 ? exp : exp * 1000;
+      }
     } catch (_) {
       // ignore
     }
@@ -1237,6 +1240,14 @@ class RequestService {
       const msg = (data as any)?.message || (data as any)?.error;
       if (typeof msg === "string" && /token|auth|unauthor/i.test(msg))
         return true;
+      // Some EV endpoints return 400 for expired/invalid session tokens; if our local token is expired, treat as auth error
+      if (
+        status === 400 &&
+        this.evTokenExpiresAt &&
+        Date.now() >= this.evTokenExpiresAt
+      ) {
+        return true;
+      }
       return false;
     }
     // Axios-like error object
@@ -1245,6 +1256,13 @@ class RequestService {
     const msg = err?.response?.data?.message || err?.message;
     if (typeof msg === "string" && /token|auth|unauthor/i.test(msg))
       return true;
+    if (
+      status === 400 &&
+      this.evTokenExpiresAt &&
+      Date.now() >= this.evTokenExpiresAt
+    ) {
+      return true;
+    }
     return false;
   }
 
