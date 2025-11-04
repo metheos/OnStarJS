@@ -421,10 +421,18 @@ export class GMAuth {
             console.warn("⚠️ xvfb-run not found, but Xvfb binary is available");
           }
 
-          // Kill any existing Xvfb processes that might be stuck
+          // Kill any existing Xvfb processes that might be stuck (sweep a safe range)
           try {
-            execSync('pkill -f "Xvfb.*:99"', { stdio: "ignore" });
-            console.log("🧹 Cleaned up any existing Xvfb processes");
+            for (let d = 99; d <= 120; d++) {
+              try {
+                execSync(`pkill -f "Xvfb.*:${d}"`, { stdio: "ignore" });
+              } catch (_e) {
+                // ignore per-display miss
+              }
+            }
+            console.log(
+              "🧹 Cleaned up any existing Xvfb processes in :99-:120 range",
+            );
           } catch (e) {
             // Ignore errors - no existing processes to clean up
           }
@@ -456,7 +464,9 @@ export class GMAuth {
               this.xvfb = new this.XvfbCtor({
                 silent: true,
                 displayNum: displayNum,
-                reuse: false,
+                // Reuse an existing Xvfb server on the same display if one is already running
+                // This prevents cascading failures when a previous run didn't exit cleanly.
+                reuse: true,
                 timeout: 10000, // Increased timeout to 10 seconds
                 xvfb_args: [
                   "-screen",
