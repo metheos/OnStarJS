@@ -1046,15 +1046,16 @@ describe("RequestService", () => {
     expect(requestService["cachedVehicleId"]).toBe("veh-stable");
   });
 
-  test("decodeJwtExp extracts exp from JWT payload", () => {
-    const exp = Math.floor(Date.now() / 1000) + 3600;
+  test("decodeJwtExpMs extracts exp from JWT payload", () => {
+    // decodeJwtExpMs returns Ms now instead of Seconds
+    const exp = Math.floor(Date.now()) + 3600000; // 1 hour from now in ms
     const payload = Buffer.from(JSON.stringify({ exp }), "utf8")
       .toString("base64")
       .replace(/\+/g, "-")
       .replace(/\//g, "_")
       .replace(/=+$/g, "");
     const token = `x.${payload}.y`;
-    const decoded = (requestService as any)["decodeJwtExp"](token);
+    const decoded = (requestService as any)["decodeJwtExpMs"](token);
     expect(decoded).toBe(exp);
   });
 
