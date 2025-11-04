@@ -564,11 +564,13 @@ export class GMAuth {
       "--disable-background-timer-throttling",
       "--disable-renderer-backgrounding",
       "--max_old_space_size=4096",
-      "--enable-low-end-device-mode",
+      // "--enable-low-end-device-mode",
 
       // Windows stability
       "--disable-hang-monitor",
       "--process-per-tab",
+      "--process-per-site",
+      "--renderer-process-limit=2",
     ];
 
     // Add platform-specific args
