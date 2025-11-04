@@ -219,6 +219,17 @@ export TOKEN_LOCATION="./custom-token-folder"
 npm run setup:env
 ```
 
+### OpenID Clock Tolerance (JWT skew)
+
+Some identity providers may issue tokens with slight clock skew. You can adjust the JWT validation tolerance by setting an environment variable:
+
+```bash
+# seconds to allow for nbf/exp skew (default: 120)
+export OPENID_CLOCK_TOLERANCE_SEC=120
+```
+
+This helps avoid errors like "JWT not active yet" during authentication.
+
 ### Multiple Environments
 
 Create environment-specific configurations:
