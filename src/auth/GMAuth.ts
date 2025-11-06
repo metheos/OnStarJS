@@ -1473,7 +1473,7 @@ export class GMAuth {
         );
       }
 
-      const { otp } = TOTP.generate(totp_secret, {
+      const { otp } = await TOTP.generate(totp_secret, {
         digits: 6,
         algorithm: "SHA-1",
         period: 30,
