@@ -2,18 +2,6 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
-## [Unreleased]
-
-### Features
-
-* **config:** add OPENID_CLOCK_TOLERANCE_SEC environment variable for JWT validation tolerance ([#540](https://github.com/BigThunderSR/OnStarJS/pull/540))
-
-### Bug Fixes
-
-* **auth:** normalize JWT expiration handling to milliseconds ([#540](https://github.com/BigThunderSR/OnStarJS/pull/540))
-* **auth:** increase default OpenID clock tolerance from 5s to 120s ([#540](https://github.com/BigThunderSR/OnStarJS/pull/540))
-* **RequestService:** improve EV token expiration detection to handle 400 status codes ([#540](https://github.com/BigThunderSR/OnStarJS/pull/540))
-
 ## [2.12.1](https://github.com/BigThunderSR/OnStarJS/compare/v2.12.0...v2.12.1) (2025-10-21)
 
 ### Bug Fixes
