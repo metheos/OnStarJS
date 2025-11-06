@@ -2145,4 +2145,124 @@ describe("RequestService", () => {
       });
     });
   });
+
+  describe("Additional Coverage Tests", () => {
+    test("getAuthToken throws error when VIN is not authorized", async () => {
+      // REAL SCENARIO: User tries to access a vehicle not in their OnStar account
+      // This is a critical security check
+      const freshRequestService = new RequestService(testConfig, httpClient)
+        .setAuthToken(authToken)
+        .setRequestPollingIntervalSeconds(0)
+        .setRequestPollingTimeoutSeconds(0);
+
+      const GMAuth = require("../../src/auth/GMAuth");
+      jest.spyOn(GMAuth, "getGMAPIJWT").mockResolvedValue({
+        token: { access_token: "mock-token" },
+        auth: {},
+        decodedPayload: {
+          vehs: [{ vin: "DIFFERENTVIN1" }, { vin: "DIFFERENTVIN2" }],
+        },
+      });
+
+      await expect(freshRequestService.getAuthToken()).rejects.toThrow(
+        `Provided VIN does not appear to be an authorized VIN for this OnStar account`,
+      );
+    });
+
+    test("isEVAuthError detects expired token with 400 status", async () => {
+      // REAL SCENARIO: EV session token expires while user has app open
+      // API returns 400 instead of 401, need to detect and refresh
+      requestService["evTokenExpiresAt"] = Date.now() - 1000;
+
+      const error = {
+        response: {
+          status: 400,
+          data: { message: "Some error" },
+        },
+      };
+
+      const result = requestService["isEVAuthError"](error);
+      expect(result).toBe(true);
+
+      // Clean up
+      requestService["evTokenExpiresAt"] = undefined;
+    });
+
+    test("isEVAuthError detects auth-related error messages", async () => {
+      // REAL SCENARIO: OnStar API returns auth errors with different message formats
+      const errorWithToken = {
+        response: {
+          status: 400,
+          data: { message: "Invalid token provided" },
+        },
+      };
+      expect(requestService["isEVAuthError"](errorWithToken)).toBe(true);
+
+      const errorWithAuth = {
+        response: {
+          status: 400,
+          data: { message: "Authentication failed" },
+        },
+      };
+      expect(requestService["isEVAuthError"](errorWithAuth)).toBe(true);
+    });
+
+    test("isEVAuthError detects 401 and 403 status codes", async () => {
+      // REAL SCENARIO: Standard HTTP auth error responses
+      const error401 = {
+        response: {
+          status: 401,
+          data: {},
+        },
+      };
+      expect(requestService["isEVAuthError"](error401)).toBe(true);
+
+      const error403 = {
+        response: {
+          status: 403,
+          data: {},
+        },
+      };
+      expect(requestService["isEVAuthError"](error403)).toBe(true);
+    });
+
+    test("decodeJwtExpMs handles both seconds and milliseconds timestamps", () => {
+      // REAL SCENARIO: JWT standards use seconds, but some APIs use milliseconds
+      // Need to handle both formats correctly
+
+      // Test seconds format (standard JWT)
+      const expSeconds = Math.floor(Date.now() / 1000) + 3600;
+      const payloadSeconds = Buffer.from(
+        JSON.stringify({ exp: expSeconds }),
+        "utf8",
+      )
+        .toString("base64")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/g, "");
+      const tokenSeconds = `header.${payloadSeconds}.signature`;
+      expect(requestService["decodeJwtExpMs"](tokenSeconds)).toBe(
+        expSeconds * 1000,
+      );
+
+      // Test milliseconds format
+      const expMs = Date.now() + 3600000;
+      const payloadMs = Buffer.from(JSON.stringify({ exp: expMs }), "utf8")
+        .toString("base64")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/g, "");
+      const tokenMs = `header.${payloadMs}.signature`;
+      expect(requestService["decodeJwtExpMs"](tokenMs)).toBe(expMs);
+    });
+
+    test("decodeJwtExpMs handles malformed tokens gracefully", () => {
+      // REAL SCENARIO: Network issues or API changes could return malformed tokens
+      // Should return undefined instead of crashing
+      expect(requestService["decodeJwtExpMs"]("not.enough")).toBeUndefined();
+      expect(
+        requestService["decodeJwtExpMs"]("header.invalidbase64.sig"),
+      ).toBeUndefined();
+    });
+  });
 });
