@@ -13,7 +13,7 @@ importers:
         version: 1.13.2
       chromium-bidi:
         specifier: ^10.6.1
-        version: 10.6.1(devtools-protocol@0.0.1487398)
+        version: 10.6.1(devtools-protocol@0.0.1538951)
       http-cookie-agent:
         specifier: ^7.0.2
         version: 7.0.2(tough-cookie@5.1.2)
@@ -28,7 +28,7 @@ importers:
         version: 1.56.1
       totp-generator:
         specifier: ^1.0.0
-        version: 1.0.0
+        version: 1.1.0
       tough-cookie:
         specifier: ^5.1.2
         version: 5.1.2
@@ -57,9 +57,6 @@ importers:
       '@types/jsonwebtoken':
         specifier: ^9.0.10
         version: 9.0.10
-      '@types/uuid':
-        specifier: ^11.0.0
-        version: 11.0.0
       commit-and-tag-version:
         specifier: ^12.6.0
         version: 12.6.0
@@ -656,10 +653,6 @@ packages:
   '@types/stack-utils@2.0.3':
     resolution: {integrity: sha512-9aEbYZ3TbYMznPdcdr3SmIrLXwC/AKZXQeCf9Pgao5CKb8CyHuEX5jzWPTkvregvhRJHcpRO6BFoGW9ycaOkYw==}
 
-  '@types/uuid@11.0.0':
-    resolution: {integrity: sha512-HVyk8nj2m+jcFRNazzqyVKiZezyhDKrGUA3jlEcg/nZ6Ms+qHwocba1Y/AaVaznJTAM9xpdFSh+ptbNrhOGvZA==}
-    deprecated: This is a stub types definition. uuid provides its own type definitions, so you do not need this installed.
-
   '@types/yargs-parser@21.0.3':
     resolution: {integrity: sha512-I4q9QU9MQv4oEOz4tAHJtNz1cwuLxn2F3xcc2iV5WdqLPpUnj30aUuxt1mAxYTG+oe8CZMV/+6rU4S4gRDzqtQ==}
 
@@ -1137,8 +1130,8 @@ packages:
     resolution: {integrity: sha512-TLz+x/vEXm/Y7P7wn1EJFNLxYpUD4TgMosxY6fAVJUnJMbupHBOncxyWUG9OpTaH9EBD7uFI5LfEgmMOc54DsA==}
     engines: {node: '>=8'}
 
-  devtools-protocol@0.0.1487398:
-    resolution: {integrity: sha512-4UkwFsSklaMxRKoHmZScFx3vjCBc1lU7pZezyeYlYTCsVsd5Us7vDqU69jvKqsfyQxL8hGElLX527BGbIc4GPA==}
+  devtools-protocol@0.0.1538951:
+    resolution: {integrity: sha512-6VbaDU0eOTnoMyFvl9Ee8cM+KSOuqc6LHiZNMczffKLEOq+e/qCzLEfK4yEldGSW6KTbI13/IFhqDDYl2yihjw==}
 
   dot-prop@5.3.0:
     resolution: {integrity: sha512-QM8q3zDe58hqUqjraQOmzZ1LIH9SWQJTlEKCH4kJ2oQvLZk7RbQXvtDM2XEq3fwkV9CCvvH4LA0AV+ogFsBM2Q==}
@@ -1733,9 +1726,6 @@ packages:
   jsonwebtoken@9.0.2:
     resolution: {integrity: sha512-PRp66vJ865SSqOlgqS8hujT5U4AOgMfhrwYIuIhfKaoSCZcirrmASQr8CX7cUg+RMih+hgznrjp99o+W4pJLHQ==}
     engines: {node: '>=12', npm: '>=6'}
-
-  jssha@3.3.1:
-    resolution: {integrity: sha512-VCMZj12FCFMQYcFLPRm/0lOBbLi8uM2BhXPTqw3U4YAfs4AZfiApOoBLoN8cQE60Z50m1MYMTQVCfgF/KaCVhQ==}
 
   jwa@1.4.2:
     resolution: {integrity: sha512-eeH5JO+21J78qMvTIDdBXidBd6nG2kZjg5Ohz/1fpa28Z4CcsWUzJ1ZZyFq/3z3N17aZy+ZuBoHljASbL1WfOw==}
@@ -2396,8 +2386,9 @@ packages:
     resolution: {integrity: sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==}
     engines: {node: '>=8.0'}
 
-  totp-generator@1.0.0:
-    resolution: {integrity: sha512-Iu/1Lk60/MH8FE+5cDWPiGbwKK1hxzSq+KT9oSqhZ1BEczGIKGcN50bP0WMLiIZKRg7t29iWLxw6f81TICQdoA==}
+  totp-generator@1.1.0:
+    resolution: {integrity: sha512-v0vrIlUst47S9OGr6h7fij7CfG+cRFau+rsdvAB1LYdvhED8DgxbXCr4fjUvkF1bcLB//ngXxixAn9TOmH2e0w==}
+    deprecated: Deprecated in favor for 2.0.0
 
   tough-cookie@5.1.2:
     resolution: {integrity: sha512-FVDYdxtnj0G6Qm/DhNPSb8Ju59ULcup3tuJxkFb5K8Bv2pUXILbf0xZWU8PX8Ov19OXljbUyveOFwRMwkXzO+A==}
@@ -3276,10 +3267,6 @@ snapshots:
 
   '@types/stack-utils@2.0.3': {}
 
-  '@types/uuid@11.0.0':
-    dependencies:
-      uuid: 11.1.0
-
   '@types/yargs-parser@21.0.3': {}
 
   '@types/yargs@17.0.34':
@@ -3524,9 +3511,9 @@ snapshots:
 
   char-regex@1.0.2: {}
 
-  chromium-bidi@10.6.1(devtools-protocol@0.0.1487398):
+  chromium-bidi@10.6.1(devtools-protocol@0.0.1538951):
     dependencies:
-      devtools-protocol: 0.0.1487398
+      devtools-protocol: 0.0.1538951
       mitt: 3.0.1
       zod: 3.25.76
 
@@ -3754,7 +3741,7 @@ snapshots:
 
   detect-newline@3.1.0: {}
 
-  devtools-protocol@0.0.1487398: {}
+  devtools-protocol@0.0.1538951: {}
 
   dot-prop@5.3.0:
     dependencies:
@@ -4528,8 +4515,6 @@ snapshots:
       ms: 2.1.3
       semver: 7.7.3
 
-  jssha@3.3.1: {}
-
   jwa@1.4.2:
     dependencies:
       buffer-equal-constant-time: 1.0.1
@@ -5173,9 +5158,7 @@ snapshots:
     dependencies:
       is-number: 7.0.0
 
-  totp-generator@1.0.0:
-    dependencies:
-      jssha: 3.3.1
+  totp-generator@1.1.0: {}
 
   tough-cookie@5.1.2:
     dependencies:
