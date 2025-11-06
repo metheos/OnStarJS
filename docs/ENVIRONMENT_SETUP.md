@@ -13,6 +13,7 @@ OnStarJS requires several environment variables to authenticate with the OnStar 
 - `DEVICEID` - Device UUID (auto-generated if not provided)
 - `VIN` - Vehicle Identification Number (optional)
 - `TOKEN_LOCATION` - Token storage location (optional)
+- `OPENID_CLOCK_TOLERANCE_SEC` - JWT validation clock tolerance in seconds (default: 120, optional)
 
 ## Setup Methods
 
@@ -115,6 +116,17 @@ Your OnStar account must be configured for "Third-Party Authenticator App":
 5. Set the secret as `ONSTAR_TOTPKEY`
 
 > **Note**: The "Third-Party Authenticator App" option may not be visible on mobile. Use a desktop browser.
+
+### OpenID Clock Tolerance
+
+Some identity providers may issue JWT tokens with slight clock skew. If you encounter "JWT not active yet" or token validation errors, you can adjust the clock tolerance:
+
+```bash
+# Seconds to allow for nbf/exp skew (default: 120)
+export OPENID_CLOCK_TOLERANCE_SEC=120
+```
+
+The default tolerance of 120 seconds should work for most cases. Increase this value if your system clock is significantly out of sync with the identity provider.
 
 ## Generated .env File Structure
 
