@@ -3105,7 +3105,19 @@ export class GMAuth {
       token_endpoint_auth_method: "none",
     });
 
-    client[custom.clock_tolerance] = 5; // to allow a 5 second skew
+    // Increase JWT clock tolerance to accommodate IdP-issued tokens with clock skew.
+    // Default to 120 seconds; can override with env OPENID_CLOCK_TOLERANCE_SEC.
+    const envTol = Number(process.env.OPENID_CLOCK_TOLERANCE_SEC);
+    const clockToleranceSec = Number.isFinite(envTol) ? envTol : 120;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (client as any)[custom.clock_tolerance] = clockToleranceSec;
+      if (this.debugMode) {
+        console.log(`Configured OpenID clock tolerance: ${clockToleranceSec}s`);
+      }
+    } catch (_) {
+      // no-op; if setting fails, library will use its default
+    }
 
     return client;
   }
