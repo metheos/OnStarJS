@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.13.0](https://github.com/BigThunderSR/OnStarJS/compare/v2.12.1...v2.13.0) (2025-11-10)
+
+
+### Features
+
+* **auth:** enhance JWT clock tolerance handling for IdP tokens ([f46bc25](https://github.com/BigThunderSR/OnStarJS/commit/f46bc257285b0511e6309626cb266e225c3ba28e))
+* **auth:** improve JWT expiration handling by decoding exp in milliseconds ([1737eaf](https://github.com/BigThunderSR/OnStarJS/commit/1737eafeba6f8e555184e19b2cbbf396aff49ecb))
+* **auth:** update decodeJwtExp to decodeJwtExpMs for millisecond precision ([6651989](https://github.com/BigThunderSR/OnStarJS/commit/6651989825d05428ecef121af23e8a4239c98214))
+* **auth:** update decodeJwtExp to decodeJwtExpMs for milliseconds handling ([9a13295](https://github.com/BigThunderSR/OnStarJS/commit/9a13295674051d4de63c8bbc7ffa007af165d555))
+
+
+### Bug Fixes
+
+* **auth:** update browser launch arguments for improved performance and stability ([ac17602](https://github.com/BigThunderSR/OnStarJS/commit/ac1760242818b9a872df30fc623a0b9e56db00a2))
+* await TOTP.generate for totp-generator 1.1.0 compatibility ([5080fa9](https://github.com/BigThunderSR/OnStarJS/commit/5080fa9db8060335d2f287a97eedefa3fc11f2d2))
+* **deps:** bump axios from 1.12.2 to 1.13.1 ([729bb1a](https://github.com/BigThunderSR/OnStarJS/commit/729bb1a97ac399e88d48beda37f0ee87dff9af2e))
+* **deps:** bump axios from 1.13.1 to 1.13.2 ([62ae1ac](https://github.com/BigThunderSR/OnStarJS/commit/62ae1ac404e5f24a76e953a27767f8a8bd53399c))
+* **deps:** bump chromium-bidi from 10.6.0 to 10.6.1 ([3f3e36a](https://github.com/BigThunderSR/OnStarJS/commit/3f3e36a2ced29b371a9e0522b12f856c8a0b08cd))
+* **deps:** bump chromium-bidi from 10.6.1 to 11.0.0 ([9f1495b](https://github.com/BigThunderSR/OnStarJS/commit/9f1495bb92a996e3f7718502c8d9f81540af6f89))
+* **deps:** bump totp-generator from 1.0.0 to 2.0.0 ([f463b09](https://github.com/BigThunderSR/OnStarJS/commit/f463b093ba7c7f07fc4d2b6fd464efa32b802009))
+* **xvfb:** enhance cleanup process and enable reuse of existing Xvfb server ([523249d](https://github.com/BigThunderSR/OnStarJS/commit/523249d9c1faf85a520e17b6fc6ebc18d57d6316))
+
 ## [2.12.1](https://github.com/BigThunderSR/OnStarJS/compare/v2.12.0...v2.12.1) (2025-10-21)
 
 ### Bug Fixes
