@@ -1000,6 +1000,90 @@ describe("RequestService", () => {
     expect(ensureSpy).toHaveBeenCalledTimes(2);
   });
 
+  test("refreshEVChargingMetrics returns data (POST) and uses ensureEVSession", async () => {
+    jest
+      .spyOn(requestService, "getAuthToken")
+      .mockResolvedValue({ access_token: "mock-token" } as any);
+    const ensureSpy = jest
+      .spyOn(requestService as any, "ensureEVSession")
+      .mockResolvedValue({ token: "ev-token", vehicleId: "vehicle-123" });
+
+    const payload = {
+      success: true,
+      results: [
+        {
+          soc: 68.5,
+          cstate: "UNCONNECTED",
+          // fields present only in refresh query variant
+          cpwr: null,
+          ctype: null,
+          dir: null,
+          dop: null,
+        },
+      ],
+    };
+    httpClient.post = jest.fn().mockResolvedValue({ data: payload });
+
+    const result = await requestService
+      .setClient(httpClient)
+      .refreshEVChargingMetrics();
+
+    expect(result.status).toEqual(CommandResponseStatus.success);
+    expect(result.response?.data).toEqual(payload);
+    expect(ensureSpy).toHaveBeenCalledTimes(1);
+    const url = (httpClient.post as jest.Mock).mock.calls[0][0];
+    expect(url).toContain("performVehicleChargingMetricsQuery");
+    expect(url).toContain(`vehicleVin=${testConfig.vin.toUpperCase()}`);
+    const body = (httpClient.post as jest.Mock).mock.calls[0][1];
+    expect(body).toContain("vehicleId=vehicle-123");
+    expect(body).toContain("refreshTrigger=useEvVehicleTelemetry");
+  });
+
+  test("refreshEVChargingMetrics retries on EV auth error (401)", async () => {
+    jest
+      .spyOn(requestService, "getAuthToken")
+      .mockResolvedValue({ access_token: "mock-token" } as any);
+    const ensureSpy = jest
+      .spyOn(requestService as any, "ensureEVSession")
+      .mockResolvedValueOnce({ token: "ev-token-1", vehicleId: "veh-1" })
+      .mockResolvedValueOnce({ token: "ev-token-2", vehicleId: "veh-1" });
+    const invalidateSpy = jest.spyOn(
+      requestService as any,
+      "invalidateEVSession",
+    );
+
+    const authErr = { response: { status: 401 } };
+    httpClient.post = jest
+      .fn()
+      .mockRejectedValueOnce(authErr)
+      .mockResolvedValueOnce({ data: { success: true } });
+
+    const result = await requestService
+      .setClient(httpClient)
+      .refreshEVChargingMetrics();
+    expect(result.status).toEqual(CommandResponseStatus.success);
+    expect(httpClient.post).toHaveBeenCalledTimes(2);
+    expect(ensureSpy).toHaveBeenCalledTimes(2);
+    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("refreshEVChargingMetrics throws non-auth errors", async () => {
+    jest
+      .spyOn(requestService, "getAuthToken")
+      .mockResolvedValue({ access_token: "mock-token" } as any);
+    jest.spyOn(requestService as any, "ensureEVSession").mockResolvedValue({
+      token: "ev-token",
+      vehicleId: "vehicle-123",
+    });
+
+    const networkErr = new Error("Network down");
+    httpClient.post = jest.fn().mockRejectedValue(networkErr);
+
+    await expect(
+      requestService.setClient(httpClient).refreshEVChargingMetrics(),
+    ).rejects.toThrow("Network down");
+  });
+
   test("getValidEVSession returns cached token when not expired", () => {
     // @ts-ignore access private fields
     requestService["evSessionToken"] = "cached-ev";
