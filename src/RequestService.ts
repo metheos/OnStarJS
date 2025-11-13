@@ -461,6 +461,68 @@ class RequestService {
     }
   }
 
+  /**
+   * EV: Force-refresh and retrieve live vehicle charging metrics
+   * This issues a POST to performVehicleChargingMetricsQuery with refreshTrigger
+   * and returns the synchronous metrics payload. Retries once on EV auth errors.
+   */
+  async refreshEVChargingMetrics(opts?: {
+    clientVersion?: string; // default 7.18.0.8006
+    os?: "A" | "I"; // Android or iOS indicator for EV API metadata
+  }): Promise<Result> {
+    const gmMobileToken = (await this.getAuthToken()).access_token;
+    let { token: evToken, vehicleId } =
+      await this.ensureEVSession(gmMobileToken);
+
+    const baseUrl =
+      "https://eve-vcn.ext.gm.com/api/gmone/v1/vehicle/performVehicleChargingMetricsQuery";
+    const clientVersion = opts?.clientVersion ?? "7.18.0.8006";
+    const os = opts?.os ?? "A";
+    const query = new URLSearchParams({
+      vehicleVin: this.config.vin,
+      clientVersion,
+      clientType: "bev-myowner",
+      buildType: "r",
+      clientLocale: "en-US",
+      deviceId: this.config.deviceId,
+      os,
+      ts: String(Date.now()),
+      varch: "globalb",
+      sid: this.randomHex(8).toUpperCase(),
+      pid: this.randomHex(8).toUpperCase(),
+    });
+
+    const bodyParams = new URLSearchParams({
+      vehicleId: vehicleId!,
+      refreshTrigger: "useEvVehicleTelemetry",
+    });
+
+    const makeReq = (token: string) =>
+      new Request(`${baseUrl}?${query.toString()}`)
+        .setMethod(RequestMethod.Post)
+        .setAuthRequired(false)
+        .setContentType("application/x-www-form-urlencoded")
+        .setHeaders({
+          accept: "*/*",
+          "x-gm-mobiletoken": gmMobileToken,
+          "x-gm-token": token,
+        })
+        .setBody(bodyParams.toString())
+        .setCheckRequestStatus(false);
+
+    try {
+      return await this.sendRequest(makeReq(evToken));
+    } catch (err: any) {
+      if (this.isEVAuthError(err)) {
+        this.invalidateEVSession();
+        ({ token: evToken, vehicleId } =
+          await this.ensureEVSession(gmMobileToken));
+        return this.sendRequest(makeReq(evToken));
+      }
+      throw err;
+    }
+  }
+
   async diagnostics(): Promise<
     import("./types").TypedResult<import("./types").HealthStatusResponse>
   > {

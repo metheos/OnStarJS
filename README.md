@@ -359,6 +359,22 @@ onStar.getEVChargingMetrics([options]);
 
 </details>
 
+<details id="refresh-ev-charging-metrics">
+<summary>Refresh EV Charging Metrics</summary>
+
+Returns fresh EV charging metrics and status information for electric vehicles. Unlike `getEVChargingMetrics()` which retrieves existing data, this method forces the vehicle to generate updated telemetry before returning.
+
+```javascript
+onStar.refreshEVChargingMetrics([options]);
+```
+
+| Option        | Default       | Valid Values             |
+| ------------- | ------------- | ------------------------ |
+| clientVersion | "7.18.0.8006" | Any version string       |
+| os            | "A"           | "A" (Android), "I" (iOS) |
+
+</details>
+
 <details id="set-charge-level-target">
 <summary>Set Charge Level Target</summary>
 
