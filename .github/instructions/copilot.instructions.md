@@ -1,0 +1,4 @@
+- Determine if the README or other documentation needs to be updated due to changes being submitted in a PR.
+- Always run `pnpm build` to verify TypeScript compilation after making code changes.
+- Run appropriate tests (`pnpm test:unit` or `pnpm test:functional`) before committing.
+- Use pnpm (not npm) for all package management commands in this project.
