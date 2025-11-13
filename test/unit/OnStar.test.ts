@@ -80,6 +80,10 @@ describe("OnStar", () => {
     });
   });
 
+  test("refreshEVChargingMetrics", async () => {
+    await onStar.refreshEVChargingMetrics();
+  });
+
   test.skip("chargeOverride (disabled)", async () => {
     // Charging APIs are currently disabled
   });

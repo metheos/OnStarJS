@@ -293,6 +293,29 @@ async function main() {
       },
     },
     {
+      key: "refreshEVChargingMetrics",
+      label: "refreshEVChargingMetrics(opts)",
+      run: async () => {
+        const useOpts =
+          (await rl.question("Provide advanced options? (y/N): "))
+            .trim()
+            .toLowerCase() === "y";
+        let opts = undefined;
+        if (useOpts) {
+          const clientVersion =
+            (
+              await rl.question("clientVersion [default: 7.18.0.8006]: ")
+            ).trim() || undefined;
+          const osAns = (await rl.question("os metadata [A|I] [default: A]: "))
+            .trim()
+            .toUpperCase();
+          const os = osAns === "A" || osAns === "I" ? osAns : undefined;
+          opts = { clientVersion, os };
+        }
+        return client.refreshEVChargingMetrics(opts);
+      },
+    },
+    {
       key: "toggleCheckRequestStatus",
       label: "toggle checkRequestStatus (client)",
       run: async () => {
