@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.14.0](https://github.com/BigThunderSR/OnStarJS/compare/v2.13.0...v2.14.0) (2025-11-13)
+
+
+### Features
+
+* add refreshEVChargingMetrics method for live vehicle charging metrics ([d9b83be](https://github.com/BigThunderSR/OnStarJS/commit/d9b83be12f0392a260b0dc75b0a15579a614ef04))
+
 ## [2.13.0](https://github.com/BigThunderSR/OnStarJS/compare/v2.12.1...v2.13.0) (2025-11-10)
 
 
