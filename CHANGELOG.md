@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.14.1](https://github.com/BigThunderSR/OnStarJS/compare/v2.14.0...v2.14.1) (2025-11-21)
+
+
+### Bug Fixes
+
+* **deps:** bump chromium-bidi from 11.0.0 to 11.0.1 ([dcf151d](https://github.com/BigThunderSR/OnStarJS/commit/dcf151dc0d7d0db47825088aa39ce27c25c098b3))
+* **deps:** bump http-cookie-agent from 7.0.2 to 7.0.3 ([4c33738](https://github.com/BigThunderSR/OnStarJS/commit/4c3373866d4fe384651ab7ac410dc9379470c0f5))
+
 ## [2.14.0](https://github.com/BigThunderSR/OnStarJS/compare/v2.13.0...v2.14.0) (2025-11-13)
 
 
