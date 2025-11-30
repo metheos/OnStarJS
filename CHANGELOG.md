@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.14.2](https://github.com/BigThunderSR/OnStarJS/compare/v2.14.1...v2.14.2) (2025-11-30)
+
+
+### Bug Fixes
+
+* **deps:** bump patchright from 1.56.1 to 1.57.0 ([93f6d50](https://github.com/BigThunderSR/OnStarJS/commit/93f6d509a7a2a6d54336c0436d1372f0037dd389))
+
 ## [2.14.1](https://github.com/BigThunderSR/OnStarJS/compare/v2.14.0...v2.14.1) (2025-11-21)
 
 
