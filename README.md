@@ -1,8 +1,8 @@
 # OnStarJS (OnStarJS2)
 
 [![npm](https://img.shields.io/npm/v/onstarjs2.svg?color=green)](https://www.npmjs.com/package/onstarjs2)
-[![Create Github Release](https://github.com/BigThunderSR/OnStarJS/actions/workflows/release.yml/badge.svg)](https://github.com/BigThunderSR/OnStarJS/actions/workflows/release.yml)
-[![Publish Package](https://github.com/BigThunderSR/OnStarJS/actions/workflows/publish.yml/badge.svg)](https://github.com/BigThunderSR/OnStarJS/actions/workflows/publish.yml)
+[![Create Github Release](https://github.com/BigThunderSR/OnStarJS/actions/workflows/release.yml/badge.svg?event=push)](https://github.com/BigThunderSR/OnStarJS/actions/workflows/release.yml)
+[![Publish Package](https://github.com/BigThunderSR/OnStarJS/actions/workflows/publish.yml/badge.svg?event=push)](https://github.com/BigThunderSR/OnStarJS/actions/workflows/publish.yml)
 [![Coverage Status](https://img.shields.io/coveralls/github/BigThunderSR/OnStarJS?branch=master)](https://coveralls.io/github/BigThunderSR/OnStarJS?branch=master&kill_cache=1)
 
 <!-- [![Coverage Status](https://coveralls.io/repos/github/BigThunderSR/OnStarJS/badge.svg?branch=master)](https://coveralls.io/github/BigThunderSR/OnStarJS?branch=master&kill_cache=1) -->
