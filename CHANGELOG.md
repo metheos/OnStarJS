@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.14.3](https://github.com/BigThunderSR/OnStarJS/compare/v2.14.2...v2.14.3) (2025-12-06)
+
+
+### Bug Fixes
+
+* add git lfs update command to onCreateCommand in devcontainer configuration ([ea23ad8](https://github.com/BigThunderSR/OnStarJS/commit/ea23ad88972ab58993bc822c4b812b51c353f3d6))
+* **deps:** bump jsonwebtoken from 9.0.2 to 9.0.3 ([4730d76](https://github.com/BigThunderSR/OnStarJS/commit/4730d76e969d144fcf8230d76bfdde0c220fbf85))
+* reorder steps in publish workflow to ensure dependencies are installed after updating npm ([bc00867](https://github.com/BigThunderSR/OnStarJS/commit/bc00867fee77b6078db76bab4f6d0b1733ca0492))
+* update npm to latest for trusted publishing ([1f9d85f](https://github.com/BigThunderSR/OnStarJS/commit/1f9d85f7906e58f2ef5b1676e1c1c1d2defe4185))
+* **xvfb:** improve stability for long-running sessions and container restarts ([e56a130](https://github.com/BigThunderSR/OnStarJS/commit/e56a130f62c6ed625ad141ef17d36d0b9a572aee))
+
 ## [2.14.2](https://github.com/BigThunderSR/OnStarJS/compare/v2.14.1...v2.14.2) (2025-11-30)
 
 
