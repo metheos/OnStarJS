@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch: # To test OIDC publishing without creating a release
 
 jobs:
   publish:
