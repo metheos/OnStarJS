@@ -1,6 +1,6 @@
 {
   "name": "onstarjs2",
-  "version": "2.14.2",
+  "version": "2.14.3",
   "description": "Unofficial package for making OnStar API requests",
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
@@ -47,7 +47,7 @@
       "prettier --write"
     ]
   },
-  "packageManager": "pnpm@10.24.0",
+  "packageManager": "pnpm@10.25.0",
   "standard-version": {
     "scripts": {
       "prerelease": "pnpm test:unit && pnpm build"
