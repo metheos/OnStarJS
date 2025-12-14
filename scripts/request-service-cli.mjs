@@ -83,12 +83,23 @@ async function main() {
       label: "simulateReauth() — delete tokens, auth twice, print Xvfb info",
       run: async () => {
         const tokenDir = process.env.TOKEN_LOCATION || "./";
-        const msPath = new URL(
-          "file:" + path.resolve(tokenDir, "microsoft_tokens.json"),
-        );
-        const gmPath = new URL(
-          "file:" + path.resolve(tokenDir, "gm_tokens.json"),
-        );
+
+        const deleteTokens = () => {
+          try {
+            const msFsPath = path.resolve(tokenDir, "microsoft_tokens.json");
+            const gmFsPath = path.resolve(tokenDir, "gm_tokens.json");
+            if (fs.existsSync(msFsPath)) {
+              fs.rmSync(msFsPath, { force: true });
+              console.log("🗑️ Deleted", msFsPath);
+            }
+            if (fs.existsSync(gmFsPath)) {
+              fs.rmSync(gmFsPath, { force: true });
+              console.log("🗑️ Deleted", gmFsPath);
+            }
+          } catch (e) {
+            console.log("⚠️ Failed to delete token files:", e?.message || e);
+          }
+        };
 
         // Small diagnostic helper mirroring GMAuth's Xvfb checks
         const printXvfbDiagnostics = () => {
@@ -106,7 +117,8 @@ async function main() {
             }
             try {
               console.log(
-                "Xvfb -version:\n" + execSync("Xvfb -version").toString(),
+                "Xvfb -help (first lines):\n" +
+                  execSync("Xvfb -help 2>&1 | head -n 5").toString(),
               );
             } catch {}
             try {
@@ -160,21 +172,8 @@ async function main() {
           }
         };
 
-        // Delete existing tokens to force reauth
-        try {
-          const msFsPath = path.resolve(tokenDir, "microsoft_tokens.json");
-          const gmFsPath = path.resolve(tokenDir, "gm_tokens.json");
-          if (fs.existsSync(msFsPath)) {
-            fs.rmSync(msFsPath, { force: true });
-            console.log("🗑️ Deleted", msFsPath);
-          }
-          if (fs.existsSync(gmFsPath)) {
-            fs.rmSync(gmFsPath, { force: true });
-            console.log("🗑️ Deleted", gmFsPath);
-          }
-        } catch (e) {
-          console.log("⚠️ Failed to delete token files:", e?.message || e);
-        }
+        // Delete existing tokens to force reauth (before first attempt)
+        deleteTokens();
 
         // First run: should trigger full authentication
         console.log("\n▶️ First getAccountVehicles (should reauth)...");
@@ -182,7 +181,9 @@ async function main() {
         console.log("✅ First call succeeded");
         printXvfbDiagnostics();
 
-        // Second run: should use fresh tokens and still succeed
+        // Delete tokens again to force a fresh browser init and reauth
+        deleteTokens();
+        // Second run: should perform auth again and still succeed
         console.log("\n▶️ Second getAccountVehicles (post-auth)...");
         const second = await client.getAccountVehicles();
         console.log("✅ Second call succeeded");

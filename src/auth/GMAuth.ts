@@ -607,8 +607,10 @@ export class GMAuth {
               const whichXvfb = execSync("which Xvfb").toString().trim();
               console.error("which Xvfb:", whichXvfb);
               try {
-                const xvfbVersion = execSync("Xvfb -version").toString();
-                console.error("Xvfb -version:\n" + xvfbVersion);
+                const xvfbHelp = execSync(
+                  "Xvfb -help 2>&1 | head -n 5",
+                ).toString();
+                console.error("Xvfb -help (first lines):\n" + xvfbHelp);
               } catch {}
             } catch {
               console.error("which Xvfb: not found");
