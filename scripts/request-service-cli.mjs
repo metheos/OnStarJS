@@ -3,6 +3,9 @@ import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import OnStar from "../dist/index.mjs";
 import { v4 as uuidv4 } from "uuid";
+import fs from "node:fs";
+import path from "node:path";
+import { execSync } from "node:child_process";
 
 function requireEnv(name) {
   const v = process.env[name];
@@ -81,10 +84,10 @@ async function main() {
       run: async () => {
         const tokenDir = process.env.TOKEN_LOCATION || "./";
         const msPath = new URL(
-          "file:" + require("path").resolve(tokenDir, "microsoft_tokens.json"),
+          "file:" + path.resolve(tokenDir, "microsoft_tokens.json"),
         );
         const gmPath = new URL(
-          "file:" + require("path").resolve(tokenDir, "gm_tokens.json"),
+          "file:" + path.resolve(tokenDir, "gm_tokens.json"),
         );
 
         // Small diagnostic helper mirroring GMAuth's Xvfb checks
@@ -96,68 +99,56 @@ async function main() {
             try {
               console.log(
                 "which Xvfb:",
-                require("child_process")
-                  .execSync("which Xvfb")
-                  .toString()
-                  .trim(),
+                execSync("which Xvfb").toString().trim(),
               );
             } catch {
               console.log("which Xvfb: not found");
             }
             try {
               console.log(
-                "Xvfb -version:\n" +
-                  require("child_process").execSync("Xvfb -version").toString(),
+                "Xvfb -version:\n" + execSync("Xvfb -version").toString(),
               );
             } catch {}
             try {
               console.log(
                 "which xauth:",
-                require("child_process")
-                  .execSync("which xauth")
-                  .toString()
-                  .trim(),
+                execSync("which xauth").toString().trim(),
               );
             } catch {}
             try {
               console.log(
                 "which xhost:",
-                require("child_process")
-                  .execSync("which xhost")
-                  .toString()
-                  .trim(),
+                execSync("which xhost").toString().trim(),
               );
             } catch {}
             try {
               console.log(
                 "ps Xvfb (top 20):\n" +
-                  require("child_process")
-                    .execSync("ps aux | grep Xvfb | grep -v grep | head -n 20")
-                    .toString(),
+                  execSync(
+                    "ps aux | grep Xvfb | grep -v grep | head -n 20",
+                  ).toString(),
               );
             } catch {}
             try {
               console.log(
                 "ps Xorg (top 20):\n" +
-                  require("child_process")
-                    .execSync("ps aux | grep Xorg | grep -v grep | head -n 20")
-                    .toString(),
+                  execSync(
+                    "ps aux | grep Xorg | grep -v grep | head -n 20",
+                  ).toString(),
               );
             } catch {}
             try {
               console.log(
                 "/tmp/.X*-lock:\n" +
-                  require("child_process")
-                    .execSync("ls -la /tmp/.X*-lock 2>&1 | head -n 50")
-                    .toString(),
+                  execSync("ls -la /tmp/.X*-lock 2>&1 | head -n 50").toString(),
               );
             } catch {}
             try {
               console.log(
                 "/tmp/.X11-unix:\n" +
-                  require("child_process")
-                    .execSync("ls -la /tmp/.X11-unix 2>&1 | head -n 50")
-                    .toString(),
+                  execSync(
+                    "ls -la /tmp/.X11-unix 2>&1 | head -n 50",
+                  ).toString(),
               );
             } catch {}
             console.log("=== End Xvfb Diagnostics ===\n");
@@ -171,12 +162,8 @@ async function main() {
 
         // Delete existing tokens to force reauth
         try {
-          const fs = require("fs");
-          const msFsPath = require("path").resolve(
-            tokenDir,
-            "microsoft_tokens.json",
-          );
-          const gmFsPath = require("path").resolve(tokenDir, "gm_tokens.json");
+          const msFsPath = path.resolve(tokenDir, "microsoft_tokens.json");
+          const gmFsPath = path.resolve(tokenDir, "gm_tokens.json");
           if (fs.existsSync(msFsPath)) {
             fs.rmSync(msFsPath, { force: true });
             console.log("🗑️ Deleted", msFsPath);
