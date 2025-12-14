@@ -76,6 +76,135 @@ async function main() {
       run: () => client.getAccountVehicles(),
     },
     {
+      key: "simulateReauth",
+      label: "simulateReauth() — delete tokens, auth twice, print Xvfb info",
+      run: async () => {
+        const tokenDir = process.env.TOKEN_LOCATION || "./";
+        const msPath = new URL(
+          "file:" + require("path").resolve(tokenDir, "microsoft_tokens.json"),
+        );
+        const gmPath = new URL(
+          "file:" + require("path").resolve(tokenDir, "gm_tokens.json"),
+        );
+
+        // Small diagnostic helper mirroring GMAuth's Xvfb checks
+        const printXvfbDiagnostics = () => {
+          try {
+            console.log("\n=== Xvfb Diagnostics ===");
+            console.log("ENV DISPLAY:", process.env.DISPLAY || "<unset>");
+            console.log("ENV PATH:", process.env.PATH || "<unset>");
+            try {
+              console.log(
+                "which Xvfb:",
+                require("child_process")
+                  .execSync("which Xvfb")
+                  .toString()
+                  .trim(),
+              );
+            } catch {
+              console.log("which Xvfb: not found");
+            }
+            try {
+              console.log(
+                "Xvfb -version:\n" +
+                  require("child_process").execSync("Xvfb -version").toString(),
+              );
+            } catch {}
+            try {
+              console.log(
+                "which xauth:",
+                require("child_process")
+                  .execSync("which xauth")
+                  .toString()
+                  .trim(),
+              );
+            } catch {}
+            try {
+              console.log(
+                "which xhost:",
+                require("child_process")
+                  .execSync("which xhost")
+                  .toString()
+                  .trim(),
+              );
+            } catch {}
+            try {
+              console.log(
+                "ps Xvfb (top 20):\n" +
+                  require("child_process")
+                    .execSync("ps aux | grep Xvfb | grep -v grep | head -n 20")
+                    .toString(),
+              );
+            } catch {}
+            try {
+              console.log(
+                "ps Xorg (top 20):\n" +
+                  require("child_process")
+                    .execSync("ps aux | grep Xorg | grep -v grep | head -n 20")
+                    .toString(),
+              );
+            } catch {}
+            try {
+              console.log(
+                "/tmp/.X*-lock:\n" +
+                  require("child_process")
+                    .execSync("ls -la /tmp/.X*-lock 2>&1 | head -n 50")
+                    .toString(),
+              );
+            } catch {}
+            try {
+              console.log(
+                "/tmp/.X11-unix:\n" +
+                  require("child_process")
+                    .execSync("ls -la /tmp/.X11-unix 2>&1 | head -n 50")
+                    .toString(),
+              );
+            } catch {}
+            console.log("=== End Xvfb Diagnostics ===\n");
+          } catch (e) {
+            console.log(
+              "(diag) Failed to collect diagnostics:",
+              e?.message || e,
+            );
+          }
+        };
+
+        // Delete existing tokens to force reauth
+        try {
+          const fs = require("fs");
+          const msFsPath = require("path").resolve(
+            tokenDir,
+            "microsoft_tokens.json",
+          );
+          const gmFsPath = require("path").resolve(tokenDir, "gm_tokens.json");
+          if (fs.existsSync(msFsPath)) {
+            fs.rmSync(msFsPath, { force: true });
+            console.log("🗑️ Deleted", msFsPath);
+          }
+          if (fs.existsSync(gmFsPath)) {
+            fs.rmSync(gmFsPath, { force: true });
+            console.log("🗑️ Deleted", gmFsPath);
+          }
+        } catch (e) {
+          console.log("⚠️ Failed to delete token files:", e?.message || e);
+        }
+
+        // First run: should trigger full authentication
+        console.log("\n▶️ First getAccountVehicles (should reauth)...");
+        const first = await client.getAccountVehicles();
+        console.log("✅ First call succeeded");
+        printXvfbDiagnostics();
+
+        // Second run: should use fresh tokens and still succeed
+        console.log("\n▶️ Second getAccountVehicles (post-auth)...");
+        const second = await client.getAccountVehicles();
+        console.log("✅ Second call succeeded");
+        printXvfbDiagnostics();
+
+        return { status: "success", response: { data: { first, second } } };
+      },
+    },
+    {
       key: "getVehicleDetails",
       label: "getVehicleDetails(vin?)",
       run: async () => {
