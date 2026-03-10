@@ -2518,14 +2518,15 @@ describe("RequestService", () => {
 
   // =====================================================================
   // Regression tests derived from real user error logs in GitHub issues
-  // from BigThunderSR/homeassistant-addons-onstar2mqtt and onstar2mqtt
+  // from BigThunderSR/homeassistant-addons-onstar2mqtt (addons) and
+  // BigThunderSR/onstar2mqtt (o2m)
   // =====================================================================
   describe("Real-world GitHub Issue Error Patterns", () => {
     describe("Error response shape from sendRequest", () => {
-      // Issue #1662: setChargeLevelTarget 400 from eve-vcn with empty body
+      // addons#1662: setChargeLevelTarget 400 from eve-vcn with empty body
       // URL: https://eve-vcn.ext.gm.com/api/gmone/v1/vehicle/performSetChargingSettings
       // GM returned empty string body, status/statusText were lost
-      test("#1662: 400 Bad Request with empty body (eve-vcn EV command)", async () => {
+      test("addons#1662: 400 Bad Request with empty body (eve-vcn EV command)", async () => {
         httpClient.post = jest.fn().mockRejectedValue({
           isAxiosError: true,
           response: {
@@ -2550,9 +2551,9 @@ describe("RequestService", () => {
         }
       });
 
-      // Issue #418: OAuth 400 with {"error":"invalid_client"}
+      // addons#418: OAuth 400 with {"error":"invalid_client"}
       // GM OAuth endpoint returned structured error JSON
-      test("#418: 400 Bad Request with JSON error body (OAuth)", async () => {
+      test("addons#418: 400 Bad Request with JSON error body (OAuth)", async () => {
         httpClient.post = jest.fn().mockRejectedValue({
           isAxiosError: true,
           response: {
@@ -2576,9 +2577,9 @@ describe("RequestService", () => {
         }
       });
 
-      // Issue #667: v3 alertFlash 400 with structured GM error
+      // o2m#667: v3 alertFlash 400 with structured GM error
       // Body: {"error":"Bad Request","path":"/veh/cmd/v3/alert/{VIN}","status":400,"timestamp":"..."}
-      test("#667: 400 from v3 API with structured error body", async () => {
+      test("o2m#667: 400 from v3 API with structured error body", async () => {
         httpClient.post = jest.fn().mockRejectedValue({
           isAxiosError: true,
           response: {
@@ -2604,9 +2605,9 @@ describe("RequestService", () => {
         }
       });
 
-      // Issue #667: eve-vcn 400 with EV-specific error code
+      // o2m#667: eve-vcn 400 with EV-specific error code
       // Body: {"error":459,"message":"Not supported (Global-A set TCL is not supported)","success":false}
-      test("#667: 400 from eve-vcn with EV error code 459", async () => {
+      test("o2m#667: 400 from eve-vcn with EV error code 459", async () => {
         httpClient.post = jest.fn().mockRejectedValue({
           isAxiosError: true,
           response: {
@@ -2633,9 +2634,9 @@ describe("RequestService", () => {
         }
       });
 
-      // Issues #1529/#1438: 403 Forbidden from healthstatus with empty body
+      // addons#1529/addons#1438: 403 Forbidden from healthstatus with empty body
       // URL: https://na-mobile-api.gm.com/api/v1/vh/vehiclehealth/v1/healthstatus/{VIN}
-      test("#1529: 403 Forbidden with empty body (expired plan)", async () => {
+      test("addons#1529: 403 Forbidden with empty body (expired plan)", async () => {
         httpClient.post = jest.fn().mockRejectedValue({
           isAxiosError: true,
           response: {
@@ -2659,9 +2660,9 @@ describe("RequestService", () => {
         }
       });
 
-      // Issue #1401: 404 "api has been disabled"
+      // addons#1401: 404 "api has been disabled"
       // GM disabled the old v1 API entirely
-      test("#1401: 404 api disabled with empty body", async () => {
+      test("addons#1401: 404 api disabled with empty body", async () => {
         httpClient.post = jest.fn().mockRejectedValue({
           isAxiosError: true,
           response: {
@@ -2685,9 +2686,9 @@ describe("RequestService", () => {
         }
       });
 
-      // Issues #419/#333: 504 Gateway Timeout
+      // addons#419: 504 Gateway Timeout
       // Intermittent GM server-side issue
-      test("#419: 504 Gateway Timeout", async () => {
+      test("addons#419: 504 Gateway Timeout", async () => {
         httpClient.post = jest.fn().mockRejectedValue({
           isAxiosError: true,
           response: {
@@ -2710,8 +2711,8 @@ describe("RequestService", () => {
         }
       });
 
-      // Issue #246: 401 Unauthorized
-      test("#246: 401 Unauthorized", async () => {
+      // o2m#246: 401 Unauthorized
+      test("o2m#246: 401 Unauthorized", async () => {
         httpClient.post = jest.fn().mockRejectedValue({
           isAxiosError: true,
           response: {
@@ -2736,8 +2737,8 @@ describe("RequestService", () => {
     });
 
     describe("shouldFallbackToV1 with real issue patterns", () => {
-      // Issue #1662: 400 from eve-vcn → should trigger fallback
-      test("#1662: HTTP 400 with empty body triggers fallback", () => {
+      // addons#1662: 400 from eve-vcn → should trigger fallback
+      test("addons#1662: HTTP 400 with empty body triggers fallback", () => {
         const error = new (require("../../src/RequestError").default)(
           "Request Failed with status 400 - Bad Request",
         );
@@ -2746,8 +2747,8 @@ describe("RequestService", () => {
         expect(requestService["shouldFallbackToV1"](error)).toBe(true);
       });
 
-      // Issue #667: v3 API 400 with structured error body
-      test("#667: v3 API structured 400 triggers fallback", () => {
+      // o2m#667: v3 API 400 with structured error body
+      test("o2m#667: v3 API structured 400 triggers fallback", () => {
         const error = new (require("../../src/RequestError").default)(
           "Request Failed with status 400 - Bad Request",
         );
@@ -2764,8 +2765,8 @@ describe("RequestService", () => {
         expect(requestService["shouldFallbackToV1"](error)).toBe(true);
       });
 
-      // Issue #667: eve-vcn "not supported" error message
-      test("#667: eve-vcn 'not supported' message triggers fallback", () => {
+      // o2m#667: eve-vcn "not supported" error message
+      test("o2m#667: eve-vcn 'not supported' message triggers fallback", () => {
         const error = new (require("../../src/RequestError").default)(
           "Request Failed with status 400 - Bad Request",
         );
@@ -2781,8 +2782,8 @@ describe("RequestService", () => {
         expect(requestService["shouldFallbackToV1"](error)).toBe(true);
       });
 
-      // Issue #1529: 403 should NOT trigger fallback (it's a plan issue)
-      test("#1529: 403 Forbidden does not trigger fallback", () => {
+      // addons#1529: 403 should NOT trigger fallback (it's a plan issue)
+      test("addons#1529: 403 Forbidden does not trigger fallback", () => {
         const error = new (require("../../src/RequestError").default)(
           "Request Failed with status 403 - Forbidden",
         );
@@ -2791,8 +2792,8 @@ describe("RequestService", () => {
         expect(requestService["shouldFallbackToV1"](error)).toBe(false);
       });
 
-      // Issue #1401: 404 should NOT trigger fallback (API disabled)
-      test("#1401: 404 api disabled does not trigger fallback", () => {
+      // addons#1401: 404 should NOT trigger fallback (API disabled)
+      test("addons#1401: 404 api disabled does not trigger fallback", () => {
         const error = new (require("../../src/RequestError").default)(
           "Request Failed with status 404 - api has been disabled",
         );
@@ -2805,8 +2806,8 @@ describe("RequestService", () => {
         expect(requestService["shouldFallbackToV1"](error)).toBe(false);
       });
 
-      // Issue #419: 504 should NOT trigger fallback (server-side)
-      test("#419: 504 Gateway Timeout does not trigger fallback", () => {
+      // addons#419: 504 should NOT trigger fallback (server-side)
+      test("addons#419: 504 Gateway Timeout does not trigger fallback", () => {
         const error = new (require("../../src/RequestError").default)(
           "Request Failed with status 504 - Gateway Timeout",
         );
@@ -2821,8 +2822,8 @@ describe("RequestService", () => {
     });
 
     describe("isEVAuthError with real issue patterns", () => {
-      // Issue #246: 401 Unauthorized — is an auth error
-      test("#246: 401 on RequestError is auth error", () => {
+      // o2m#246: 401 Unauthorized — is an auth error
+      test("o2m#246: 401 on RequestError is auth error", () => {
         const error = new (require("../../src/RequestError").default)(
           "Request Failed with status 401 - Unauthorized",
         );
@@ -2835,8 +2836,8 @@ describe("RequestService", () => {
         expect(requestService["isEVAuthError"](error)).toBe(true);
       });
 
-      // Issues #1529/#1438: 403 Forbidden — is an auth error (expired plan)
-      test("#1529: 403 on RequestError is auth error", () => {
+      // addons#1529/addons#1438: 403 Forbidden — is an auth error (expired plan)
+      test("addons#1529: 403 on RequestError is auth error", () => {
         const error = new (require("../../src/RequestError").default)(
           "Request Failed with status 403 - Forbidden",
         );
@@ -2845,8 +2846,8 @@ describe("RequestService", () => {
         expect(requestService["isEVAuthError"](error)).toBe(true);
       });
 
-      // Issue #1662: 400 with active token — NOT an auth error
-      test("#1662: 400 with active token is not auth error", () => {
+      // addons#1662: 400 with active token — NOT an auth error
+      test("addons#1662: 400 with active token is not auth error", () => {
         requestService["evTokenExpiresAt"] = Date.now() + 60000;
         const error = new (require("../../src/RequestError").default)(
           "Request Failed with status 400 - Bad Request",
@@ -2857,8 +2858,8 @@ describe("RequestService", () => {
         requestService["evTokenExpiresAt"] = undefined;
       });
 
-      // Issue #1457: 400 with expired token — IS an auth error
-      test("#1457: 400 with expired token is auth error", () => {
+      // addons#1457: 400 with expired token — IS an auth error
+      test("addons#1457: 400 with expired token is auth error", () => {
         requestService["evTokenExpiresAt"] = Date.now() - 1000;
         const error = new (require("../../src/RequestError").default)(
           "Request Failed with status 400 - Bad Request",
@@ -2869,8 +2870,8 @@ describe("RequestService", () => {
         requestService["evTokenExpiresAt"] = undefined;
       });
 
-      // Issue #1401: 404 — NOT an auth error
-      test("#1401: 404 is not auth error", () => {
+      // addons#1401: 404 — NOT an auth error
+      test("addons#1401: 404 is not auth error", () => {
         const error = new (require("../../src/RequestError").default)(
           "Request Failed with status 404 - api has been disabled",
         );
@@ -2883,8 +2884,8 @@ describe("RequestService", () => {
         expect(requestService["isEVAuthError"](error)).toBe(false);
       });
 
-      // Issue #419: 504 — NOT an auth error
-      test("#419: 504 is not auth error", () => {
+      // addons#419: 504 — NOT an auth error
+      test("addons#419: 504 is not auth error", () => {
         const error = new (require("../../src/RequestError").default)(
           "Request Failed with status 504 - Gateway Timeout",
         );

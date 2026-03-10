@@ -21,7 +21,7 @@
 
 - 3 tests in RequestError.test.ts (status storage, success path, runtime access)
 - 2 tests in RequestService.test.ts (shouldFallbackToV1 with HTTP status)
-- 22 regression tests from real GitHub issue log patterns (#1662, #1457, #418, #333, #667, #1529, #1438, #1401, #419, #246)
+- 22 regression tests from real GitHub issue log patterns (addons#1662, addons#1457, addons#418, o2m#667, addons#1529, addons#1438, addons#1401, addons#419, o2m#246)
 - Total: 197 tests pass, 5 suites
 
 ## What was NOT changed
@@ -29,4 +29,4 @@
 - No console.error logging added (fires on expected v3→v1 fallback and EV auth retry)
 - No changes to RequestError.ts itself
 - No changes to public API surface
-- Root cause of #1662 (why GM rejects the request) still unknown — needs EV vehicle to reproduce
+- Root cause of addons#1662 (why GM rejects the request) still unknown — needs EV vehicle to reproduce
