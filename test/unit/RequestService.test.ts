@@ -1814,6 +1814,16 @@ describe("RequestService", () => {
     });
 
     describe("Fallback Detection", () => {
+      test("shouldFallbackToV1 returns true for HTTP 400 status on response", () => {
+        const error = new (require("../../src/RequestError").default)(
+          "Test error",
+        );
+        error.setResponse({ status: 400, data: { message: "Bad Request" } });
+
+        const result = requestService["shouldFallbackToV1"](error);
+        expect(result).toBe(true);
+      });
+
       test("shouldFallbackToV1 returns true for 400 status in response data", () => {
         const error = new (require("../../src/RequestError").default)(
           "Test error",
@@ -1877,6 +1887,19 @@ describe("RequestService", () => {
           "Server error",
         );
         error.setResponse({ data: { status: 500 } });
+
+        const result = requestService["shouldFallbackToV1"](error);
+        expect(result).toBe(false);
+      });
+
+      test("shouldFallbackToV1 returns false for HTTP 500 status on response", () => {
+        const error = new (require("../../src/RequestError").default)(
+          "Server error",
+        );
+        error.setResponse({
+          status: 500,
+          data: { message: "Internal Server Error" },
+        });
 
         const result = requestService["shouldFallbackToV1"](error);
         expect(result).toBe(false);
@@ -2490,6 +2513,445 @@ describe("RequestService", () => {
       expect(
         requestService["decodeJwtExpMs"]("header.invalidbase64.sig"),
       ).toBeUndefined();
+    });
+  });
+
+  // =====================================================================
+  // Regression tests derived from real user error logs in GitHub issues
+  // from BigThunderSR/homeassistant-addons-onstar2mqtt (addons) and
+  // BigThunderSR/onstar2mqtt (o2m)
+  // =====================================================================
+  describe("Real-world GitHub Issue Error Patterns", () => {
+    describe("Error response shape from sendRequest", () => {
+      // addons#1662: setChargeLevelTarget 400 from eve-vcn with empty body
+      // URL: https://eve-vcn.ext.gm.com/api/gmone/v1/vehicle/performSetChargingSettings
+      // GM returned empty string body, status/statusText were lost
+      test("addons#1662: 400 Bad Request with empty body (eve-vcn EV command)", async () => {
+        httpClient.post = jest.fn().mockRejectedValue({
+          isAxiosError: true,
+          response: {
+            status: 400,
+            statusText: "Bad Request",
+            data: "",
+          },
+        });
+
+        try {
+          await requestService.setClient(httpClient).start();
+          fail("Should have thrown");
+        } catch (err: any) {
+          expect(err.message).toBe(
+            "Request Failed with status 400 - Bad Request",
+          );
+          const response = err.getResponse();
+          expect(response).toBeDefined();
+          expect(response.status).toBe(400);
+          expect(response.statusText).toBe("Bad Request");
+          expect(response.data).toBe("");
+        }
+      });
+
+      // addons#418: OAuth 400 with {"error":"invalid_client"}
+      // GM OAuth endpoint returned structured error JSON
+      test("addons#418: 400 Bad Request with JSON error body (OAuth)", async () => {
+        httpClient.post = jest.fn().mockRejectedValue({
+          isAxiosError: true,
+          response: {
+            status: 400,
+            statusText: "Bad Request",
+            data: { error: "invalid_client" },
+          },
+        });
+
+        try {
+          await requestService.setClient(httpClient).start();
+          fail("Should have thrown");
+        } catch (err: any) {
+          expect(err.message).toBe(
+            "Request Failed with status 400 - Bad Request",
+          );
+          const response = err.getResponse();
+          expect(response.status).toBe(400);
+          expect(response.statusText).toBe("Bad Request");
+          expect(response.data).toEqual({ error: "invalid_client" });
+        }
+      });
+
+      // o2m#667: v3 alertFlash 400 with structured GM error
+      // Body: {"error":"Bad Request","path":"/veh/cmd/v3/alert/{VIN}","status":400,"timestamp":"..."}
+      test("o2m#667: 400 from v3 API with structured error body", async () => {
+        httpClient.post = jest.fn().mockRejectedValue({
+          isAxiosError: true,
+          response: {
+            status: 400,
+            statusText: "Bad Request",
+            data: {
+              error: "Bad Request",
+              path: "/veh/cmd/v3/alert/1G1FW6S03H4112345",
+              status: 400,
+              timestamp: "2025-10-01T12:00:00Z",
+            },
+          },
+        });
+
+        try {
+          await requestService.setClient(httpClient).start();
+          fail("Should have thrown");
+        } catch (err: any) {
+          const response = err.getResponse();
+          expect(response.status).toBe(400);
+          expect(response.data.error).toBe("Bad Request");
+          expect(response.data.path).toContain("/veh/cmd/v3/alert/");
+        }
+      });
+
+      // o2m#667: eve-vcn 400 with EV-specific error code
+      // Body: {"error":459,"message":"Not supported (Global-A set TCL is not supported)","success":false}
+      test("o2m#667: 400 from eve-vcn with EV error code 459", async () => {
+        httpClient.post = jest.fn().mockRejectedValue({
+          isAxiosError: true,
+          response: {
+            status: 400,
+            statusText: "Bad Request",
+            data: {
+              error: 459,
+              message: "Not supported (Global-A set TCL is not supported)",
+              success: false,
+            },
+          },
+        });
+
+        try {
+          await requestService.setClient(httpClient).start();
+          fail("Should have thrown");
+        } catch (err: any) {
+          const response = err.getResponse();
+          expect(response.status).toBe(400);
+          expect(response.statusText).toBe("Bad Request");
+          expect(response.data.error).toBe(459);
+          expect(response.data.message).toContain("Not supported");
+          expect(response.data.success).toBe(false);
+        }
+      });
+
+      // addons#1529/addons#1438: 403 Forbidden from healthstatus with empty body
+      // URL: https://na-mobile-api.gm.com/api/v1/vh/vehiclehealth/v1/healthstatus/{VIN}
+      test("addons#1529: 403 Forbidden with empty body (expired plan)", async () => {
+        httpClient.post = jest.fn().mockRejectedValue({
+          isAxiosError: true,
+          response: {
+            status: 403,
+            statusText: "Forbidden",
+            data: "",
+          },
+        });
+
+        try {
+          await requestService.setClient(httpClient).start();
+          fail("Should have thrown");
+        } catch (err: any) {
+          expect(err.message).toBe(
+            "Request Failed with status 403 - Forbidden",
+          );
+          const response = err.getResponse();
+          expect(response.status).toBe(403);
+          expect(response.statusText).toBe("Forbidden");
+          expect(response.data).toBe("");
+        }
+      });
+
+      // addons#1401: 404 "api has been disabled"
+      // GM disabled the old v1 API entirely
+      test("addons#1401: 404 api disabled with empty body", async () => {
+        httpClient.post = jest.fn().mockRejectedValue({
+          isAxiosError: true,
+          response: {
+            status: 404,
+            statusText: "api has been disabled",
+            data: "",
+          },
+        });
+
+        try {
+          await requestService.setClient(httpClient).start();
+          fail("Should have thrown");
+        } catch (err: any) {
+          expect(err.message).toBe(
+            "Request Failed with status 404 - api has been disabled",
+          );
+          const response = err.getResponse();
+          expect(response.status).toBe(404);
+          expect(response.statusText).toBe("api has been disabled");
+          expect(response.data).toBe("");
+        }
+      });
+
+      // addons#419: 504 Gateway Timeout
+      // Intermittent GM server-side issue
+      test("addons#419: 504 Gateway Timeout", async () => {
+        httpClient.post = jest.fn().mockRejectedValue({
+          isAxiosError: true,
+          response: {
+            status: 504,
+            statusText: "Gateway Timeout",
+            data: "",
+          },
+        });
+
+        try {
+          await requestService.setClient(httpClient).start();
+          fail("Should have thrown");
+        } catch (err: any) {
+          expect(err.message).toBe(
+            "Request Failed with status 504 - Gateway Timeout",
+          );
+          const response = err.getResponse();
+          expect(response.status).toBe(504);
+          expect(response.statusText).toBe("Gateway Timeout");
+        }
+      });
+
+      // o2m#246: 401 Unauthorized
+      test("o2m#246: 401 Unauthorized", async () => {
+        httpClient.post = jest.fn().mockRejectedValue({
+          isAxiosError: true,
+          response: {
+            status: 401,
+            statusText: "Unauthorized",
+            data: "",
+          },
+        });
+
+        try {
+          await requestService.setClient(httpClient).start();
+          fail("Should have thrown");
+        } catch (err: any) {
+          expect(err.message).toBe(
+            "Request Failed with status 401 - Unauthorized",
+          );
+          const response = err.getResponse();
+          expect(response.status).toBe(401);
+          expect(response.statusText).toBe("Unauthorized");
+        }
+      });
+    });
+
+    describe("shouldFallbackToV1 with real issue patterns", () => {
+      // addons#1662: 400 from eve-vcn → should trigger fallback
+      test("addons#1662: HTTP 400 with empty body triggers fallback", () => {
+        const error = new (require("../../src/RequestError").default)(
+          "Request Failed with status 400 - Bad Request",
+        );
+        error.setResponse({ status: 400, statusText: "Bad Request", data: "" });
+
+        expect(requestService["shouldFallbackToV1"](error)).toBe(true);
+      });
+
+      // o2m#667: v3 API 400 with structured error body
+      test("o2m#667: v3 API structured 400 triggers fallback", () => {
+        const error = new (require("../../src/RequestError").default)(
+          "Request Failed with status 400 - Bad Request",
+        );
+        error.setResponse({
+          status: 400,
+          statusText: "Bad Request",
+          data: {
+            error: "Bad Request",
+            path: "/veh/cmd/v3/alert/1G1FW6S03H4112345",
+            status: 400,
+          },
+        });
+
+        expect(requestService["shouldFallbackToV1"](error)).toBe(true);
+      });
+
+      // o2m#667: eve-vcn "not supported" error message
+      test("o2m#667: eve-vcn 'not supported' message triggers fallback", () => {
+        const error = new (require("../../src/RequestError").default)(
+          "Request Failed with status 400 - Bad Request",
+        );
+        error.setResponse({
+          status: 400,
+          data: {
+            error: 459,
+            message: "Not supported (Global-A set TCL is not supported)",
+            success: false,
+          },
+        });
+
+        expect(requestService["shouldFallbackToV1"](error)).toBe(true);
+      });
+
+      // addons#1529: 403 should NOT trigger fallback (it's a plan issue)
+      test("addons#1529: 403 Forbidden does not trigger fallback", () => {
+        const error = new (require("../../src/RequestError").default)(
+          "Request Failed with status 403 - Forbidden",
+        );
+        error.setResponse({ status: 403, statusText: "Forbidden", data: "" });
+
+        expect(requestService["shouldFallbackToV1"](error)).toBe(false);
+      });
+
+      // addons#1401: 404 should NOT trigger fallback (API disabled)
+      test("addons#1401: 404 api disabled does not trigger fallback", () => {
+        const error = new (require("../../src/RequestError").default)(
+          "Request Failed with status 404 - api has been disabled",
+        );
+        error.setResponse({
+          status: 404,
+          statusText: "api has been disabled",
+          data: "",
+        });
+
+        expect(requestService["shouldFallbackToV1"](error)).toBe(false);
+      });
+
+      // addons#419: 504 should NOT trigger fallback (server-side)
+      test("addons#419: 504 Gateway Timeout does not trigger fallback", () => {
+        const error = new (require("../../src/RequestError").default)(
+          "Request Failed with status 504 - Gateway Timeout",
+        );
+        error.setResponse({
+          status: 504,
+          statusText: "Gateway Timeout",
+          data: "",
+        });
+
+        expect(requestService["shouldFallbackToV1"](error)).toBe(false);
+      });
+    });
+
+    describe("isEVAuthError with real issue patterns", () => {
+      // o2m#246: 401 Unauthorized — is an auth error
+      test("o2m#246: 401 on RequestError is auth error", () => {
+        const error = new (require("../../src/RequestError").default)(
+          "Request Failed with status 401 - Unauthorized",
+        );
+        error.setResponse({
+          status: 401,
+          statusText: "Unauthorized",
+          data: "",
+        });
+
+        expect(requestService["isEVAuthError"](error)).toBe(true);
+      });
+
+      // addons#1529/addons#1438: 403 Forbidden — is an auth error (expired plan)
+      test("addons#1529: 403 on RequestError is auth error", () => {
+        const error = new (require("../../src/RequestError").default)(
+          "Request Failed with status 403 - Forbidden",
+        );
+        error.setResponse({ status: 403, statusText: "Forbidden", data: "" });
+
+        expect(requestService["isEVAuthError"](error)).toBe(true);
+      });
+
+      // addons#1662: 400 with active token — NOT an auth error
+      test("addons#1662: 400 with active token is not auth error", () => {
+        requestService["evTokenExpiresAt"] = Date.now() + 60000;
+        const error = new (require("../../src/RequestError").default)(
+          "Request Failed with status 400 - Bad Request",
+        );
+        error.setResponse({ status: 400, statusText: "Bad Request", data: "" });
+
+        expect(requestService["isEVAuthError"](error)).toBe(false);
+        requestService["evTokenExpiresAt"] = undefined;
+      });
+
+      // addons#1457: 400 with expired token — IS an auth error
+      test("addons#1457: 400 with expired token is auth error", () => {
+        requestService["evTokenExpiresAt"] = Date.now() - 1000;
+        const error = new (require("../../src/RequestError").default)(
+          "Request Failed with status 400 - Bad Request",
+        );
+        error.setResponse({ status: 400, statusText: "Bad Request", data: "" });
+
+        expect(requestService["isEVAuthError"](error)).toBe(true);
+        requestService["evTokenExpiresAt"] = undefined;
+      });
+
+      // addons#1401: 404 — NOT an auth error
+      test("addons#1401: 404 is not auth error", () => {
+        const error = new (require("../../src/RequestError").default)(
+          "Request Failed with status 404 - api has been disabled",
+        );
+        error.setResponse({
+          status: 404,
+          statusText: "api has been disabled",
+          data: "",
+        });
+
+        expect(requestService["isEVAuthError"](error)).toBe(false);
+      });
+
+      // addons#419: 504 — NOT an auth error
+      test("addons#419: 504 is not auth error", () => {
+        const error = new (require("../../src/RequestError").default)(
+          "Request Failed with status 504 - Gateway Timeout",
+        );
+        error.setResponse({
+          status: 504,
+          statusText: "Gateway Timeout",
+          data: "",
+        });
+
+        expect(requestService["isEVAuthError"](error)).toBe(false);
+      });
+    });
+
+    describe("downstream normalizeError compatibility", () => {
+      // Simulates what onstar2mqtt's normalizeError() does:
+      // checks e.response?.status, e.response?.data, e.request, e.message, e.stack
+      test("RequestError exposes all fields normalizeError checks", async () => {
+        httpClient.post = jest.fn().mockRejectedValue({
+          isAxiosError: true,
+          response: {
+            status: 400,
+            statusText: "Bad Request",
+            data: { error: 459, message: "Not supported" },
+          },
+        });
+
+        try {
+          await requestService.setClient(httpClient).start();
+          fail("Should have thrown");
+        } catch (err: any) {
+          // These are the exact property paths normalizeError checks at runtime
+          expect(err.response).toBeDefined();
+          expect(err.response.status).toBe(400);
+          expect(err.response.statusText).toBe("Bad Request");
+          expect(err.response.data).toEqual({
+            error: 459,
+            message: "Not supported",
+          });
+          expect(err.request).toBeDefined();
+          expect(err.message).toBeDefined();
+          expect(err.stack).toBeDefined();
+        }
+      });
+
+      // Before our fix, response had no status field — normalizeError dropped it
+      test("RequestError response with empty data still has status", async () => {
+        httpClient.post = jest.fn().mockRejectedValue({
+          isAxiosError: true,
+          response: {
+            status: 400,
+            statusText: "Bad Request",
+            data: "",
+          },
+        });
+
+        try {
+          await requestService.setClient(httpClient).start();
+          fail("Should have thrown");
+        } catch (err: any) {
+          // normalizeError checks: if (e.response?.status)
+          // Before fix: e.response was { data: "" } — status undefined → dropped
+          // After fix: e.response is { status: 400, statusText: "Bad Request", data: "" }
+          expect(err.response?.status).toBe(400);
+          expect(err.response?.data).toBe("");
+        }
+      });
     });
   });
 });

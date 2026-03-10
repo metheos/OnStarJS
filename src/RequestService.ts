@@ -923,9 +923,15 @@ class RequestService {
     // If it's a RequestError, check the response status
     if (error instanceof RequestError) {
       const response = error.getResponse();
+
+      // Check HTTP status code directly
+      if (response?.status === 400) {
+        return true;
+      }
+
       const data: any = response?.data;
 
-      // Check for 400 Bad Request
+      // Check for 400 in response body (legacy/GM body formats)
       if (data?.status === 400 || data?.statusCode === 400) {
         return true;
       }
@@ -1184,7 +1190,11 @@ class RequestService {
         if (isAxios) {
           if (error.response) {
             errorObj.message = `Request Failed with status ${error.response.status} - ${error.response.statusText}`;
-            errorObj.setResponse({ data: error.response.data });
+            errorObj.setResponse({
+              status: error.response.status,
+              statusText: error.response.statusText,
+              data: error.response.data,
+            });
             // Attach our logical Request, not axios' raw request, to avoid circular refs
             errorObj.setRequest(request);
           } else if (error.request) {
@@ -1203,11 +1213,11 @@ class RequestService {
               "$$",
               "",
             );
-          // Ensure we pass a data object with status so downstream logic can inspect it
-          const data = resp.data;
-          const normalized =
-            data && typeof data === "object" ? { ...data, status } : { status };
-          errorObj.setResponse({ data: normalized });
+          errorObj.setResponse({
+            status,
+            statusText,
+            data: resp.data,
+          });
           errorObj.setRequest(request);
         } else if (error instanceof Error) {
           errorObj.message = error.message;
@@ -1383,10 +1393,11 @@ class RequestService {
   private isEVAuthError(err: any): boolean {
     // RequestError wrapping axios-like response
     if (err instanceof RequestError) {
-      const data: any = err.getResponse()?.data;
-      const status = (data as any)?.status ?? (data as any)?.statusCode;
+      const resp = err.getResponse();
+      const status = resp?.status;
       if (status === 401 || status === 403) return true;
-      const msg = (data as any)?.message || (data as any)?.error;
+      const data: any = resp?.data;
+      const msg = data?.message || data?.error;
       if (typeof msg === "string" && /token|auth|unauthor/i.test(msg))
         return true;
       // Some EV endpoints return 400 for expired/invalid session tokens; if our local token is expired, treat as auth error

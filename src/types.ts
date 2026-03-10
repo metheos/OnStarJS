@@ -4,6 +4,8 @@ export interface HttpClient {
 }
 
 export interface RequestResponse {
+  status?: number;
+  statusText?: string;
   data?:
     | string
     | {
