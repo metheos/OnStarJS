@@ -4,7 +4,7 @@
 
 `setChargeLevelTarget` returns 400 from GM's EV API. The error response body was silently dropped because `RequestError.response` only had `{ data }` — no HTTP `status`/`statusText`. onstar2mqtt's `normalizeError()` checks `e.response?.status` which was undefined, so it fell through to a degraded error format.
 
-## Fix (applied to working tree, not yet committed)
+## Fix (PR #644)
 
 ### src/types.ts
 
