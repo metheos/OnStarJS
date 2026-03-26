@@ -390,10 +390,13 @@ Returns current EV charging metrics and status information for electric vehicles
 onStar.getEVChargingMetrics([options]);
 ```
 
-| Option        | Default       | Valid Values             |
-| ------------- | ------------- | ------------------------ |
-| clientVersion | "7.18.0.8006" | Any version string       |
-| os            | "A"           | "A" (Android), "I" (iOS) |
+| Option        | Default      | Valid Values             |
+| ------------- | ------------ | ------------------------ |
+| clientVersion | "8.5.0.8060" | Any version string       |
+| clientVersion | "8.5.0.8060" | Any version string       |
+| clientVersion | "8.5.0.8060" | Any version string       |
+| os            | "a"          | "a" (Android), "I" (iOS) |
+| clientVersion | "8.5.0.8060" | Any version string       |
 
 </details>
 
@@ -406,10 +409,10 @@ Returns fresh EV charging metrics and status information for electric vehicles. 
 onStar.refreshEVChargingMetrics([options]);
 ```
 
-| Option        | Default       | Valid Values             |
-| ------------- | ------------- | ------------------------ |
-| clientVersion | "7.18.0.8006" | Any version string       |
-| os            | "A"           | "A" (Android), "I" (iOS) |
+| Option        | Default      | Valid Values             |
+| ------------- | ------------ | ------------------------ |
+| clientVersion | "8.5.0.8060" | Any version string       |
+| os            | "a"          | "a" (Android), "I" (iOS) |
 
 </details>
 
@@ -427,8 +430,12 @@ onStar.setChargeLevelTarget(tcl, [options]);
 | tcl              | (required)     | 0-100 (percentage)       |
 | noMetricsRefresh | false          | true, false              |
 | clientRequestId  | auto-generated | Any UUID string          |
-| clientVersion    | "7.18.0.8006"  | Any version string       |
-| os               | "A"            | "A" (Android), "I" (iOS) |
+| clientVersion    | "8.5.0.8060"   | Any version string       |
+| clientVersion    | "8.5.0.8060"   | Any version string       |
+| clientVersion    | "8.5.0.8060"   | Any version string       |
+| clientVersion    | "8.5.0.8060"   | Any version string       |
+| os               | "a"            | "a" (Android), "I" (iOS) |
+| clientVersion    | "8.5.0.8060"   | Any version string       |
 
 </details>
 
@@ -445,8 +452,8 @@ onStar.stopCharging([options]);
 | ---------------- | -------------- | ------------------------ |
 | noMetricsRefresh | false          | true, false              |
 | clientRequestId  | auto-generated | Any UUID string          |
-| clientVersion    | "7.18.0.8006"  | Any version string       |
-| os               | "A"            | "A" (Android), "I" (iOS) |
+| clientVersion    | "8.5.0.8060"   | Any version string       |
+| os               | "a"            | "a" (Android), "I" (iOS) |
 
 </details>
 
