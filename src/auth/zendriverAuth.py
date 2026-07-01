@@ -1066,7 +1066,7 @@ async def click_until(
     element,
     is_complete,
     label,
-    methods=("mouse", "enter", "space", "direct"),
+    methods=("direct", "mouse", "enter", "space"),
     settle_ms=500,
 ):
     last_state = None
@@ -1836,11 +1836,14 @@ async def main():
                     return next_state
                 return None
 
-            post_login_state = await click_until(
-                submit_button,
-                is_login_submit_complete,
-                "login submit",
-            ) or "timeout"
+            post_login_state = (
+                await click_until(
+                    submit_button,
+                    is_login_submit_complete,
+                    "login submit",
+                )
+                or "timeout"
+            )
             state["record_login_responses"] = False
 
             if post_login_state == "mfa":
@@ -1932,22 +1935,23 @@ async def main():
                             "Monitoring for authorization redirect or Access "
                             "Denied after MFA"
                         )
-                        next_state = (
-                            await wait_for_auth_code_or_access_denied(
-                                tab,
-                                state,
-                                15000,
-                            )
+                        next_state = await wait_for_auth_code_or_access_denied(
+                            tab,
+                            state,
+                            15000,
                         )
                         if next_state != "timeout":
                             return next_state
                         return None
 
-                    post_mfa_state = await click_until(
-                        submit_mfa,
-                        is_mfa_submit_complete,
-                        "mfa submit",
-                    ) or "timeout"
+                    post_mfa_state = (
+                        await click_until(
+                            submit_mfa,
+                            is_mfa_submit_complete,
+                            "mfa submit",
+                        )
+                        or "timeout"
+                    )
                     if post_mfa_state == "auth_code":
                         progress("Authorization redirect captured after MFA")
                     elif post_mfa_state == "access_denied":
