@@ -4,6 +4,7 @@ import json
 import os
 import random
 import re
+import signal
 import shutil
 import subprocess
 import sys
@@ -380,12 +381,19 @@ async def select_first(tab, selector, timeout=60):
     last_error = None
     while time.monotonic() < deadline:
         try:
-            element = await tab.select(selector, timeout=1)
-            if element:
-                return element
+            elements = await tab.select_all(selector, timeout=1)
+            for element in elements or []:
+                state = await get_element_state(element)
+                if is_element_interactable(state):
+                    return element
+            if elements:
+                last_error = RuntimeError(
+                    f"Matched {len(elements)} hidden/non-interactable "
+                    "element(s)"
+                )
         except Exception as exc:
             last_error = exc
-            await sleep_ms(250)
+        await sleep_ms(250)
     raise TimeoutError(
         f"Timed out waiting for selector: {selector}. Last error: {last_error}"
     )
@@ -660,6 +668,58 @@ async def get_input_state(element):
         return {"error": repr(exc)}
 
 
+async def get_element_state(element):
+    try:
+        return await element.apply(
+            """
+            (element) => {
+                const style = window.getComputedStyle(element);
+                const rects = element.getClientRects();
+                const rect = rects.length ? rects[0] : null;
+                return {
+                    connected: Boolean(element.isConnected),
+                    disabled: Boolean(element.disabled),
+                    hidden: Boolean(element.hidden),
+                    ariaHidden: element.getAttribute('aria-hidden'),
+                    visible: Boolean(
+                        rects.length &&
+                        style.visibility !== 'hidden' &&
+                        style.display !== 'none' &&
+                        Number(style.opacity || 1) > 0
+                    ),
+                    width: rect ? rect.width : 0,
+                    height: rect ? rect.height : 0,
+                    tagName: element.tagName,
+                    type: element.type,
+                    name: element.name,
+                    id: element.id,
+                    ariaLabel: element.getAttribute('aria-label'),
+                    text: (element.innerText || element.value || '')
+                        .replace(/\\s+/g, ' ')
+                        .trim()
+                        .slice(0, 120),
+                };
+            }
+            """,
+            await_promise=True,
+        )
+    except Exception as exc:
+        return {"error": repr(exc)}
+
+
+def is_element_interactable(state):
+    return bool(
+        state
+        and state.get("connected")
+        and not state.get("disabled")
+        and not state.get("hidden")
+        and state.get("ariaHidden") != "true"
+        and state.get("visible")
+        and state.get("width", 0) > 0
+        and state.get("height", 0) > 0
+    )
+
+
 async def fill_text_field(
     element,
     value,
@@ -825,13 +885,17 @@ async def click_direct(element):
 
 
 async def find_login_button(tab):
+    try:
+        progress("Searching for login button by selector fallback")
+        return await select_first(tab, SUBMIT_SELECTOR, timeout=3)
+    except Exception:
+        pass
     for label in ("Log In", "Sign in", "Sign In"):
         try:
             progress(f"Searching for login button by text: {label}")
             return await tab.find(label, best_match=True, timeout=3)
         except Exception:
             pass
-    progress("Searching for login button by selector fallback")
     return await select_first(tab, SUBMIT_SELECTOR, timeout=10)
 
 
@@ -981,6 +1045,93 @@ def log_browser_preflight(browser_executable_path):
             progress(f"Browser shared library probe failed: {repr(exc)}")
 
 
+def collect_child_process_ids(pid):
+    if sys.platform == "win32" or not shutil.which("pgrep"):
+        return []
+
+    try:
+        result = subprocess.run(
+            ["pgrep", "-P", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except Exception:
+        return []
+
+    child_ids = []
+    for line in result.stdout.splitlines():
+        try:
+            child_id = int(line.strip())
+        except ValueError:
+            continue
+        child_ids.extend(collect_child_process_ids(child_id))
+        child_ids.append(child_id)
+    return child_ids
+
+
+def signal_process_tree(pid, sig):
+    if not pid:
+        return
+
+    for child_id in collect_child_process_ids(pid):
+        try:
+            os.kill(child_id, sig)
+        except ProcessLookupError:
+            pass
+        except Exception as exc:
+            progress(
+                f"Failed to signal child process {child_id}: {repr(exc)}"
+            )
+
+    try:
+        os.kill(pid, sig)
+    except ProcessLookupError:
+        pass
+    except Exception as exc:
+        progress(f"Failed to signal process {pid}: {repr(exc)}")
+
+
+async def stop_browser_with_timeout(browser, timeout=10):
+    process = getattr(browser, "_process", None)
+    process_pid = getattr(process, "pid", None)
+    try:
+        await asyncio.wait_for(browser.stop(), timeout=timeout)
+        progress("Browser stopped")
+        return
+    except asyncio.TimeoutError:
+        progress(
+            f"Browser stop timed out after {timeout}s; forcing cleanup"
+        )
+    except Exception as exc:
+        progress(f"Browser stop failed; forcing cleanup: {repr(exc)}")
+
+    if process is not None and process.poll() is None:
+        if sys.platform == "win32":
+            try:
+                process.kill()
+            except Exception as exc:
+                progress(f"Failed to kill browser process: {repr(exc)}")
+        else:
+            signal_process_tree(process_pid, signal.SIGTERM)
+            await asyncio.sleep(1)
+            if process.poll() is None:
+                signal_process_tree(process_pid, signal.SIGKILL)
+
+    if process is not None:
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(process.wait),
+                timeout=3,
+            )
+        except Exception as exc:
+            progress(
+                "Browser process wait failed after kill: "
+                f"{repr(exc)}"
+            )
+
+
 class XvfbDisplay:
     def __init__(self, width=1365, height=1024, color_depth=24):
         self.width = width
@@ -1011,11 +1162,17 @@ class XvfbDisplay:
         stdout = ""
         stderr = ""
         if self.process is not None and self.process.poll() is None:
-            self.process.terminate()
+            if sys.platform == "win32":
+                self.process.terminate()
+            else:
+                os.killpg(self.process.pid, signal.SIGTERM)
             try:
                 stdout, stderr = self.process.communicate(timeout=3)
             except subprocess.TimeoutExpired:
-                self.process.kill()
+                if sys.platform == "win32":
+                    self.process.kill()
+                else:
+                    os.killpg(self.process.pid, signal.SIGKILL)
                 stdout, stderr = self.process.communicate(timeout=3)
         elif self.process is not None:
             stdout, stderr = self.process.communicate(timeout=1)
@@ -1050,6 +1207,7 @@ class XvfbDisplay:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                start_new_session=sys.platform != "win32",
             )
 
             deadline = time.monotonic() + timeout
@@ -1513,6 +1671,32 @@ async def main():
 
         title = await maybe_value(await tab.evaluate("document.title"))
         progress("Browser authentication flow finished")
+        if not state["auth_code"] and not state["access_denied"]:
+            screenshot_path = await save_error_screenshot(
+                tab,
+                "missing-auth-code",
+            )
+            no_code_error = (
+                "Zendriver authentication completed without capturing an "
+                "authorization code."
+            )
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": no_code_error,
+                        "detail": no_code_error,
+                        "type": "MissingAuthCode",
+                        "phase": phase,
+                        "finalUrl": getattr(tab, "url", ""),
+                        "finalTitle": title,
+                        "screenshotPath": screenshot_path,
+                        "accessDenied": state["access_denied"],
+                    }
+                )
+            )
+            return
+
         print(
             json.dumps(
                 {
@@ -1561,7 +1745,7 @@ async def main():
     finally:
         if browser is not None:
             try:
-                await browser.stop()
+                await stop_browser_with_timeout(browser)
             except Exception:
                 pass
         if virtual_display is not None:
