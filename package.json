@@ -15,7 +15,8 @@
   "types": "dist/index.d.ts",
   "files": [
     "dist",
-    "scripts/setup-zendriver.mjs"
+    "scripts/setup-zendriver.mjs",
+    "scripts/test-zendriver-browser.mjs"
   ],
   "directories": {
     "test": "test"
@@ -32,6 +33,7 @@
     "test:functional": "jest test/functional",
     "test:keys": "jest test/functional -t 'Unupgraded Command Successful'",
     "test:auth": "jest test/auth/testAuth",
+    "test:zendriver:browser": "node scripts/test-zendriver-browser.mjs",
     "test:reauth": "jest test/auth/testAuth -t 'should successfully reauthenticate'",
     "prepare": "husky install",
     "setup:zendriver": "node scripts/setup-zendriver.mjs",

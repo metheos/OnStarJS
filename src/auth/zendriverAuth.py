@@ -703,16 +703,12 @@ async def main():
         progress("Monitoring for authorization redirect or MFA challenge")
         post_login_state = await wait_for_auth_code_or_mfa(tab, state, 5000)
         if post_login_state == "timeout":
-            title_after_submit = await maybe_value(
-                await tab.evaluate("document.title")
-            )
+            title_after_submit = await maybe_value(await tab.evaluate("document.title"))
             if (
                 not state.get("access_denied")
                 and "sign in" in str(title_after_submit).lower()
             ):
-                progress(
-                    "Still on sign-in page after submit; retrying login click"
-                )
+                progress("Still on sign-in page after submit; retrying login click")
                 await click_direct(submit_button)
                 post_login_state = await wait_for_auth_code_or_mfa(
                     tab,
@@ -726,14 +722,10 @@ async def main():
         elif post_login_state == "access_denied":
             progress("Access Denied detected after credentials")
         else:
-            progress(
-                "No auth redirect or MFA challenge detected before timeout"
-            )
+            progress("No auth redirect or MFA challenge detected before timeout")
 
         title = await maybe_value(await tab.evaluate("document.title"))
-        page_html_result = await tab.evaluate(
-            "document.documentElement.outerHTML"
-        )
+        page_html_result = await tab.evaluate("document.documentElement.outerHTML")
         page_html = (await maybe_value(page_html_result)) or ""
         if is_access_denied_html(page_html) or "Access Denied" in str(title):
             progress("Access Denied page detected")
@@ -838,9 +830,7 @@ async def main():
         final_title = None
         if tab is not None:
             try:
-                final_title = await maybe_value(
-                    await tab.evaluate("document.title")
-                )
+                final_title = await maybe_value(await tab.evaluate("document.title"))
             except Exception:
                 final_title = None
         print(

@@ -82,6 +82,14 @@ pnpm run setup:env:bash
 pnpm run setup:zendriver
 ```
 
+#### Browser Diagnostic Test
+
+Runs a credential-free Zendriver browser launch/navigation smoke test using the configured Python virtual environment and portable browser manifest.
+
+```bash
+pnpm run test:zendriver:browser
+```
+
 ### `credential-manager.js`
 
 #### Interactive credential setup
