@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 import traceback
+from dataclasses import asdict, is_dataclass
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -20,7 +21,26 @@ except Exception as exc:
     error_message = (
         "Zendriver is not installed for this Python interpreter. Run "
         "'pnpm run setup:zendriver' or "
-        "'python -m pip install zendriver pyotp'."
+        "'python -m pip install zendriver browserforge[all] pyotp'."
+    )
+    print(
+        json.dumps(
+            {
+                "ok": False,
+                "error": error_message,
+                "detail": str(exc),
+            }
+        )
+    )
+    sys.exit(0)
+
+try:
+    from browserforge.fingerprints import FingerprintGenerator
+except Exception as exc:
+    error_message = (
+        "BrowserForge is not installed for this Python interpreter. Run "
+        "'pnpm run setup:zendriver' or "
+        "'python -m pip install browserforge[all]'."
     )
     print(
         json.dumps(
@@ -96,6 +116,144 @@ def is_access_denied_html(body):
         "<TITLE>Access Denied</TITLE>" in body_text
         or "<H1>Access Denied</H1>" in body_text
         or "errors.edgesuite.net" in body_text
+    )
+
+
+def serialize_fingerprint(value):
+    if is_dataclass(value):
+        return asdict(value)
+    if hasattr(value, "__dict__"):
+        return vars(value)
+    return value
+
+
+def get_nested(source, *keys):
+    value = source
+    for key in keys:
+        if not isinstance(value, dict):
+            return None
+        value = value.get(key)
+    return value
+
+
+def parse_accept_language(headers, navigator):
+    accept_language = headers.get("Accept-Language") or "en-US,en;q=0.9"
+    language = navigator.get("language") or "en-US"
+    return accept_language, language
+
+
+def build_mobile_fingerprint_script(fingerprint):
+    navigator_values = {
+        "userAgent": fingerprint["userAgent"],
+        "platform": fingerprint["platform"],
+        "language": fingerprint["language"],
+        "languages": [fingerprint["language"]],
+        "maxTouchPoints": fingerprint["maxTouchPoints"],
+        "webdriver": False,
+    }
+    for key in ("hardwareConcurrency", "deviceMemory", "vendor"):
+        value = fingerprint["navigator"].get(key)
+        if value is not None:
+            navigator_values[key] = value
+
+    return f"""
+(() => {{
+    const values = {json.dumps(navigator_values)};
+    for (const [key, value] of Object.entries(values)) {{
+        try {{
+            Object.defineProperty(Navigator.prototype, key, {{
+                get: () => value,
+                configurable: true,
+            }});
+        }} catch (_) {{}}
+    }}
+}})();
+"""
+
+
+def generate_mobile_fingerprint():
+    fingerprint = FingerprintGenerator(
+        browser="chrome",
+        os="android",
+        device="mobile",
+        locale="en-US",
+    ).generate()
+    data = serialize_fingerprint(fingerprint)
+    headers = data.get("headers") or {}
+    navigator = data.get("navigator") or {}
+    screen = data.get("screen") or {}
+    accept_language, language = parse_accept_language(headers, navigator)
+    user_agent = headers.get("User-Agent") or navigator.get("userAgent")
+    if not user_agent:
+        raise RuntimeError("BrowserForge did not generate a user agent")
+
+    width = int(screen.get("width") or screen.get("availWidth") or 390)
+    height = int(screen.get("height") or screen.get("availHeight") or 844)
+    device_scale_factor = float(screen.get("devicePixelRatio") or 2)
+    max_touch_points = int(navigator.get("maxTouchPoints") or 1)
+    platform = navigator.get("platform") or "Linux armv8l"
+
+    return {
+        "userAgent": user_agent,
+        "acceptLanguage": accept_language,
+        "language": language,
+        "platform": platform,
+        "screen": {
+            "width": width,
+            "height": height,
+            "deviceScaleFactor": device_scale_factor,
+            "colorDepth": screen.get("colorDepth"),
+        },
+        "maxTouchPoints": max_touch_points,
+        "headers": headers,
+        "navigator": {
+            "hardwareConcurrency": navigator.get("hardwareConcurrency"),
+            "deviceMemory": navigator.get("deviceMemory"),
+            "vendor": navigator.get("vendor"),
+            "platform": platform,
+        },
+    }
+
+
+async def apply_mobile_fingerprint(tab, fingerprint):
+    screen = fingerprint["screen"]
+    progress_json(
+        "Applying BrowserForge mobile fingerprint",
+        {
+            "userAgent": fingerprint["userAgent"],
+            "platform": fingerprint["platform"],
+            "acceptLanguage": fingerprint["acceptLanguage"],
+            "screen": screen,
+            "maxTouchPoints": fingerprint["maxTouchPoints"],
+        },
+    )
+    await tab.send(cdp.page.enable())
+    await tab.send(
+        cdp.page.add_script_to_evaluate_on_new_document(
+            build_mobile_fingerprint_script(fingerprint),
+        )
+    )
+    await tab.set_user_agent(
+        fingerprint["userAgent"],
+        accept_language=fingerprint["acceptLanguage"],
+        platform=fingerprint["platform"],
+    )
+    await tab.send(cdp.emulation.set_locale_override(fingerprint["language"]))
+    await tab.send(
+        cdp.emulation.set_touch_emulation_enabled(
+            enabled=True,
+            max_touch_points=fingerprint["maxTouchPoints"],
+        )
+    )
+    await tab.send(
+        cdp.emulation.set_device_metrics_override(
+            width=screen["width"],
+            height=screen["height"],
+            device_scale_factor=screen["deviceScaleFactor"],
+            mobile=True,
+            screen_width=screen["width"],
+            screen_height=screen["height"],
+        )
     )
 
 
@@ -643,6 +801,7 @@ async def main():
         phase = "configuring browser session"
         progress("Configuring browser session")
         virtual_display = start_virtual_display_if_needed()
+        mobile_fingerprint = generate_mobile_fingerprint()
         sandbox_enabled = sys.platform != "linux"
         if not sandbox_enabled:
             progress("Disabling browser sandbox for Linux launch compatibility")
@@ -652,6 +811,7 @@ async def main():
             browser_args=browser_args,
             browser_executable_path=browser_executable_path,
             sandbox=sandbox_enabled,
+            user_agent=mobile_fingerprint["userAgent"],
         )
 
         phase = "starting browser"
@@ -667,6 +827,8 @@ async def main():
         tab.add_handler(cdp.network.RequestWillBeSent, send_handler)
         tab.add_handler(cdp.network.ResponseReceived, response_handler)
         await tab.send(cdp.network.enable())
+        phase = "applying browser fingerprint"
+        await apply_mobile_fingerprint(tab, mobile_fingerprint)
         phase = "navigating to authorization URL"
         progress("Navigating to authorization URL")
         tab = await navigate_existing_tab(

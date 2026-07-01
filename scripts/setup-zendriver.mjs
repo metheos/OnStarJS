@@ -229,6 +229,7 @@ try {
     "pip",
     "install",
     "zendriver",
+    "browserforge[all]",
     "pyotp",
   ]);
   checkVirtualDisplaySupport();
