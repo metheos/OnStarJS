@@ -489,19 +489,31 @@ async def wait_for_network_quiet(
             summaries.append(summary)
         return summaries[-10:]
 
+    def actionable_pending_requests():
+        requests = pending_request_summaries()
+        return [
+            request
+            for request in requests
+            if not (
+                str(request.get("url", "")).startswith("blob:")
+                and request.get("type") == "ResourceType.SCRIPT"
+            )
+        ]
+
     start = time.monotonic()
     while (time.monotonic() - start) * 1000 < timeout_ms:
         quiet_for_ms = (
             time.monotonic() - network_state.get("last_activity", start)
         ) * 1000
         if quiet_for_ms >= quiet_ms:
-            if network_state.get("pending"):
+            pending_requests = actionable_pending_requests()
+            if pending_requests:
                 progress_json(
                     "Network activity quiet with pending requests",
                     {
-                        "pendingCount": len(network_state.get("pending", {})),
+                        "pendingCount": len(pending_requests),
                         "quietForMs": int(quiet_for_ms),
-                        "pendingRequests": pending_request_summaries(),
+                        "pendingRequests": pending_requests,
                     },
                 )
             return True
@@ -510,8 +522,8 @@ async def wait_for_network_quiet(
     progress_json(
         "Network did not quiesce before input readiness check",
         {
-            "pendingCount": len(network_state.get("pending", {})),
-            "pendingRequests": pending_request_summaries(),
+            "pendingCount": len(actionable_pending_requests()),
+            "pendingRequests": actionable_pending_requests(),
             "quietForMs": int(
                 (time.monotonic() - network_state.get("last_activity", start))
                 * 1000
@@ -602,7 +614,6 @@ async def wait_for_input_ready(
                 and last_state.get("connected")
                 and not last_state.get("disabled")
                 and not last_state.get("readOnly")
-                and last_state.get("focusable")
                 and last_state.get("writable")
             ):
                 return last_state
@@ -650,12 +661,11 @@ async def get_input_state(element):
 
 
 async def clear_field_with_dom_events(element):
-    await focus_human(element)
     await element.apply(
         """
         (element) => {
-            element.focus();
-            element.select();
+            try {{ element.focus(); }} catch (_) {{}}
+            try {{ element.select(); }} catch (_) {{}}
             for (const key of ['Backspace']) {
                 element.dispatchEvent(new KeyboardEvent('keydown', {
                     key,
@@ -705,8 +715,8 @@ async def type_with_dom_keyboard_events(
             const setValue = (nextValue) => {{
                 valueDescriptor.set.call(element, nextValue);
             }};
-            element.focus();
-            element.select();
+            try {{ element.focus(); }} catch (_) {{}}
+            try {{ element.select(); }} catch (_) {{}}
             setValue('');
             element.dispatchEvent(new InputEvent('input', {{
                 bubbles: true,
