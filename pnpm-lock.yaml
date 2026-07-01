@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@puppeteer/browsers':
-        specifier: ^3.0.6
-        version: 3.0.6
+        specifier: 3.0.5
+        version: 3.0.5
       axios:
         specifier: ^1.18.0
         version: 1.18.0
@@ -409,17 +409,14 @@ packages:
     resolution: {integrity: sha512-QNqXyfVS2wm9hweSYD2O7F0G06uurj9kZ96TRQE5Y9hU7+tgdZwIkbAKc5Ocy1HxEY2kuDQa6cQ1WRs/O5LFKA==}
     engines: {node: ^12.20.0 || ^14.18.0 || >=16.0.0}
 
-  '@puppeteer/browsers@3.0.6':
-    resolution: {integrity: sha512-B/gKoqlFkzhvzsI6jo9K1cZz9o5ypviVv/xu8CwA4grZzyVwN+XfkT+tu8T1zrauuEXv6VhS2oGX+6NL95WcKA==}
+  '@puppeteer/browsers@3.0.5':
+    resolution: {integrity: sha512-xYXNuEQmHNIPWWcbL/skf2KF7seyp7c1xmKFRk3wmdFx7VwBsKVrtOLKs8ecaezsKPsWeF1YsgwIiElAscaryA==}
     engines: {node: '>=22.12.0'}
     hasBin: true
     peerDependencies:
       proxy-agent: '>=8.0.1'
-      yauzl: ^2.10.0 || ^3.4.0
     peerDependenciesMeta:
       proxy-agent:
-        optional: true
-      yauzl:
         optional: true
 
   '@rollup/plugin-commonjs@29.0.3':
@@ -3021,7 +3018,7 @@ snapshots:
 
   '@pkgr/core@0.2.9': {}
 
-  '@puppeteer/browsers@3.0.6':
+  '@puppeteer/browsers@3.0.5':
     dependencies:
       modern-tar: 0.7.6
       yargs: 18.0.0
