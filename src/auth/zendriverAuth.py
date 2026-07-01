@@ -643,7 +643,9 @@ async def main():
         virtual_display = start_virtual_display_if_needed()
         sandbox_enabled = sys.platform != "linux"
         if not sandbox_enabled:
-            progress("Disabling browser sandbox for Linux launch compatibility")
+            progress(
+                "Disabling browser sandbox for Linux launch compatibility"
+            )
         config = zd.Config(
             headless=False,
             user_data_dir=profile_path,
