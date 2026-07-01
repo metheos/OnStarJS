@@ -44,16 +44,26 @@ function run(command, args, options = {}) {
   }
 
   if (result.status !== 0) {
-    throw new Error(`${command} ${args.join(" ")} failed with exit code ${result.status}`);
+    throw new Error(
+      `${command} ${args.join(" ")} failed with exit code ${result.status}`,
+    );
   }
 }
 
 function canRun(command, args) {
-  const result = spawnSync(command, [...args, "--version"], {
-    cwd: projectRoot,
-    stdio: "ignore",
-    shell: false,
-  });
+  const result = spawnSync(
+    command,
+    [
+      ...args,
+      "-c",
+      "import sys; raise SystemExit(0 if sys.version_info >= (3, 8) else 1)",
+    ],
+    {
+      cwd: projectRoot,
+      stdio: "ignore",
+      shell: false,
+    },
+  );
 
   return !result.error && result.status === 0;
 }
