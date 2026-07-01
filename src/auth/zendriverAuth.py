@@ -1,8 +1,10 @@
 import asyncio
 import base64
 import json
+import os
 import random
 import re
+import shutil
 import sys
 import time
 
@@ -318,6 +320,33 @@ async def maybe_value(result):
     return getattr(result, "value", result)
 
 
+def start_virtual_display_if_needed():
+    if sys.platform != "linux" or os.environ.get("DISPLAY"):
+        return None
+    if os.environ.get("ONSTARJS_DISABLE_XVFB") == "1":
+        progress("No DISPLAY detected; virtual display is disabled")
+        return None
+    if not shutil.which("Xvfb"):
+        raise RuntimeError(
+            "No DISPLAY is available and Xvfb was not found. Install xvfb "
+            "on this Linux host or set DISPLAY before running auth."
+        )
+
+    try:
+        from pyvirtualdisplay import Display
+    except Exception as exc:
+        raise RuntimeError(
+            "No DISPLAY is available and pyvirtualdisplay is not installed. "
+            "Run 'pnpm run setup:zendriver' to install Python auth helpers."
+        ) from exc
+
+    progress("No DISPLAY detected; starting Xvfb virtual display")
+    display = Display(visible=False, size=(1365, 1024), color_depth=24)
+    display.start()
+    progress(f"Virtual display started on DISPLAY={os.environ.get('DISPLAY')}")
+    return display
+
+
 async def main():
     payload = json.loads(sys.stdin.read())
     fingerprint = payload.get("fingerprint") or {}
@@ -327,6 +356,7 @@ async def main():
     browser_executable_path = payload.get("browserExecutablePath")
     state = {"auth_code": None, "access_denied": False}
     browser = None
+    virtual_display = None
 
     async def send_handler(event):
         request_url = getattr(getattr(event, "request", None), "url", "")
@@ -369,11 +399,13 @@ async def main():
 
     try:
         progress("Configuring browser session")
+        virtual_display = start_virtual_display_if_needed()
         config = zd.Config(
             headless=False,
             user_data_dir=profile_path,
             browser_args=browser_args,
             browser_executable_path=browser_executable_path,
+            sandbox=False,
             user_agent=fingerprint.get("userAgent"),
         )
 
@@ -578,6 +610,12 @@ async def main():
         if browser is not None:
             try:
                 await browser.stop()
+            except Exception:
+                pass
+        if virtual_display is not None:
+            try:
+                virtual_display.stop()
+                progress("Virtual display stopped")
             except Exception:
                 pass
 

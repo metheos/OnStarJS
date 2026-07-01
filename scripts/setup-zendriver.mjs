@@ -97,6 +97,38 @@ function findPython() {
   return candidate;
 }
 
+function commandExists(command) {
+  const result = isWindows
+    ? spawnSync("where", [command], {
+        cwd: projectRoot,
+        stdio: "ignore",
+        shell: false,
+      })
+    : spawnSync("sh", ["-c", `command -v ${command}`], {
+        cwd: projectRoot,
+        stdio: "ignore",
+        shell: false,
+      });
+
+  return !result.error && result.status === 0;
+}
+
+function checkVirtualDisplaySupport() {
+  if (process.platform !== "linux" || process.env.DISPLAY) {
+    return;
+  }
+
+  if (commandExists("Xvfb")) {
+    console.log("Xvfb detected for no-display Zendriver sessions");
+    return;
+  }
+
+  console.warn(
+    "No DISPLAY or Xvfb binary detected. Install xvfb on this Linux host " +
+      "before running Zendriver auth in a no-display environment.",
+  );
+}
+
 async function installPortableBrowser() {
   if (process.env.ONSTARJS_BROWSER_EXECUTABLE) {
     const configuredBrowser = path.resolve(process.env.ONSTARJS_BROWSER_EXECUTABLE);
@@ -184,7 +216,15 @@ try {
   }
 
   run(venvPython, ["-m", "pip", "install", "--upgrade", "pip"]);
-  run(venvPython, ["-m", "pip", "install", "zendriver", "pyotp"]);
+  run(venvPython, [
+    "-m",
+    "pip",
+    "install",
+    "zendriver",
+    "pyotp",
+    "pyvirtualdisplay",
+  ]);
+  checkVirtualDisplaySupport();
   await installPortableBrowser();
 
   console.log(`Zendriver setup complete. Python: ${venvPython}`);
