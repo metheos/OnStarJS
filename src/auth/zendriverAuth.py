@@ -406,6 +406,143 @@ async def select_optional(tab, selector):
         return None
 
 
+async def describe_email_continue_candidate(element):
+    return await element.apply(
+        f"""
+        (button) => {{
+            const emailSelector = {json.dumps(EMAIL_SELECTOR)};
+            const isVisible = (element) => {{
+                if (!element || !element.isConnected) return false;
+                const style = window.getComputedStyle(element);
+                const rects = element.getClientRects();
+                return Boolean(
+                    rects.length &&
+                    style.visibility !== 'hidden' &&
+                    style.display !== 'none' &&
+                    Number(style.opacity || 1) > 0
+                );
+            }};
+            const email = Array.from(
+                document.querySelectorAll(emailSelector)
+            ).find(isVisible);
+            const rect = button.getBoundingClientRect();
+            const emailRect = email ? email.getBoundingClientRect() : null;
+            const text = (button.innerText || button.value || '')
+                .replace(/\\s+/g, ' ')
+                .trim();
+            let ancestorDepth = null;
+            let cursor = button;
+            for (let depth = 0; cursor && depth <= 8; depth += 1) {{
+                if (email && cursor.contains(email)) {{
+                    ancestorDepth = depth;
+                    break;
+                }}
+                cursor = cursor.parentElement;
+            }}
+            const sameForm = Boolean(
+                email &&
+                button.form &&
+                email.form &&
+                button.form === email.form
+            );
+            const verticalDistance = emailRect
+                ? Math.round(rect.top - emailRect.bottom)
+                : null;
+            const horizontalDistance = emailRect
+                ? Math.round(
+                    Math.abs(
+                        (rect.left + rect.width / 2) -
+                        (emailRect.left + emailRect.width / 2)
+                    )
+                )
+                : null;
+            let score = 0;
+            if (isVisible(button)) score += 100;
+            if (!button.disabled) score += 50;
+            const labelText = text || button.getAttribute('aria-label') || '';
+            if (/continue/i.test(labelText)) {{
+                score += 50;
+            }}
+            if (sameForm) score += 200;
+            if (ancestorDepth !== null) {{
+                score += Math.max(0, 120 - ancestorDepth * 10);
+            }}
+            if (verticalDistance !== null && verticalDistance >= -20) {{
+                score += Math.max(0, 80 - Math.abs(verticalDistance));
+            }}
+            if (horizontalDistance !== null) {{
+                score += Math.max(0, 40 - Math.floor(horizontalDistance / 10));
+            }}
+            return {{
+                score,
+                sameForm,
+                ancestorDepth,
+                verticalDistance,
+                horizontalDistance,
+                tagName: button.tagName,
+                id: button.id,
+                name: button.name,
+                type: button.type,
+                disabled: Boolean(button.disabled),
+                ariaLabel: button.getAttribute('aria-label'),
+                dataDtm: button.getAttribute('data-dtm'),
+                text: text.slice(0, 120),
+                rect: {{
+                    x: Math.round(rect.x),
+                    y: Math.round(rect.y),
+                    width: Math.round(rect.width),
+                    height: Math.round(rect.height),
+                }},
+            }};
+        }}
+        """,
+        await_promise=True,
+    )
+
+
+async def find_email_continue_button(tab, timeout=10):
+    deadline = time.monotonic() + timeout
+    last_error = None
+    while time.monotonic() < deadline:
+        try:
+            candidates = []
+            elements = await tab.select_all(CONTINUE_SELECTOR, timeout=1)
+            for index, element in enumerate(elements or []):
+                state = await get_element_state(element)
+                if not is_element_interactable(state):
+                    continue
+                candidate = await describe_email_continue_candidate(element)
+                candidate["index"] = index
+                candidates.append(
+                    (candidate.get("score", 0), candidate, element)
+                )
+
+            if candidates:
+                candidates.sort(key=lambda item: item[0], reverse=True)
+                progress_json(
+                    "Email Continue button candidates",
+                    {
+                        "selected": candidates[0][1],
+                        "candidates": [item[1] for item in candidates[:5]],
+                    },
+                )
+                return candidates[0][2]
+
+            if elements:
+                last_error = RuntimeError(
+                    f"Matched {len(elements)} hidden/non-interactable "
+                    "Continue candidate(s)"
+                )
+        except Exception as exc:
+            last_error = exc
+        await sleep_ms(250)
+
+    raise TimeoutError(
+        "Timed out waiting for email-associated Continue button. "
+        f"Last error: {last_error}"
+    )
+
+
 async def element_count(tab, selector):
     try:
         elements = await tab.select_all(selector, timeout=1)
@@ -1546,7 +1683,7 @@ async def main():
         password_page_ready = False
         for continue_attempt in range(1, 4):
             progress("Locating continue button")
-            continue_button = await select_first(tab, CONTINUE_SELECTOR)
+            continue_button = await find_email_continue_button(tab)
             progress_json(
                 "Submitting email step",
                 {"attempt": continue_attempt},
@@ -1568,9 +1705,7 @@ async def main():
                 post_login_state = "access_denied"
                 break
             if transition_state == "email" and continue_attempt < 3:
-                progress(
-                    "Email page is still active after Continue; retrying"
-                )
+                progress("Email page is still active after Continue; retrying")
                 continue
             raise TimeoutError(
                 "Password page did not become ready after submitting the "
