@@ -399,6 +399,13 @@ async def select_first(tab, selector, timeout=60):
     )
 
 
+async def select_optional(tab, selector):
+    try:
+        return await select_first(tab, selector, timeout=1)
+    except Exception:
+        return None
+
+
 async def element_count(tab, selector):
     try:
         elements = await tab.select_all(selector, timeout=1)
@@ -899,6 +906,46 @@ async def find_login_button(tab):
     return await select_first(tab, SUBMIT_SELECTOR, timeout=10)
 
 
+async def wait_for_password_page_after_continue(
+    tab,
+    state,
+    timeout_ms=15000,
+    interval_ms=250,
+):
+    start = time.monotonic()
+    while (time.monotonic() - start) * 1000 < timeout_ms:
+        if await capture_current_tab_redirect(
+            tab,
+            state,
+            "email continue transition",
+        ):
+            return "auth_code"
+        if await detect_access_denied_page(tab):
+            state["access_denied"] = True
+            return "access_denied"
+
+        password_field = await select_optional(tab, PASSWORD_SELECTOR)
+        if password_field is not None:
+            return "password"
+
+        email_field = await select_optional(tab, EMAIL_SELECTOR)
+        continue_button = await select_optional(tab, CONTINUE_SELECTOR)
+        if email_field is not None and continue_button is not None:
+            await sleep_ms(interval_ms)
+            continue
+
+        await sleep_ms(interval_ms)
+
+    summary = await collect_page_summary(tab)
+    progress_json(
+        "Password page did not become ready after Continue",
+        summary,
+    )
+    if await select_optional(tab, EMAIL_SELECTOR) is not None:
+        return "email"
+    return "timeout"
+
+
 async def find_mfa_submit_button(tab):
     for label in ("Submit code", "Submit Code", "Verify", "Continue"):
         try:
@@ -1081,9 +1128,7 @@ def signal_process_tree(pid, sig):
         except ProcessLookupError:
             pass
         except Exception as exc:
-            progress(
-                f"Failed to signal child process {child_id}: {repr(exc)}"
-            )
+            progress(f"Failed to signal child process {child_id}: {repr(exc)}")
 
     try:
         os.kill(pid, sig)
@@ -1101,9 +1146,7 @@ async def stop_browser_with_timeout(browser, timeout=10):
         progress("Browser stopped")
         return
     except asyncio.TimeoutError:
-        progress(
-            f"Browser stop timed out after {timeout}s; forcing cleanup"
-        )
+        progress(f"Browser stop timed out after {timeout}s; forcing cleanup")
     except Exception as exc:
         progress(f"Browser stop failed; forcing cleanup: {repr(exc)}")
 
@@ -1126,10 +1169,7 @@ async def stop_browser_with_timeout(browser, timeout=10):
                 timeout=3,
             )
         except Exception as exc:
-            progress(
-                "Browser process wait failed after kill: "
-                f"{repr(exc)}"
-            )
+            progress("Browser process wait failed after kill: " f"{repr(exc)}")
 
 
 class XvfbDisplay:
@@ -1502,71 +1542,107 @@ async def main():
             0.1,
         )
 
-        progress("Locating continue button")
-        continue_button = await select_first(tab, CONTINUE_SELECTOR)
-        progress("Submitting email step")
-        await click_human(continue_button)
-        progress("Waiting for password page readiness")
-        await wait_ready(tab)
-
-        phase = "entering password"
-        progress("Locating password input field")
-        password_field = await select_first(tab, PASSWORD_SELECTOR)
-        progress("Entering password")
-        await fill_text_field(
-            password_field,
-            payload["password"],
-            network_state,
-            40,
-            120,
-            0.08,
-        )
-
-        progress("Locating login button")
-        submit_button = await find_login_button(tab)
-        phase = "submitting credentials"
-        progress("Submitting credentials")
-        state["record_login_responses"] = True
-        state["recent_responses"] = []
-        await click_human(submit_button)
-        await sleep_ms(500)
-        progress("Monitoring for authorization redirect or MFA challenge")
-        post_login_state = await wait_for_auth_code_or_mfa(tab, state, 5000)
-        if post_login_state == "timeout":
-            title_after_submit = await maybe_value(
-                await tab.evaluate("document.title")
-            )
-            if (
-                not state.get("access_denied")
-                and "sign in" in str(title_after_submit).lower()
-            ):
-                progress(
-                    "Still on sign-in page after submit; retrying login click"
-                )
-                await click_direct(submit_button)
-                post_login_state = await wait_for_auth_code_or_mfa(
-                    tab,
-                    state,
-                    15000,
-                )
-        state["record_login_responses"] = False
-        if post_login_state == "mfa":
-            progress("MFA challenge became ready before auth redirect")
-        elif post_login_state == "auth_code":
-            progress("Authorization redirect captured after credentials")
-        elif post_login_state == "access_denied":
-            progress("Access Denied detected after credentials")
-        else:
-            progress(
-                "No auth redirect or MFA challenge detected before timeout"
-            )
+        post_login_state = "timeout"
+        password_page_ready = False
+        for continue_attempt in range(1, 4):
+            progress("Locating continue button")
+            continue_button = await select_first(tab, CONTINUE_SELECTOR)
             progress_json(
-                "Unexpected post-login response summary",
-                {
-                    "responses": state.get("recent_responses", []),
-                    "page": await collect_page_summary(tab),
-                },
+                "Submitting email step",
+                {"attempt": continue_attempt},
             )
+            await click_human(continue_button)
+            progress("Waiting for password page readiness")
+            await wait_ready(tab)
+            transition_state = await wait_for_password_page_after_continue(
+                tab,
+                state,
+            )
+            if transition_state == "password":
+                password_page_ready = True
+                break
+            if transition_state == "auth_code":
+                post_login_state = "auth_code"
+                break
+            if transition_state == "access_denied":
+                post_login_state = "access_denied"
+                break
+            if transition_state == "email" and continue_attempt < 3:
+                progress(
+                    "Email page is still active after Continue; retrying"
+                )
+                continue
+            raise TimeoutError(
+                "Password page did not become ready after submitting the "
+                f"email step; state={transition_state}"
+            )
+
+        if password_page_ready:
+            phase = "entering password"
+            progress("Locating password input field")
+            password_field = await select_first(tab, PASSWORD_SELECTOR)
+            progress("Entering password")
+            await fill_text_field(
+                password_field,
+                payload["password"],
+                network_state,
+                40,
+                120,
+                0.08,
+            )
+
+            progress("Locating login button")
+            submit_button = await find_login_button(tab)
+            phase = "submitting credentials"
+            progress("Submitting credentials")
+            state["record_login_responses"] = True
+            state["recent_responses"] = []
+            await click_human(submit_button)
+            await sleep_ms(500)
+            progress("Monitoring for authorization redirect or MFA challenge")
+            post_login_state = await wait_for_auth_code_or_mfa(
+                tab,
+                state,
+                5000,
+            )
+            if post_login_state == "timeout":
+                title_after_submit = await maybe_value(
+                    await tab.evaluate("document.title")
+                )
+                if (
+                    not state.get("access_denied")
+                    and "sign in" in str(title_after_submit).lower()
+                ):
+                    progress(
+                        "Still on sign-in page after submit; retrying "
+                        "login click"
+                    )
+                    await click_direct(submit_button)
+                    post_login_state = await wait_for_auth_code_or_mfa(
+                        tab,
+                        state,
+                        15000,
+                    )
+            state["record_login_responses"] = False
+
+            if post_login_state == "mfa":
+                progress("MFA challenge became ready before auth redirect")
+            elif post_login_state == "auth_code":
+                progress("Authorization redirect captured after credentials")
+            elif post_login_state == "access_denied":
+                progress("Access Denied detected after credentials")
+            else:
+                progress(
+                    "No auth redirect or MFA challenge detected before "
+                    "timeout"
+                )
+                progress_json(
+                    "Unexpected post-login response summary",
+                    {
+                        "responses": state.get("recent_responses", []),
+                        "page": await collect_page_summary(tab),
+                    },
+                )
 
         title = await maybe_value(await tab.evaluate("document.title"))
         page_html_result = await tab.evaluate(
