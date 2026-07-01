@@ -1,9 +1,13 @@
 import json from "@rollup/plugin-json";
 import typescript from "@rollup/plugin-typescript";
-import pkg from "./package.json" with { type: "json" };
 import resolve from "@rollup/plugin-node-resolve";
 import commonJS from "@rollup/plugin-commonjs";
 import { builtinModules } from "module";
+import fs from "fs";
+
+const pkg = JSON.parse(
+  fs.readFileSync(new URL("./package.json", import.meta.url), "utf-8"),
+);
 
 export default {
   input: "src/index.ts",
