@@ -72,6 +72,10 @@ def log(*parts):
     print(*parts, file=sys.stderr, flush=True)
 
 
+def progress(message):
+    log(f"[zendriver] {message}")
+
+
 def extract_auth_code(url):
     match = re.search(r"[?&]code=([^&]*)", url or "")
     return match.group(1) if match else None
@@ -234,18 +238,22 @@ async def click_human(element):
 async def find_login_button(tab):
     for label in ("Log In", "Sign in", "Sign In"):
         try:
+            progress(f"Searching for login button by text: {label}")
             return await tab.find(label, best_match=True, timeout=3)
         except Exception:
             pass
+    progress("Searching for login button by selector fallback")
     return await select_first(tab, SUBMIT_SELECTOR, timeout=10)
 
 
 async def find_mfa_submit_button(tab):
     for label in ("Submit code", "Submit Code", "Verify", "Continue"):
         try:
+            progress(f"Searching for MFA submit button by text: {label}")
             return await tab.find(label, best_match=True, timeout=3)
         except Exception:
             pass
+    progress("Searching for MFA submit button by selector fallback")
     return await select_first(tab, MFA_SUBMIT_SELECTOR, timeout=10)
 
 
@@ -292,6 +300,7 @@ async def main():
                 state["auth_code"] = code
 
     try:
+        progress("Configuring browser session")
         config = zd.Config(
             headless=False,
             user_data_dir=profile_path,
@@ -299,11 +308,15 @@ async def main():
             user_agent=fingerprint.get("userAgent"),
         )
 
+        progress("Starting browser")
         browser = await zd.start(config)
+        progress("Navigating to authorization URL")
         tab = await browser.get(payload["authorizationUrl"])
+        progress("Registering network redirect handlers")
         tab.add_handler(cdp.network.RequestWillBeSent, send_handler)
         tab.add_handler(cdp.network.ResponseReceived, response_handler)
         await tab.send(cdp.network.enable())
+        progress("Applying user agent and language settings")
         await tab.set_user_agent(
             fingerprint.get("userAgent"),
             accept_language="en-US,en;q=0.9",
@@ -313,6 +326,10 @@ async def main():
                 else "Linux armv8l"
             ),
         )
+        progress(
+            "Applying mobile viewport "
+            f"{int(viewport['width'])}x{int(viewport['height'])}"
+        )
         await tab.send(
             cdp.emulation.set_device_metrics_override(
                 width=int(viewport["width"]),
@@ -321,16 +338,24 @@ async def main():
                 mobile=True,
             )
         )
+        progress("Waiting for authentication page readiness")
         await wait_ready(tab)
 
+        progress("Locating email input field")
         email_field = await select_first(tab, EMAIL_SELECTOR)
+        progress("Entering email address")
         await fill_text_field(email_field, payload["username"], 50, 150, 0.1)
 
+        progress("Locating continue button")
         continue_button = await select_first(tab, CONTINUE_SELECTOR)
+        progress("Submitting email step")
         await click_human(continue_button)
+        progress("Waiting for password page readiness")
         await wait_ready(tab)
 
+        progress("Locating password input field")
         password_field = await select_first(tab, PASSWORD_SELECTOR)
+        progress("Entering password")
         await fill_text_field(
             password_field,
             payload["password"],
@@ -339,25 +364,26 @@ async def main():
             0.08,
         )
 
+        progress("Locating login button")
         submit_button = await find_login_button(tab)
+        progress("Submitting credentials")
         await click_human(submit_button)
         await sleep_ms(3000)
+        progress("Waiting for post-login page readiness")
         await wait_ready(tab)
+        progress("Monitoring for authorization redirect after credentials")
         await wait_for_auth_code(state, 15000)
 
         title = await maybe_value(await tab.evaluate("document.title"))
-        page_html_result = await tab.evaluate(
-            "document.documentElement.outerHTML"
-        )
+        page_html_result = await tab.evaluate("document.documentElement.outerHTML")
         page_html = (await maybe_value(page_html_result)) or ""
-        if (
-            "<TITLE>Access Denied</TITLE>" in page_html
-            or "Access Denied" in str(title)
-        ):
+        if "<TITLE>Access Denied</TITLE>" in page_html or "Access Denied" in str(title):
+            progress("Access Denied page detected")
             state["access_denied"] = True
 
         if not state["auth_code"]:
             try:
+                progress("Checking for MFA challenge")
                 await select_first(tab, MFA_SELECTOR, timeout=10)
                 page_html_result = await tab.evaluate(
                     "document.documentElement.outerHTML"
@@ -368,6 +394,7 @@ async def main():
                     'input[name="otpCode"]',
                 )
                 if has_totp_field > 0 or "otpCode" in page_html:
+                    progress("TOTP MFA challenge detected")
                     try:
                         import pyotp
                     except Exception as exc:
@@ -391,7 +418,9 @@ async def main():
                             "characters."
                         )
                         raise ValueError(totp_length_error)
+                    progress("Locating TOTP input field")
                     otp_field = await select_first(tab, OTP_SELECTOR)
+                    progress("Entering TOTP verification code")
                     await fill_text_field(
                         otp_field,
                         pyotp.TOTP(totp_secret).now(),
@@ -399,26 +428,34 @@ async def main():
                         150,
                         0.0,
                     )
+                    progress("Locating MFA submit button")
                     submit_mfa = await find_mfa_submit_button(tab)
+                    progress("Submitting TOTP verification code")
                     await click_human(submit_mfa)
+                    progress("Waiting for post-MFA page readiness")
                     await wait_ready(tab)
+                    progress("Monitoring for authorization redirect after MFA")
                     await wait_for_auth_code(state, 60000)
                 elif "emailMfa" in page_html:
+                    progress("Email MFA challenge detected")
                     email_mfa_error = (
                         "Only TOTP via Third-Party Authenticator is "
                         "supported; email MFA was presented."
                     )
                     raise RuntimeError(email_mfa_error)
                 elif "strongAuthenticationPhoneNumber" in page_html:
+                    progress("SMS MFA challenge detected")
                     sms_mfa_error = (
                         "Only TOTP via Third-Party Authenticator is "
                         "supported; SMS MFA was presented."
                     )
                     raise RuntimeError(sms_mfa_error)
             except TimeoutError:
+                progress("No MFA challenge detected before timeout")
                 pass
 
         title = await maybe_value(await tab.evaluate("document.title"))
+        progress("Browser authentication flow finished")
         print(
             json.dumps(
                 {

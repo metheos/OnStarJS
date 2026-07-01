@@ -13,8 +13,7 @@ import jwt from "jsonwebtoken";
 import { randomInt } from "crypto";
 import { execSync, spawn } from "child_process";
 import * as net from "net";
-
-declare const __dirname: string | undefined;
+import { fileURLToPath } from "url";
 
 interface ZendriverAuthResult {
   authCode?: string;
@@ -1986,19 +1985,12 @@ export class GMAuth {
   }
 
   private getZendriverAuthScriptPath(): string {
-    const moduleDir = typeof __dirname === "string" ? __dirname : undefined;
+    const moduleDir = path.dirname(fileURLToPath(import.meta.url));
     const candidates = [
       process.env.ONSTARJS_ZENDRIVER_SCRIPT,
-      moduleDir ? path.join(moduleDir, "auth", "zendriverAuth.py") : undefined,
+      path.join(moduleDir, "auth", "zendriverAuth.py"),
       path.resolve("src", "auth", "zendriverAuth.py"),
       path.resolve("dist", "auth", "zendriverAuth.py"),
-      path.resolve(
-        "node_modules",
-        "onstarjs2",
-        "dist",
-        "auth",
-        "zendriverAuth.py",
-      ),
     ].filter((candidate): candidate is string => Boolean(candidate));
 
     const scriptPath = candidates.find((candidate) => fs.existsSync(candidate));
