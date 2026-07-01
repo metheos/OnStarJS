@@ -80,6 +80,8 @@ async function runDiagnostic() {
   const pythonExecutable = getPythonExecutable();
   const authScriptPath = getAuthScriptPath();
   const browserExecutablePath = getBrowserExecutablePath();
+  const profilePath = path.resolve(projectRoot, "temp-browser-profile");
+  const browserArgs = ["--lang=en-US"];
   const payload = {
     authorizationUrl: process.env.ONSTARJS_BROWSER_DIAGNOSTIC_URL ?? "about:blank",
     diagnosticOnly: process.env.ONSTARJS_BROWSER_DIAGNOSTIC_AUTH_CODE
@@ -88,6 +90,8 @@ async function runDiagnostic() {
     simulateNavigationAuthCode:
       process.env.ONSTARJS_BROWSER_DIAGNOSTIC_AUTH_CODE,
     browserExecutablePath,
+    profilePath,
+    browserArgs,
   };
 
   console.log(`Using Python: ${pythonExecutable}`);

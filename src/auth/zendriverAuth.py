@@ -575,6 +575,7 @@ def start_virtual_display_if_needed():
 async def main():
     payload = json.loads(sys.stdin.read())
     profile_path = payload.get("profilePath")
+    browser_args = payload.get("browserArgs") or []
     browser_executable_path = payload.get("browserExecutablePath")
     navigation_timeout_seconds = get_navigation_timeout_seconds(payload)
     state = {"auth_code": None, "access_denied": False}
@@ -637,6 +638,7 @@ async def main():
             ),
         )
         log_browser_preflight(browser_executable_path)
+        progress_json("Browser args", browser_args)
 
         phase = "configuring browser session"
         progress("Configuring browser session")
@@ -647,6 +649,7 @@ async def main():
         config = zd.Config(
             headless=False,
             user_data_dir=profile_path,
+            browser_args=browser_args,
             browser_executable_path=browser_executable_path,
             sandbox=sandbox_enabled,
         )

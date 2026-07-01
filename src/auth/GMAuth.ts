@@ -380,11 +380,15 @@ export class GMAuth {
     const pythonExecutable = this.getZendriverPythonExecutable(scriptPath);
     const browserExecutablePath =
       this.getZendriverBrowserExecutable(scriptPath);
+    const profilePath = path.resolve("./temp-browser-profile");
+    const browserArgs = ["--lang=en-US"];
     const payload = {
       authorizationUrl,
       username: this.config.username,
       password: this.config.password,
       totpKey: this.config.totpKey,
+      profilePath,
+      browserArgs,
       browserExecutablePath,
     };
 
