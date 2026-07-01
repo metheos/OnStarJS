@@ -475,8 +475,8 @@ async def get_field_value(element):
 
 async def wait_for_network_quiet(
     network_state,
-    quiet_ms=2000,
-    timeout_ms=10000,
+    quiet_ms=5000,
+    timeout_ms=30000,
     interval_ms=100,
 ):
     def pending_request_summaries():
@@ -499,9 +499,7 @@ async def wait_for_network_quiet(
                 progress_json(
                     "Network activity quiet with pending requests",
                     {
-                        "pendingCount": len(
-                            network_state.get("pending", {})
-                        ),
+                        "pendingCount": len(network_state.get("pending", {})),
                         "quietForMs": int(quiet_for_ms),
                         "pendingRequests": pending_request_summaries(),
                     },
@@ -528,14 +526,25 @@ async def wait_for_input_ready(
     interval_ms=150,
     log_interval_ms=10000,
 ):
+    probe_value = "onstarjs-input-probe"
     start = time.monotonic()
     last_log = start
     last_state = None
     while True:
         try:
             last_state = await element.apply(
-                """
-                (element) => ({
+                f"""
+                (element) => {{
+                    const probeValue = {json.dumps(probe_value)};
+                    const descriptor = Object.getOwnPropertyDescriptor(
+                        HTMLInputElement.prototype,
+                        'value'
+                    );
+                    const setValue = (nextValue) => {{
+                        descriptor.set.call(element, nextValue);
+                    }};
+                    const originalValue = element.value || '';
+                    const state = {{
                     connected: Boolean(element.isConnected),
                     disabled: Boolean(element.disabled),
                     readOnly: Boolean(element.readOnly),
@@ -544,17 +553,57 @@ async def wait_for_input_ready(
                         element.offsetHeight ||
                         element.getClientRects().length
                     ),
-                    focused: document.activeElement === element,
-                })
+                        focusedBeforeProbe: document.activeElement === element,
+                        focusable: false,
+                        writable: false,
+                        probeValueLength: 0,
+                    }};
+                    if (
+                        state.connected &&
+                        !state.disabled &&
+                        !state.readOnly &&
+                        descriptor &&
+                        descriptor.set
+                    ) {{
+                        try {{
+                            element.focus();
+                            state.focusable =
+                                document.activeElement === element;
+                            setValue(probeValue);
+                            element.dispatchEvent(new InputEvent('input', {{
+                                bubbles: true,
+                                inputType: 'insertText',
+                                data: probeValue,
+                            }}));
+                            state.probeValueLength = element.value.length;
+                            state.writable = element.value === probeValue;
+                            setValue(originalValue);
+                            element.dispatchEvent(new InputEvent('input', {{
+                                bubbles: true,
+                                inputType: 'deleteContentBackward',
+                                data: null,
+                            }}));
+                            element.dispatchEvent(new Event('change', {{
+                                bubbles: true,
+                            }}));
+                        }} catch (error) {{
+                            state.probeError = String(error);
+                            try {{ setValue(originalValue); }} catch (_) {{}}
+                        }}
+                    }}
+                    state.focused = document.activeElement === element;
+                    return state;
+                }}
                 """,
                 await_promise=True,
             )
             if (
                 last_state
                 and last_state.get("connected")
-                and last_state.get("visible")
                 and not last_state.get("disabled")
                 and not last_state.get("readOnly")
+                and last_state.get("focusable")
+                and last_state.get("writable")
             ):
                 return last_state
         except Exception as exc:
