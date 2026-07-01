@@ -171,16 +171,24 @@ async function installPortableBrowser() {
       continue;
     }
 
-    console.log(`Installing ${target.browser} ${buildId} for ${platform}`);
-    const installedBrowser = await install({
-      browser: target.browser,
-      buildId,
-      buildIdAlias: "zendriver",
-      cacheDir: browserCacheDir,
-      platform,
-      downloadProgressCallback: "default",
-    });
-    const executablePath = installedBrowser.executablePath;
+    let executablePath;
+    try {
+      console.log(`Installing ${target.browser} ${buildId} for ${platform}`);
+      const installedBrowser = await install({
+        browser: target.browser,
+        buildId,
+        buildIdAlias: "zendriver",
+        cacheDir: browserCacheDir,
+        platform,
+        downloadProgressCallback: "default",
+      });
+      executablePath = installedBrowser.executablePath;
+    } catch (error) {
+      console.warn(
+        `Failed to install ${target.browser} ${buildId}: ${error instanceof Error ? error.message : error}`,
+      );
+      continue;
+    }
 
     fs.writeFileSync(
       browserManifestPath,

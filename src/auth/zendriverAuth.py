@@ -527,6 +527,21 @@ async def main():
         progress("Navigating to authorization URL")
         tab = await browser.get(payload["authorizationUrl"])
         progress(f"Navigation started; current URL: {getattr(tab, 'url', '')}")
+        if payload.get("diagnosticOnly"):
+            title = await maybe_value(await tab.evaluate("document.title"))
+            progress("Diagnostic browser navigation succeeded")
+            print(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "diagnosticOnly": True,
+                        "finalUrl": getattr(tab, "url", ""),
+                        "finalTitle": title,
+                    }
+                )
+            )
+            return
+
         phase = "registering network handlers"
         progress("Registering network redirect handlers")
         tab.add_handler(cdp.network.RequestWillBeSent, send_handler)
