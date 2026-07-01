@@ -3,6 +3,7 @@ node_modules/
 dist/
 coverage/
 .rpt2_cache/
+.venv/
 __pycache__/
 *.py[cod]
 

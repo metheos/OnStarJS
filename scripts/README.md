@@ -65,6 +65,21 @@ pnpm run setup:env:bash
 ./scripts/setup-env.sh
 ```
 
+### `setup-zendriver.mjs`
+
+#### Zendriver Python environment setup
+
+- Creates a local `.venv` virtual environment for Zendriver authentication
+- Tries `python3` before `python` on Linux/macOS to avoid systems without a `python` alias
+- Installs `zendriver` and `pyotp` inside the virtual environment instead of the system Python environment
+- Supports `ONSTARJS_ZENDRIVER_VENV`, `ONSTARJS_PYTHON`, or `PYTHON` overrides
+
+#### Zendriver Setup Usage
+
+```bash
+pnpm run setup:zendriver
+```
+
 ### `credential-manager.js`
 
 #### Interactive credential setup

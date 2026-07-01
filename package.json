@@ -14,7 +14,8 @@
   "type": "module",
   "types": "dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "scripts/setup-zendriver.mjs"
   ],
   "directories": {
     "test": "test"
@@ -33,7 +34,7 @@
     "test:auth": "jest test/auth/testAuth",
     "test:reauth": "jest test/auth/testAuth -t 'should successfully reauthenticate'",
     "prepare": "husky install",
-    "setup:zendriver": "python -m pip install zendriver pyotp",
+    "setup:zendriver": "node scripts/setup-zendriver.mjs",
     "setup:env": "node scripts/setup-env.js",
     "setup:env:bash": "chmod +x scripts/setup-env.sh && ./scripts/setup-env.sh",
     "setup:interactive": "node scripts/credential-manager.js",

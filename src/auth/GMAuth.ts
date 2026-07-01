@@ -513,6 +513,31 @@ export class GMAuth {
     return scriptPath;
   }
 
+  private getZendriverPythonExecutable(scriptPath: string): string {
+    const configuredPython = process.env.ONSTARJS_PYTHON ?? process.env.PYTHON;
+    if (configuredPython) {
+      return configuredPython;
+    }
+
+    const scriptDir = path.dirname(scriptPath);
+    const venvRoots = [
+      process.env.ONSTARJS_ZENDRIVER_VENV,
+      path.resolve(".venv"),
+      path.resolve(scriptDir, "..", "..", ".venv"),
+    ].filter((candidate): candidate is string => Boolean(candidate));
+
+    const venvPythonCandidates = venvRoots.map((venvRoot) =>
+      process.platform === "win32"
+        ? path.join(venvRoot, "Scripts", "python.exe")
+        : path.join(venvRoot, "bin", "python"),
+    );
+
+    return (
+      venvPythonCandidates.find((candidate) => fs.existsSync(candidate)) ??
+      (process.platform === "win32" ? "python" : "python3")
+    );
+  }
+
   private async runZendriverAuth(
     authorizationUrl: string,
     useRandomFingerprint: boolean = false,
@@ -551,10 +576,8 @@ export class GMAuth {
       browserArgs.push("--use-gl=swiftshader");
     }
 
-    const pythonExecutable =
-      process.env.ONSTARJS_PYTHON ??
-      process.env.PYTHON ??
-      (process.platform === "win32" ? "python" : "python3");
+    const scriptPath = this.getZendriverAuthScriptPath();
+    const pythonExecutable = this.getZendriverPythonExecutable(scriptPath);
     const payload = {
       authorizationUrl,
       username: this.config.username,
@@ -564,7 +587,6 @@ export class GMAuth {
       profilePath,
       browserArgs,
     };
-    const scriptPath = this.getZendriverAuthScriptPath();
 
     return await new Promise<ZendriverAuthResult>((resolve, reject) => {
       const child = spawn(pythonExecutable, [scriptPath], {
