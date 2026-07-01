@@ -17,7 +17,6 @@ if sys.platform == "win32":
 try:
     import zendriver as zd
     from zendriver import cdp
-    from zendriver.core.keys import KeyEvents, KeyModifiers, SpecialKeys
 except Exception as exc:
     error_message = (
         "Zendriver is not installed for this Python interpreter. Run "
@@ -306,7 +305,9 @@ async def detect_access_denied_page(tab):
         title = await maybe_value(await tab.evaluate("document.title"))
         if "Access Denied" in str(title):
             return True
-        page_html_result = await tab.evaluate("document.documentElement.outerHTML")
+        page_html_result = await tab.evaluate(
+            "document.documentElement.outerHTML"
+        )
         page_html = (await maybe_value(page_html_result)) or ""
         return is_access_denied_html(page_html)
     except Exception:
@@ -478,6 +479,16 @@ async def wait_for_network_quiet(
     timeout_ms=10000,
     interval_ms=100,
 ):
+    def pending_request_summaries():
+        now = time.monotonic()
+        summaries = []
+        for request in network_state.get("pending", {}).values():
+            summary = dict(request)
+            started_at = summary.pop("startedAt", now)
+            summary["ageMs"] = int((now - started_at) * 1000)
+            summaries.append(summary)
+        return summaries[-10:]
+
     start = time.monotonic()
     while (time.monotonic() - start) * 1000 < timeout_ms:
         quiet_for_ms = (
@@ -489,9 +500,10 @@ async def wait_for_network_quiet(
                     "Network activity quiet with pending requests",
                     {
                         "pendingCount": len(
-                            network_state.get("pending", set())
+                            network_state.get("pending", {})
                         ),
                         "quietForMs": int(quiet_for_ms),
+                        "pendingRequests": pending_request_summaries(),
                     },
                 )
             return True
@@ -500,19 +512,26 @@ async def wait_for_network_quiet(
     progress_json(
         "Network did not quiesce before input readiness check",
         {
-            "pendingCount": len(network_state.get("pending", set())),
+            "pendingCount": len(network_state.get("pending", {})),
+            "pendingRequests": pending_request_summaries(),
             "quietForMs": int(
-                (time.monotonic() - network_state.get("last_activity", start)) * 1000
+                (time.monotonic() - network_state.get("last_activity", start))
+                * 1000
             ),
         },
     )
     return False
 
 
-async def wait_for_input_ready(element, timeout_ms=5000, interval_ms=150):
+async def wait_for_input_ready(
+    element,
+    interval_ms=150,
+    log_interval_ms=10000,
+):
     start = time.monotonic()
+    last_log = start
     last_state = None
-    while (time.monotonic() - start) * 1000 < timeout_ms:
+    while True:
         try:
             last_state = await element.apply(
                 """
@@ -540,8 +559,17 @@ async def wait_for_input_ready(element, timeout_ms=5000, interval_ms=150):
                 return last_state
         except Exception as exc:
             last_state = {"error": repr(exc)}
+        now = time.monotonic()
+        if (now - last_log) * 1000 >= log_interval_ms:
+            progress_json(
+                "Input not ready yet; continuing to wait",
+                {
+                    "waitedMs": int((now - start) * 1000),
+                    "state": last_state,
+                },
+            )
+            last_log = now
         await sleep_ms(interval_ms)
-    raise TimeoutError(f"Input was not ready for typing: {last_state}")
 
 
 async def get_input_state(element):
@@ -572,23 +600,8 @@ async def get_input_state(element):
         return {"error": repr(exc)}
 
 
-async def clear_field_with_keyboard(element):
+async def clear_field_with_dom_events(element):
     await focus_human(element)
-    modifier = KeyModifiers.Meta if sys.platform == "darwin" else KeyModifiers.Ctrl
-    try:
-        await element.send_keys(
-            KeyEvents.from_mixed_input(
-                [
-                    ("a", modifier),
-                    SpecialKeys.BACKSPACE,
-                ]
-            )
-        )
-        await sleep_ms(random.uniform(100, 250))
-        return
-    except Exception as exc:
-        progress(f"Keyboard clear failed; using event fallback: {repr(exc)}")
-
     await element.apply(
         """
         (element) => {
@@ -633,7 +646,9 @@ async def type_with_dom_keyboard_events(
             const value = {json.dumps(value)};
             const minDelay = {json.dumps(min_delay)};
             const maxDelay = {json.dumps(max_delay)};
-            const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+            const delay = (ms) => new Promise(
+                (resolve) => setTimeout(resolve, ms)
+            );
             const valueDescriptor = Object.getOwnPropertyDescriptor(
                 HTMLInputElement.prototype,
                 'value'
@@ -669,7 +684,8 @@ async def type_with_dom_keyboard_events(
                     data: char,
                 }}));
                 element.dispatchEvent(new KeyboardEvent('keyup', keyInit));
-                const jitter = minDelay + Math.random() * (maxDelay - minDelay);
+                const jitter = minDelay + Math.random() *
+                    (maxDelay - minDelay);
                 await delay(jitter);
             }}
             element.dispatchEvent(new Event('change', {{bubbles: true}}));
@@ -691,50 +707,41 @@ async def fill_text_field(
         await wait_for_network_quiet(network_state)
     await focus_human(element)
     await wait_for_input_ready(element)
-    await clear_field(element)
-    await sleep_ms(random.uniform(200, 500))
-    await type_human(element, value, min_delay, max_delay, pause_chance)
+    await type_with_dom_keyboard_events(
+        element,
+        value,
+        min_delay,
+        max_delay,
+    )
     await sleep_ms(random.uniform(250, 600))
 
     actual_value = await get_field_value(element)
     if actual_value != value:
         progress_json(
-            "Typed value did not match field value; repairing with keyboard",
+            "DOM keyboard entry did not match field value; retrying",
             {
                 "expectedLength": len(value),
                 "actualLength": len(actual_value),
+                "input": await get_input_state(element),
             },
         )
-        await clear_field_with_keyboard(element)
-        await type_human(element, value, min_delay, max_delay, pause_chance)
+        await clear_field_with_dom_events(element)
+        await type_with_dom_keyboard_events(
+            element,
+            value,
+            min_delay,
+            max_delay,
+        )
         await sleep_ms(random.uniform(150, 350))
         repaired_value = await get_field_value(element)
         if repaired_value != value:
-            progress_json(
-                "Zendriver keyboard repair still mismatched; "
-                "retrying with DOM keyboard events",
-                {
-                    "expectedLength": len(value),
-                    "actualLength": len(repaired_value),
-                    "input": await get_input_state(element),
-                },
+            raise RuntimeError(
+                "Input field value still mismatched after DOM keyboard "
+                "retry: "
+                f"expectedLength={len(value)}, "
+                f"actualLength={len(repaired_value)}, "
+                f"input={await get_input_state(element)}"
             )
-            await type_with_dom_keyboard_events(
-                element,
-                value,
-                min_delay,
-                max_delay,
-            )
-            await sleep_ms(random.uniform(150, 350))
-            dom_repaired_value = await get_field_value(element)
-            if dom_repaired_value != value:
-                raise RuntimeError(
-                    "Input field value still mismatched after DOM keyboard "
-                    "repair: "
-                    f"expectedLength={len(value)}, "
-                    f"actualLength={len(dom_repaired_value)}, "
-                    f"input={await get_input_state(element)}"
-                )
 
 
 async def collect_page_summary(tab):
@@ -848,7 +855,9 @@ async def wait_ready(tab, timeout=60):
     except TypeError:
         await tab.wait_for_ready_state("complete")
     except Exception as exc:
-        progress(f"Page readiness wait ended without complete state: {repr(exc)}")
+        progress(
+            f"Page readiness wait ended without complete state: {repr(exc)}"
+        )
         await sleep_ms(1000)
 
 
@@ -889,7 +898,9 @@ async def navigate_existing_tab(tab, url, timeout_seconds):
     navigation_result = await tab.send(cdp.page.navigate(url))
     progress_json("Page.navigate result", navigation_result)
     await wait_ready(tab, timeout=timeout_seconds)
-    progress(f"Navigation command completed; current URL: {getattr(tab, 'url', '')}")
+    progress(
+        f"Navigation command completed; current URL: {getattr(tab, 'url', '')}"
+    )
     return tab
 
 
@@ -1113,7 +1124,7 @@ async def main():
         "record_login_responses": False,
         "recent_responses": [],
     }
-    network_state = {"pending": set(), "last_activity": time.monotonic()}
+    network_state = {"pending": {}, "last_activity": time.monotonic()}
     if payload.get("simulateNavigationAuthCode"):
         state["auth_code"] = payload["simulateNavigationAuthCode"]
     browser = None
@@ -1126,8 +1137,13 @@ async def main():
 
     async def send_handler(event):
         mark_network_activity()
-        network_state["pending"].add(event.request_id)
         request_url = getattr(getattr(event, "request", None), "url", "")
+        network_state["pending"][event.request_id] = {
+            "url": sanitize_url(request_url),
+            "type": str(getattr(event, "type_", "")),
+            "documentUrl": sanitize_url(getattr(event, "document_url", "")),
+            "startedAt": time.monotonic(),
+        }
         capture_auth_redirect(state, request_url, "network request")
         document_url = getattr(event, "document_url", "")
         capture_auth_redirect(state, document_url, "network document")
@@ -1182,11 +1198,11 @@ async def main():
 
     async def loading_finished_handler(event):
         mark_network_activity()
-        network_state["pending"].discard(event.request_id)
+        network_state["pending"].pop(event.request_id, None)
 
     async def loading_failed_handler(event):
         mark_network_activity()
-        network_state["pending"].discard(event.request_id)
+        network_state["pending"].pop(event.request_id, None)
 
     async def frame_started_navigating_handler(event):
         capture_auth_redirect(
@@ -1234,7 +1250,9 @@ async def main():
         mobile_fingerprint = generate_mobile_fingerprint()
         sandbox_enabled = sys.platform != "linux"
         if not sandbox_enabled:
-            progress("Disabling browser sandbox for Linux launch compatibility")
+            progress(
+                "Disabling browser sandbox for Linux launch compatibility"
+            )
         config = zd.Config(
             headless=False,
             user_data_dir=profile_path,
@@ -1360,12 +1378,16 @@ async def main():
         progress("Monitoring for authorization redirect or MFA challenge")
         post_login_state = await wait_for_auth_code_or_mfa(tab, state, 5000)
         if post_login_state == "timeout":
-            title_after_submit = await maybe_value(await tab.evaluate("document.title"))
+            title_after_submit = await maybe_value(
+                await tab.evaluate("document.title")
+            )
             if (
                 not state.get("access_denied")
                 and "sign in" in str(title_after_submit).lower()
             ):
-                progress("Still on sign-in page after submit; retrying login click")
+                progress(
+                    "Still on sign-in page after submit; retrying login click"
+                )
                 await click_direct(submit_button)
                 post_login_state = await wait_for_auth_code_or_mfa(
                     tab,
@@ -1380,7 +1402,9 @@ async def main():
         elif post_login_state == "access_denied":
             progress("Access Denied detected after credentials")
         else:
-            progress("No auth redirect or MFA challenge detected before timeout")
+            progress(
+                "No auth redirect or MFA challenge detected before timeout"
+            )
             progress_json(
                 "Unexpected post-login response summary",
                 {
@@ -1390,7 +1414,9 @@ async def main():
             )
 
         title = await maybe_value(await tab.evaluate("document.title"))
-        page_html_result = await tab.evaluate("document.documentElement.outerHTML")
+        page_html_result = await tab.evaluate(
+            "document.documentElement.outerHTML"
+        )
         page_html = (await maybe_value(page_html_result)) or ""
         if is_access_denied_html(page_html) or "Access Denied" in str(title):
             progress("Access Denied page detected")
@@ -1512,7 +1538,9 @@ async def main():
         final_title = None
         if tab is not None:
             try:
-                final_title = await maybe_value(await tab.evaluate("document.title"))
+                final_title = await maybe_value(
+                    await tab.evaluate("document.title")
+                )
             except Exception:
                 final_title = None
         print(
