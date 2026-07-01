@@ -641,10 +641,14 @@ async def main():
         phase = "configuring browser session"
         progress("Configuring browser session")
         virtual_display = start_virtual_display_if_needed()
+        sandbox_enabled = sys.platform != "linux"
+        if not sandbox_enabled:
+            progress("Disabling browser sandbox for Linux launch compatibility")
         config = zd.Config(
             headless=False,
             user_data_dir=profile_path,
             browser_executable_path=browser_executable_path,
+            sandbox=sandbox_enabled,
         )
 
         phase = "starting browser"
