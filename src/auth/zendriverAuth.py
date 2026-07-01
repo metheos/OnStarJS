@@ -306,9 +306,7 @@ async def detect_access_denied_page(tab):
         title = await maybe_value(await tab.evaluate("document.title"))
         if "Access Denied" in str(title):
             return True
-        page_html_result = await tab.evaluate(
-            "document.documentElement.outerHTML"
-        )
+        page_html_result = await tab.evaluate("document.documentElement.outerHTML")
         page_html = (await maybe_value(page_html_result)) or ""
         return is_access_denied_html(page_html)
     except Exception:
@@ -485,7 +483,17 @@ async def wait_for_network_quiet(
         quiet_for_ms = (
             time.monotonic() - network_state.get("last_activity", start)
         ) * 1000
-        if not network_state.get("pending") and quiet_for_ms >= quiet_ms:
+        if quiet_for_ms >= quiet_ms:
+            if network_state.get("pending"):
+                progress_json(
+                    "Network activity quiet with pending requests",
+                    {
+                        "pendingCount": len(
+                            network_state.get("pending", set())
+                        ),
+                        "quietForMs": int(quiet_for_ms),
+                    },
+                )
             return True
         await sleep_ms(interval_ms)
 
@@ -494,11 +502,7 @@ async def wait_for_network_quiet(
         {
             "pendingCount": len(network_state.get("pending", set())),
             "quietForMs": int(
-                (
-                    time.monotonic()
-                    - network_state.get("last_activity", start)
-                )
-                * 1000
+                (time.monotonic() - network_state.get("last_activity", start)) * 1000
             ),
         },
     )
@@ -513,6 +517,7 @@ async def wait_for_input_ready(element, timeout_ms=5000, interval_ms=150):
             last_state = await element.apply(
                 """
                 (element) => ({
+                    connected: Boolean(element.isConnected),
                     disabled: Boolean(element.disabled),
                     readOnly: Boolean(element.readOnly),
                     visible: Boolean(
@@ -527,6 +532,7 @@ async def wait_for_input_ready(element, timeout_ms=5000, interval_ms=150):
             )
             if (
                 last_state
+                and last_state.get("connected")
                 and last_state.get("visible")
                 and not last_state.get("disabled")
                 and not last_state.get("readOnly")
@@ -538,13 +544,37 @@ async def wait_for_input_ready(element, timeout_ms=5000, interval_ms=150):
     raise TimeoutError(f"Input was not ready for typing: {last_state}")
 
 
+async def get_input_state(element):
+    try:
+        return await element.apply(
+            """
+            (element) => ({
+                connected: Boolean(element.isConnected),
+                disabled: Boolean(element.disabled),
+                readOnly: Boolean(element.readOnly),
+                visible: Boolean(
+                    element.offsetWidth ||
+                    element.offsetHeight ||
+                    element.getClientRects().length
+                ),
+                focused: document.activeElement === element,
+                tagName: element.tagName,
+                type: element.type,
+                name: element.name,
+                id: element.id,
+                ariaLabel: element.getAttribute('aria-label'),
+                valueLength: element.value ? element.value.length : 0,
+            })
+            """,
+            await_promise=True,
+        )
+    except Exception as exc:
+        return {"error": repr(exc)}
+
+
 async def clear_field_with_keyboard(element):
     await focus_human(element)
-    modifier = (
-        KeyModifiers.Meta
-        if sys.platform == "darwin"
-        else KeyModifiers.Ctrl
-    )
+    modifier = KeyModifiers.Meta if sys.platform == "darwin" else KeyModifiers.Ctrl
     try:
         await element.send_keys(
             KeyEvents.from_mixed_input(
@@ -591,6 +621,64 @@ async def clear_field_with_keyboard(element):
     )
 
 
+async def type_with_dom_keyboard_events(
+    element,
+    value,
+    min_delay=40,
+    max_delay=150,
+):
+    await element.apply(
+        f"""
+        async (element) => {{
+            const value = {json.dumps(value)};
+            const minDelay = {json.dumps(min_delay)};
+            const maxDelay = {json.dumps(max_delay)};
+            const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+            const valueDescriptor = Object.getOwnPropertyDescriptor(
+                HTMLInputElement.prototype,
+                'value'
+            );
+            const setValue = (nextValue) => {{
+                valueDescriptor.set.call(element, nextValue);
+            }};
+            element.focus();
+            element.select();
+            setValue('');
+            element.dispatchEvent(new InputEvent('input', {{
+                bubbles: true,
+                inputType: 'deleteContentBackward',
+                data: null,
+            }}));
+            for (const char of value) {{
+                const keyInit = {{
+                    key: char,
+                    bubbles: true,
+                    cancelable: true,
+                }};
+                element.dispatchEvent(new KeyboardEvent('keydown', keyInit));
+                element.dispatchEvent(new InputEvent('beforeinput', {{
+                    bubbles: true,
+                    cancelable: true,
+                    inputType: 'insertText',
+                    data: char,
+                }}));
+                setValue(element.value + char);
+                element.dispatchEvent(new InputEvent('input', {{
+                    bubbles: true,
+                    inputType: 'insertText',
+                    data: char,
+                }}));
+                element.dispatchEvent(new KeyboardEvent('keyup', keyInit));
+                const jitter = minDelay + Math.random() * (maxDelay - minDelay);
+                await delay(jitter);
+            }}
+            element.dispatchEvent(new Event('change', {{bubbles: true}}));
+        }}
+        """,
+        await_promise=True,
+    )
+
+
 async def fill_text_field(
     element,
     value,
@@ -599,9 +687,9 @@ async def fill_text_field(
     max_delay=150,
     pause_chance=0.08,
 ):
-    await focus_human(element)
     if network_state is not None:
         await wait_for_network_quiet(network_state)
+    await focus_human(element)
     await wait_for_input_ready(element)
     await clear_field(element)
     await sleep_ms(random.uniform(200, 500))
@@ -622,11 +710,31 @@ async def fill_text_field(
         await sleep_ms(random.uniform(150, 350))
         repaired_value = await get_field_value(element)
         if repaired_value != value:
-            raise RuntimeError(
-                "Input field value still mismatched after keyboard repair: "
-                f"expectedLength={len(value)}, "
-                f"actualLength={len(repaired_value)}"
+            progress_json(
+                "Zendriver keyboard repair still mismatched; "
+                "retrying with DOM keyboard events",
+                {
+                    "expectedLength": len(value),
+                    "actualLength": len(repaired_value),
+                    "input": await get_input_state(element),
+                },
             )
+            await type_with_dom_keyboard_events(
+                element,
+                value,
+                min_delay,
+                max_delay,
+            )
+            await sleep_ms(random.uniform(150, 350))
+            dom_repaired_value = await get_field_value(element)
+            if dom_repaired_value != value:
+                raise RuntimeError(
+                    "Input field value still mismatched after DOM keyboard "
+                    "repair: "
+                    f"expectedLength={len(value)}, "
+                    f"actualLength={len(dom_repaired_value)}, "
+                    f"input={await get_input_state(element)}"
+                )
 
 
 async def collect_page_summary(tab):
