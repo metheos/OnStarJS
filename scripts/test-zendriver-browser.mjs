@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -76,19 +77,140 @@ function getBrowserExecutablePath() {
   return manifest.executablePath;
 }
 
+function createDiagnosticHtml({ expectedEmail, expectedPassword, authCode }) {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Zendriver Auth Diagnostic</title>
+  </head>
+  <body>
+    <main>
+      <section id="email-step">
+        <label for="logonIdentifier">Email</label>
+        <input
+          id="logonIdentifier"
+          name="logonIdentifier"
+          type="email"
+          aria-label="Email"
+          autocomplete="username"
+        />
+        <button id="continue" data-dtm="sign in" aria-label="Continue">
+          Continue
+        </button>
+      </section>
+      <section id="password-step" hidden>
+        <label for="password">Password</label>
+        <input
+          id="password"
+          name="password"
+          type="password"
+          aria-label="Password"
+          autocomplete="current-password"
+        />
+        <button id="login" aria-label="Log In">Log In</button>
+      </section>
+      <pre id="diagnostic-output"></pre>
+    </main>
+    <script>
+      const expectedEmail = ${JSON.stringify(expectedEmail)};
+      const expectedPassword = ${JSON.stringify(expectedPassword)};
+      const authCode = ${JSON.stringify(authCode)};
+      const output = document.querySelector('#diagnostic-output');
+      const emailStep = document.querySelector('#email-step');
+      const passwordStep = document.querySelector('#password-step');
+      const emailInput = document.querySelector('#logonIdentifier');
+      const passwordInput = document.querySelector('#password');
+
+      function fail(message, details) {
+        output.textContent = JSON.stringify({ ok: false, message, details });
+        document.title = 'Diagnostic failure';
+      }
+
+      document.querySelector('#continue').addEventListener('click', () => {
+        if (emailInput.value !== expectedEmail) {
+          fail('email mismatch', {
+            expectedLength: expectedEmail.length,
+            actual: emailInput.value,
+            actualLength: emailInput.value.length,
+          });
+          return;
+        }
+        emailStep.hidden = true;
+        passwordStep.hidden = false;
+        passwordInput.focus();
+      });
+
+      document.querySelector('#login').addEventListener('click', () => {
+        if (passwordInput.value !== expectedPassword) {
+          fail('password mismatch', {
+            expectedLength: expectedPassword.length,
+            actualLength: passwordInput.value.length,
+          });
+          return;
+        }
+        output.textContent = JSON.stringify({ ok: true });
+        window.location.href = 'msauth.com.gm.mychevrolet://auth?code=' +
+          encodeURIComponent(authCode);
+      });
+    </script>
+  </body>
+</html>`;
+}
+
+async function startDiagnosticServer(options) {
+  const server = http.createServer((request, response) => {
+    if (request.url === "/favicon.ico") {
+      response.writeHead(204);
+      response.end();
+      return;
+    }
+
+    response.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+    });
+    response.end(createDiagnosticHtml(options));
+  });
+
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+
+  const address = server.address();
+  return {
+    server,
+    url: `http://127.0.0.1:${address.port}/`,
+  };
+}
+
 async function runDiagnostic() {
   const pythonExecutable = getPythonExecutable();
   const authScriptPath = getAuthScriptPath();
   const browserExecutablePath = getBrowserExecutablePath();
   const profilePath = path.resolve(projectRoot, "temp-browser-profile");
   const browserArgs = ["--lang=en-US"];
+  const expectedEmail = "diagnostic@example.com";
+  const expectedPassword = "DiagnosticPassword123!";
+  const expectedAuthCode = "DIAGNOSTIC_AUTH_CODE";
+  const useConfiguredUrl = Boolean(process.env.ONSTARJS_BROWSER_DIAGNOSTIC_URL);
+  const diagnosticServer = useConfiguredUrl
+    ? null
+    : await startDiagnosticServer({
+        expectedEmail,
+        expectedPassword,
+        authCode: expectedAuthCode,
+      });
   const payload = {
-    authorizationUrl: process.env.ONSTARJS_BROWSER_DIAGNOSTIC_URL ?? "about:blank",
-    diagnosticOnly: process.env.ONSTARJS_BROWSER_DIAGNOSTIC_AUTH_CODE
-      ? false
-      : true,
+    authorizationUrl:
+      process.env.ONSTARJS_BROWSER_DIAGNOSTIC_URL ?? diagnosticServer.url,
+    diagnosticOnly: useConfiguredUrl && !process.env.ONSTARJS_BROWSER_DIAGNOSTIC_AUTH_CODE,
     simulateNavigationAuthCode:
       process.env.ONSTARJS_BROWSER_DIAGNOSTIC_AUTH_CODE,
+    username: expectedEmail,
+    password: expectedPassword,
+    totpKey: "ABCDEFGHIJKLMNOP",
     browserExecutablePath,
     profilePath,
     browserArgs,
@@ -136,13 +258,28 @@ async function runDiagnostic() {
       }
     });
     child.stdin.end(JSON.stringify(payload));
-  });
+  }).finally(
+    () =>
+      new Promise((resolve) => {
+        if (!diagnosticServer) {
+          resolve();
+          return;
+        }
+        diagnosticServer.server.close(resolve);
+      }),
+  );
 
   if (!result.ok) {
     throw new Error(
       result.detail
         ? `${result.error} (${result.detail})`
         : result.error || "Zendriver browser diagnostic failed",
+    );
+  }
+
+  if (!useConfiguredUrl && result.authCode !== expectedAuthCode) {
+    throw new Error(
+      `Zendriver diagnostic did not capture expected auth code. Expected ${expectedAuthCode}, got ${result.authCode}`,
     );
   }
 

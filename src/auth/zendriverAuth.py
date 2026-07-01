@@ -660,100 +660,6 @@ async def get_input_state(element):
         return {"error": repr(exc)}
 
 
-async def clear_field_with_dom_events(element):
-    await element.apply(
-        """
-        (element) => {
-            try {{ element.focus(); }} catch (_) {{}}
-            try {{ element.select(); }} catch (_) {{}}
-            for (const key of ['Backspace']) {
-                element.dispatchEvent(new KeyboardEvent('keydown', {
-                    key,
-                    code: key,
-                    bubbles: true,
-                    cancelable: true,
-                }));
-                element.value = '';
-                element.dispatchEvent(new InputEvent('input', {
-                    bubbles: true,
-                    inputType: 'deleteContentBackward',
-                    data: null,
-                }));
-                element.dispatchEvent(new KeyboardEvent('keyup', {
-                    key,
-                    code: key,
-                    bubbles: true,
-                    cancelable: true,
-                }));
-            }
-            element.dispatchEvent(new Event('change', {bubbles: true}));
-        }
-        """,
-        await_promise=True,
-    )
-
-
-async def type_with_dom_keyboard_events(
-    element,
-    value,
-    min_delay=40,
-    max_delay=150,
-):
-    await element.apply(
-        f"""
-        async (element) => {{
-            const value = {json.dumps(value)};
-            const minDelay = {json.dumps(min_delay)};
-            const maxDelay = {json.dumps(max_delay)};
-            const delay = (ms) => new Promise(
-                (resolve) => setTimeout(resolve, ms)
-            );
-            const valueDescriptor = Object.getOwnPropertyDescriptor(
-                HTMLInputElement.prototype,
-                'value'
-            );
-            const setValue = (nextValue) => {{
-                valueDescriptor.set.call(element, nextValue);
-            }};
-            try {{ element.focus(); }} catch (_) {{}}
-            try {{ element.select(); }} catch (_) {{}}
-            setValue('');
-            element.dispatchEvent(new InputEvent('input', {{
-                bubbles: true,
-                inputType: 'deleteContentBackward',
-                data: null,
-            }}));
-            for (const char of value) {{
-                const keyInit = {{
-                    key: char,
-                    bubbles: true,
-                    cancelable: true,
-                }};
-                element.dispatchEvent(new KeyboardEvent('keydown', keyInit));
-                element.dispatchEvent(new InputEvent('beforeinput', {{
-                    bubbles: true,
-                    cancelable: true,
-                    inputType: 'insertText',
-                    data: char,
-                }}));
-                setValue(element.value + char);
-                element.dispatchEvent(new InputEvent('input', {{
-                    bubbles: true,
-                    inputType: 'insertText',
-                    data: char,
-                }}));
-                element.dispatchEvent(new KeyboardEvent('keyup', keyInit));
-                const jitter = minDelay + Math.random() *
-                    (maxDelay - minDelay);
-                await delay(jitter);
-            }}
-            element.dispatchEvent(new Event('change', {{bubbles: true}}));
-        }}
-        """,
-        await_promise=True,
-    )
-
-
 async def fill_text_field(
     element,
     value,
@@ -766,41 +672,62 @@ async def fill_text_field(
         await wait_for_network_quiet(network_state)
     await focus_human(element)
     await wait_for_input_ready(element)
-    await type_with_dom_keyboard_events(
-        element,
-        value,
-        min_delay,
-        max_delay,
-    )
+    await clear_field(element)
+    await sleep_ms(random.uniform(200, 500))
+    await element.send_keys(value)
     await sleep_ms(random.uniform(250, 600))
 
     actual_value = await get_field_value(element)
     if actual_value != value:
         progress_json(
-            "DOM keyboard entry did not match field value; retrying",
+            "Native send_keys value did not match field value; retrying",
             {
                 "expectedLength": len(value),
                 "actualLength": len(actual_value),
                 "input": await get_input_state(element),
             },
         )
-        await clear_field_with_dom_events(element)
-        await type_with_dom_keyboard_events(
-            element,
-            value,
-            min_delay,
-            max_delay,
-        )
+        await focus_human(element)
+        await clear_field(element)
+        await sleep_ms(random.uniform(150, 350))
+        await element.send_keys(value)
         await sleep_ms(random.uniform(150, 350))
         repaired_value = await get_field_value(element)
         if repaired_value != value:
             raise RuntimeError(
-                "Input field value still mismatched after DOM keyboard "
+                "Input field value still mismatched after native send_keys "
                 "retry: "
                 f"expectedLength={len(value)}, "
                 f"actualLength={len(repaired_value)}, "
                 f"input={await get_input_state(element)}"
             )
+
+
+async def save_error_screenshot(tab, phase):
+    if tab is None:
+        return None
+    try:
+        screenshots_dir = os.path.abspath("zendriver-error-screenshots")
+        os.makedirs(screenshots_dir, exist_ok=True)
+        safe_phase = re.sub(r"[^a-zA-Z0-9_.-]+", "-", phase).strip("-")
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        screenshot_path = os.path.join(
+            screenshots_dir,
+            f"zendriver-error-{timestamp}-{safe_phase or 'unknown'}.jpg",
+        )
+        await tab.save_screenshot(
+            filename=screenshot_path,
+            format="jpeg",
+            full_page=True,
+        )
+        progress_json("Saved error screenshot", {"path": screenshot_path})
+        return screenshot_path
+    except Exception as screenshot_error:
+        progress(
+            "Error screenshot capture failed: "
+            f"{repr(screenshot_error)}"
+        )
+        return None
 
 
 async def collect_page_summary(tab):
@@ -1595,6 +1522,7 @@ async def main():
         log(traceback_text)
         final_url = getattr(tab, "url", "") if tab is not None else ""
         final_title = None
+        screenshot_path = await save_error_screenshot(tab, phase)
         if tab is not None:
             try:
                 final_title = await maybe_value(
@@ -1614,6 +1542,7 @@ async def main():
                     "traceback": traceback_text,
                     "finalUrl": final_url,
                     "finalTitle": final_title,
+                    "screenshotPath": screenshot_path,
                     "accessDenied": state.get("access_denied", False),
                 }
             )
