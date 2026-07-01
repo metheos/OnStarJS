@@ -3,6 +3,8 @@ node_modules/
 dist/
 coverage/
 .rpt2_cache/
+__pycache__/
+*.py[cod]
 
 # Environment files and secrets
 .env

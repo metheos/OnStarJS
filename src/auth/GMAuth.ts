@@ -10,10 +10,18 @@ import https from "https";
 
 import path from "path";
 import jwt from "jsonwebtoken";
-import { chromium, Browser, BrowserContext, Page } from "patchright";
 import { randomInt } from "crypto";
-import { execSync } from "child_process";
+import { execSync, spawn } from "child_process";
 import * as net from "net";
+
+declare const __dirname: string | undefined;
+
+interface ZendriverAuthResult {
+  authCode?: string;
+  finalUrl?: string;
+  finalTitle?: string;
+  accessDenied?: boolean;
+}
 
 // Define an interface for the vehicle structure and the payload containing them
 interface Vehicle {
@@ -78,9 +86,9 @@ export class GMAuth {
   private axiosClient: AxiosInstance;
   private csrfToken: string | null;
   private transId: string | null; // Browser automation properties
-  private browser: Browser | null = null;
-  private context: BrowserContext | null = null;
-  private currentPage: Page | null = null;
+  private browser: any = null;
+  private context: any = null;
+  private currentPage: any = null;
   private capturedAuthCode: string | null = null;
 
   private currentGMAPIToken: GMAPITokenResponse | null = null;
@@ -761,44 +769,9 @@ export class GMAuth {
           launchEnv.DISPLAY = ":99";
         }
       }
-      this.context = await chromium.launchPersistentContext(profilePath, {
-        channel: "chromium", // Use chromium
-        headless: false, // Always headful for better compatibility
-        hasTouch: true, // Simulate touch support
-        isMobile: true, // Simulate mobile device
-        userAgent: fingerprint.userAgent,
-        viewport: fingerprint.viewport,
-        args: browserArgs,
-        timeout: 90000, // Increased to 90 second timeout for browser launch
-        env: launchEnv,
-        // Add extra stealth options
-        locale: "en-US",
-        timezoneId: "America/New_York",
-        colorScheme: "light",
-        reducedMotion: "no-preference",
-        forcedColors: "none",
-        extraHTTPHeaders: {
-          "Accept-Language": "en-US,en;q=0.9",
-          "Accept-Encoding": "gzip, deflate, br",
-          Accept:
-            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-          "Cache-Control": "no-cache",
-          Pragma: "no-cache",
-          "sec-ch-ua":
-            '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
-          "sec-ch-ua-mobile": fingerprint.userAgent.includes("Mobile")
-            ? "?1"
-            : "?0",
-          "sec-ch-ua-platform": fingerprint.userAgent.includes("iPhone")
-            ? '"iOS"'
-            : '"Android"',
-          "Sec-Fetch-Dest": "document",
-          "Sec-Fetch-Mode": "navigate",
-          "Sec-Fetch-Site": "none",
-          "Sec-Fetch-User": "?1",
-          "Upgrade-Insecure-Requests": "1",
-        },
-      });
+      throw new Error(
+        "Legacy browser initialization has been replaced by the Zendriver authentication runner.",
+      );
 
       // Try to get the browser reference from the persistent context
       // Note: In some containerized environments, context.browser() may return null
@@ -827,7 +800,7 @@ export class GMAuth {
         console.log("✅ Browser instance obtained successfully");
       }
       // Minimal stealth - only hide the most obvious automation indicators
-      await this.context.addInitScript((fingerprint) => {
+      await this.context.addInitScript((fingerprint: any) => {
         // Remove all webdriver traces
         Object.defineProperty(navigator, "webdriver", { get: () => undefined });
         delete (window as any).webdriver;
@@ -2012,11 +1985,187 @@ export class GMAuth {
     return arr[Math.floor(Math.random() * arr.length)];
   }
 
+  private getZendriverAuthScriptPath(): string {
+    const moduleDir = typeof __dirname === "string" ? __dirname : undefined;
+    const candidates = [
+      process.env.ONSTARJS_ZENDRIVER_SCRIPT,
+      moduleDir ? path.join(moduleDir, "auth", "zendriverAuth.py") : undefined,
+      path.resolve("src", "auth", "zendriverAuth.py"),
+      path.resolve("dist", "auth", "zendriverAuth.py"),
+      path.resolve(
+        "node_modules",
+        "onstarjs2",
+        "dist",
+        "auth",
+        "zendriverAuth.py",
+      ),
+    ].filter((candidate): candidate is string => Boolean(candidate));
+
+    const scriptPath = candidates.find((candidate) => fs.existsSync(candidate));
+    if (!scriptPath) {
+      throw new Error(
+        `Unable to locate Zendriver auth script. Checked: ${candidates.join(", ")}`,
+      );
+    }
+    return scriptPath;
+  }
+
+  private async runZendriverAuth(
+    authorizationUrl: string,
+    useRandomFingerprint: boolean = false,
+  ): Promise<ZendriverAuthResult> {
+    const fingerprint = useRandomFingerprint
+      ? this.generateRandomFingerprint()
+      : {
+          userAgent:
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.6 Mobile/15E148 Safari/604.1",
+          viewport: { width: 430, height: 932 },
+          deviceType: "iPhone (default)",
+        };
+    const profilePath = path.resolve("./temp-browser-profile");
+    const browserArgs = [
+      "--disable-blink-features=AutomationControlled",
+      "--disable-automation",
+      "--no-first-run",
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-password-manager",
+      "--disable-save-password",
+      "--disable-sync",
+      "--disable-translate",
+      "--disable-background-timer-throttling",
+      "--disable-renderer-backgrounding",
+      "--disable-hang-monitor",
+      "--process-per-tab",
+      "--process-per-site",
+      "--renderer-process-limit=2",
+    ];
+
+    if (process.platform === "win32") {
+      browserArgs.push("--disable-features=msSmartScreenProtection");
+    } else if (process.platform === "linux") {
+      browserArgs.push("--use-gl=swiftshader");
+    }
+
+    const pythonExecutable =
+      process.env.ONSTARJS_PYTHON ??
+      process.env.PYTHON ??
+      (process.platform === "win32" ? "python" : "python3");
+    const payload = {
+      authorizationUrl,
+      username: this.config.username,
+      password: this.config.password,
+      totpKey: this.config.totpKey,
+      fingerprint,
+      profilePath,
+      browserArgs,
+    };
+    const scriptPath = this.getZendriverAuthScriptPath();
+
+    return await new Promise<ZendriverAuthResult>((resolve, reject) => {
+      const child = spawn(pythonExecutable, [scriptPath], {
+        stdio: ["pipe", "pipe", "pipe"],
+        env: { ...process.env },
+      });
+      let stdout = "";
+      let stderr = "";
+
+      child.stdout.setEncoding("utf8");
+      child.stderr.setEncoding("utf8");
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk;
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk;
+        process.stderr.write(chunk);
+      });
+      child.on("error", (error) => {
+        reject(
+          new Error(
+            `Failed to start Python for Zendriver authentication (${pythonExecutable}): ${error.message}`,
+          ),
+        );
+      });
+      child.on("close", (code) => {
+        const resultLines = stdout
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean);
+        const lastLine = resultLines[resultLines.length - 1];
+
+        if (!lastLine) {
+          reject(
+            new Error(
+              `Zendriver authentication produced no result (exit ${code}).${stderr ? ` stderr: ${stderr}` : ""}`,
+            ),
+          );
+          return;
+        }
+
+        try {
+          const parsed = JSON.parse(lastLine);
+          if (!parsed.ok) {
+            reject(
+              new Error(
+                parsed.detail
+                  ? `${parsed.error} (${parsed.detail})`
+                  : parsed.error || "Zendriver authentication failed",
+              ),
+            );
+            return;
+          }
+          resolve(parsed as ZendriverAuthResult);
+        } catch (error) {
+          reject(
+            new Error(
+              `Failed to parse Zendriver authentication result: ${error instanceof Error ? error.message : String(error)}. Output: ${stdout}`,
+            ),
+          );
+        }
+      });
+      child.stdin.end(JSON.stringify(payload));
+    });
+  }
+
   private async submitCredentials(
     authorizationUrl: string,
     useRandomFingerprint: boolean = false,
   ): Promise<void> {
     console.log("🌐 Launching browser automation for Microsoft authentication");
+
+    try {
+      const result = await this.runZendriverAuth(
+        authorizationUrl,
+        useRandomFingerprint,
+      );
+
+      if (result.authCode) {
+        this.capturedAuthCode = result.authCode;
+      }
+
+      if (result.accessDenied) {
+        throw new Error(
+          "🚫 Access Denied: Authentication was blocked. This could be due to rate limiting, IP blocking, or security restrictions. Please wait before retrying or check if your IP is blocked.",
+        );
+      }
+
+      if (!this.capturedAuthCode) {
+        throw new Error(
+          `Zendriver authentication completed without capturing an authorization code. Final page title: ${result.finalTitle ?? "unknown"}. Final URL: ${result.finalUrl ?? "unknown"}`,
+        );
+      }
+
+      console.log(
+        "✅ Credentials submitted successfully via Zendriver. Final URL:",
+        result.finalUrl,
+      );
+      console.log("📄 Final page title:", result.finalTitle);
+      return;
+    } catch (error) {
+      console.error("Error in Zendriver submitCredentials:", error);
+      throw error;
+    }
 
     // Initialize browser if not already done
     await this.initBrowser(useRandomFingerprint);

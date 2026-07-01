@@ -20,7 +20,7 @@
     "test": "test"
   },
   "scripts": {
-    "build": "rimraf dist && rollup -c",
+    "build": "rimraf dist && rollup -c && node scripts/copy-auth-assets.mjs",
     "dev": "rimraf dist && rollup -c -w",
     "lint": "prettier --write .",
     "prepublishOnly": "pnpm run build",
@@ -33,7 +33,7 @@
     "test:auth": "jest test/auth/testAuth",
     "test:reauth": "jest test/auth/testAuth -t 'should successfully reauthenticate'",
     "prepare": "husky install",
-    "postinstall": "patchright install chromium",
+    "setup:zendriver": "python -m pip install zendriver pyotp",
     "setup:env": "node scripts/setup-env.js",
     "setup:env:bash": "chmod +x scripts/setup-env.sh && ./scripts/setup-env.sh",
     "setup:interactive": "node scripts/credential-manager.js",
@@ -79,7 +79,6 @@
     "http-cookie-agent": "^7.0.4",
     "jsonwebtoken": "^9.0.3",
     "openid-client": "^5.7.1",
-    "patchright": "1.60.2",
     "totp-generator": "^2.0.1",
     "tough-cookie": "^6.0.1",
     "xvfb": "^0.4.0"

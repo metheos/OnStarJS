@@ -17,7 +17,13 @@ Published as OnStarJS2 at <https://www.npmjs.com/package/onstarjs2> [![npm](http
 
 ## Prerequisites
 
-This library requires [chromium-bidi](https://www.npmjs.com/package/chromium-bidi) to be installed and available in your environment.
+GM authentication uses [Zendriver](https://github.com/cdpdriver/zendriver), which is a Python CDP browser automation library. Install the Python prerequisites before the first authentication run:
+
+```bash
+pnpm run setup:zendriver
+```
+
+Set `ONSTARJS_PYTHON` if the `python` executable on your path is not the interpreter where Zendriver is installed.
 
 ## Usage
 
