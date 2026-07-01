@@ -694,13 +694,25 @@ async def fill_text_field(
         await sleep_ms(random.uniform(150, 350))
         repaired_value = await get_field_value(element)
         if repaired_value != value:
-            raise RuntimeError(
-                "Input field value still mismatched after native send_keys "
-                "retry: "
-                f"expectedLength={len(value)}, "
-                f"actualLength={len(repaired_value)}, "
-                f"input={await get_input_state(element)}"
+            progress_json(
+                "Native send_keys retry still mismatched; "
+                "using value fallback",
+                {
+                    "expectedLength": len(value),
+                    "actualLength": len(repaired_value),
+                    "input": await get_input_state(element),
+                },
             )
+            await set_field_value(element, value)
+            await sleep_ms(random.uniform(150, 350))
+            fallback_value = await get_field_value(element)
+            if fallback_value != value:
+                raise RuntimeError(
+                    "Input field value still mismatched after value fallback: "
+                    f"expectedLength={len(value)}, "
+                    f"actualLength={len(fallback_value)}, "
+                    f"input={await get_input_state(element)}"
+                )
 
 
 async def save_error_screenshot(tab, phase):
@@ -724,8 +736,7 @@ async def save_error_screenshot(tab, phase):
         return screenshot_path
     except Exception as screenshot_error:
         progress(
-            "Error screenshot capture failed: "
-            f"{repr(screenshot_error)}"
+            "Error screenshot capture failed: " f"{repr(screenshot_error)}"
         )
         return None
 

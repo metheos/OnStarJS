@@ -26,7 +26,7 @@ testCredentials.json
 new_api_reference/
 
 # Browser profiles and temp data
-temp-browser-profile/
+temp-browser-profile*/
 
 # System files
 .DS_Store

@@ -189,7 +189,12 @@ async function runDiagnostic() {
   const pythonExecutable = getPythonExecutable();
   const authScriptPath = getAuthScriptPath();
   const browserExecutablePath = getBrowserExecutablePath();
-  const profilePath = path.resolve(projectRoot, "temp-browser-profile");
+  const profilePath = path.resolve(
+    projectRoot,
+    process.env.ONSTARJS_BROWSER_DIAGNOSTIC_PROFILE ??
+      "temp-browser-profile-diagnostic",
+  );
+  fs.rmSync(profilePath, { force: true, recursive: true });
   const browserArgs = ["--lang=en-US"];
   const expectedEmail = "diagnostic@example.com";
   const expectedPassword = "DiagnosticPassword123!";
