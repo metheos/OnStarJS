@@ -5,7 +5,6 @@ import OnStar from "../dist/index.mjs";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { execSync } from "node:child_process";
 
 function requireEnv(name) {
   const v = process.env[name];
@@ -334,7 +333,7 @@ async function main() {
     },
     {
       key: "simulateReauth",
-      label: "simulateReauth() — delete tokens, auth twice, print Xvfb info",
+      label: "simulateReauth() — delete tokens, auth twice",
       run: async () => {
         const tokenDir = process.env.TOKEN_LOCATION || "./";
 
@@ -355,77 +354,6 @@ async function main() {
           }
         };
 
-        // Small diagnostic helper mirroring GMAuth's Xvfb checks
-        const printXvfbDiagnostics = () => {
-          try {
-            console.log("\n=== Xvfb Diagnostics ===");
-            console.log("ENV DISPLAY:", process.env.DISPLAY || "<unset>");
-            console.log("ENV PATH:", process.env.PATH || "<unset>");
-            try {
-              console.log(
-                "which Xvfb:",
-                execSync("which Xvfb").toString().trim(),
-              );
-            } catch {
-              console.log("which Xvfb: not found");
-            }
-            try {
-              console.log(
-                "Xvfb -help (first lines):\n" +
-                  execSync("Xvfb -help 2>&1 | head -n 5").toString(),
-              );
-            } catch {}
-            try {
-              console.log(
-                "which xauth:",
-                execSync("which xauth").toString().trim(),
-              );
-            } catch {}
-            try {
-              console.log(
-                "which xhost:",
-                execSync("which xhost").toString().trim(),
-              );
-            } catch {}
-            try {
-              console.log(
-                "ps Xvfb (top 20):\n" +
-                  execSync(
-                    "ps aux | grep Xvfb | grep -v grep | head -n 20",
-                  ).toString(),
-              );
-            } catch {}
-            try {
-              console.log(
-                "ps Xorg (top 20):\n" +
-                  execSync(
-                    "ps aux | grep Xorg | grep -v grep | head -n 20",
-                  ).toString(),
-              );
-            } catch {}
-            try {
-              console.log(
-                "/tmp/.X*-lock:\n" +
-                  execSync("ls -la /tmp/.X*-lock 2>&1 | head -n 50").toString(),
-              );
-            } catch {}
-            try {
-              console.log(
-                "/tmp/.X11-unix:\n" +
-                  execSync(
-                    "ls -la /tmp/.X11-unix 2>&1 | head -n 50",
-                  ).toString(),
-              );
-            } catch {}
-            console.log("=== End Xvfb Diagnostics ===\n");
-          } catch (e) {
-            console.log(
-              "(diag) Failed to collect diagnostics:",
-              e?.message || e,
-            );
-          }
-        };
-
         // Delete existing tokens to force reauth (before first attempt)
         deleteTokens();
 
@@ -433,7 +361,6 @@ async function main() {
         console.log("\n▶️ First getAccountVehicles (should reauth)...");
         const first = await client.getAccountVehicles();
         console.log("✅ First call succeeded");
-        printXvfbDiagnostics();
 
         // Delete tokens again to force a fresh browser init and reauth
         deleteTokens();
@@ -441,7 +368,6 @@ async function main() {
         console.log("\n▶️ Second getAccountVehicles (post-auth)...");
         const second = await client.getAccountVehicles();
         console.log("✅ Second call succeeded");
-        printXvfbDiagnostics();
 
         return { status: "success", response: { data: { first, second } } };
       },

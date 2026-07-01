@@ -30,7 +30,7 @@ Notes
 - Shows full result payloads to help with debugging.
 - Includes a toggle to flip `checkRequestStatus` at runtime.
 - Includes `getWarrantyInfo` and `getSxmSubscriptionInfo` commands for warranty and SiriusXM data.
-- Includes `simulateReauth` command that deletes tokens, authenticates twice, and prints Xvfb diagnostics.
+- Includes `simulateReauth` command that deletes tokens and authenticates twice.
 
 ### `setup-env.js`
 

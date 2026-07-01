@@ -7,12 +7,6 @@ sudo apt-get update
 echo -e '\n=== Upgrading packages ==='
 sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 
-# xvfb is pre-installed in the universal (Codespaces) image but not in base images
-if ! command -v Xvfb &>/dev/null; then
-  echo -e '\n=== Installing xvfb ==='
-  sudo apt-get install xvfb -y
-fi
-
 # nvm may need to be sourced depending on the image
 if [ -s "/usr/local/share/nvm/nvm.sh" ]; then
   . /usr/local/share/nvm/nvm.sh

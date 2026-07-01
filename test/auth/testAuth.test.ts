@@ -112,19 +112,17 @@ describe("GM Authentication", () => {
       console.log(`Original token: ${token1.access_token.substring(0, 20)}...`);
       console.log(`New token: ${token2.access_token.substring(0, 20)}...`);
 
-      // Step 4: Test browser reinitialization by simulating a long-running process
-      console.log("🖥️  Step 4: Testing browser reinitialization...");
+      // Step 4: Test auth runner reinitialization with a fresh GMAuth instance
+      console.log("🖥️  Step 4: Testing auth runner reinitialization...");
 
       // Create a new GMAuth instance to simulate a fresh start
       const auth3 = new GMAuth(config);
 
-      // Simulate browser state from a previous session (this tests the browser validation logic)
-      // The initBrowser method should detect that browser references are stale and reinitialize
       const token3 = await auth3.authenticate();
 
       expect(token3).toBeDefined();
       expect(token3.access_token).toBeDefined();
-      console.log("✅ Browser reinitialization test successful");
+      console.log("✅ Auth runner reinitialization test successful");
     } finally {
       // Restore backed up tokens if they existed
       if (msTokenBackup) {

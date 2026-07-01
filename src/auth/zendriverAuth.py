@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import random
 import re
@@ -81,6 +82,15 @@ def extract_auth_code(url):
     return match.group(1) if match else None
 
 
+def is_access_denied_html(body):
+    body_text = body or ""
+    return (
+        "<TITLE>Access Denied</TITLE>" in body_text
+        or "<H1>Access Denied</H1>" in body_text
+        or "errors.edgesuite.net" in body_text
+    )
+
+
 async def sleep_ms(ms):
     await asyncio.sleep(ms / 1000)
 
@@ -92,6 +102,32 @@ async def wait_for_auth_code(state, timeout_ms=10000, interval_ms=500):
             return True
         await sleep_ms(interval_ms)
     return False
+
+
+async def wait_for_auth_code_or_mfa(
+    tab,
+    state,
+    timeout_ms=15000,
+    interval_ms=250,
+):
+    start = time.monotonic()
+    while (time.monotonic() - start) * 1000 < timeout_ms:
+        if state.get("auth_code"):
+            return "auth_code"
+        if state.get("access_denied"):
+            return "access_denied"
+        has_mfa_field = await element_count(tab, MFA_SELECTOR) > 0
+        has_otp_field = await element_count(tab, OTP_SELECTOR) > 0
+        if has_mfa_field or has_otp_field:
+            return "mfa"
+        try:
+            title = await maybe_value(await tab.evaluate("document.title"))
+            if "verify" in str(title).lower():
+                return "mfa"
+        except Exception:
+            pass
+        await sleep_ms(interval_ms)
+    return "timeout"
 
 
 async def select_first(tab, selector, timeout=60):
@@ -235,6 +271,18 @@ async def click_human(element):
         )
 
 
+async def click_direct(element):
+    await element.apply(
+        """
+        (element) => {
+            element.scrollIntoView({block: 'center', inline: 'center'});
+            element.click();
+        }
+        """,
+        await_promise=True,
+    )
+
+
 async def find_login_button(tab):
     for label in ("Log In", "Sign in", "Sign In"):
         try:
@@ -298,6 +346,27 @@ async def main():
             if code:
                 log("[zendriver] captured auth code from response redirect")
                 state["auth_code"] = code
+        response_url = str(getattr(response, "url", ""))
+        response_status = int(getattr(response, "status", 0) or 0)
+        should_check_body = (
+            response_status in (401, 403)
+            or "selfasserted" in response_url.lower()
+        )
+        if not should_check_body:
+            return
+        try:
+            body, encoded = await tab.send(
+                cdp.network.get_response_body(event.request_id)
+            )
+            if encoded:
+                body = base64.b64decode(body).decode("utf-8", "replace")
+            if is_access_denied_html(body):
+                progress(
+                    "Access Denied response detected after auth request"
+                )
+                state["access_denied"] = True
+        except Exception:
+            pass
 
     try:
         progress("Configuring browser session")
@@ -368,20 +437,50 @@ async def main():
         submit_button = await find_login_button(tab)
         progress("Submitting credentials")
         await click_human(submit_button)
-        await sleep_ms(3000)
-        progress("Waiting for post-login page readiness")
-        await wait_ready(tab)
-        progress("Monitoring for authorization redirect after credentials")
-        await wait_for_auth_code(state, 15000)
+        await sleep_ms(500)
+        progress("Monitoring for authorization redirect or MFA challenge")
+        post_login_state = await wait_for_auth_code_or_mfa(tab, state, 5000)
+        if post_login_state == "timeout":
+            title_after_submit = await maybe_value(
+                await tab.evaluate("document.title")
+            )
+            if (
+                not state.get("access_denied")
+                and "sign in" in str(title_after_submit).lower()
+            ):
+                progress(
+                    "Still on sign-in page after submit; retrying login click"
+                )
+                await click_direct(submit_button)
+                post_login_state = await wait_for_auth_code_or_mfa(
+                    tab,
+                    state,
+                    15000,
+                )
+        if post_login_state == "mfa":
+            progress("MFA challenge became ready before auth redirect")
+        elif post_login_state == "auth_code":
+            progress("Authorization redirect captured after credentials")
+        elif post_login_state == "access_denied":
+            progress("Access Denied detected after credentials")
+        else:
+            progress(
+                "No auth redirect or MFA challenge detected before timeout"
+            )
 
         title = await maybe_value(await tab.evaluate("document.title"))
-        page_html_result = await tab.evaluate("document.documentElement.outerHTML")
+        page_html_result = await tab.evaluate(
+            "document.documentElement.outerHTML"
+        )
         page_html = (await maybe_value(page_html_result)) or ""
-        if "<TITLE>Access Denied</TITLE>" in page_html or "Access Denied" in str(title):
+        if (
+            is_access_denied_html(page_html)
+            or "Access Denied" in str(title)
+        ):
             progress("Access Denied page detected")
             state["access_denied"] = True
 
-        if not state["auth_code"]:
+        if not state["auth_code"] and not state["access_denied"]:
             try:
                 progress("Checking for MFA challenge")
                 await select_first(tab, MFA_SELECTOR, timeout=10)
