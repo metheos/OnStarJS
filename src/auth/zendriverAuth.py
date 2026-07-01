@@ -474,6 +474,37 @@ async def get_field_value(element):
     return "" if value is None else str(value)
 
 
+async def wait_for_network_quiet(
+    network_state,
+    quiet_ms=2000,
+    timeout_ms=10000,
+    interval_ms=100,
+):
+    start = time.monotonic()
+    while (time.monotonic() - start) * 1000 < timeout_ms:
+        quiet_for_ms = (
+            time.monotonic() - network_state.get("last_activity", start)
+        ) * 1000
+        if not network_state.get("pending") and quiet_for_ms >= quiet_ms:
+            return True
+        await sleep_ms(interval_ms)
+
+    progress_json(
+        "Network did not quiesce before input readiness check",
+        {
+            "pendingCount": len(network_state.get("pending", set())),
+            "quietForMs": int(
+                (
+                    time.monotonic()
+                    - network_state.get("last_activity", start)
+                )
+                * 1000
+            ),
+        },
+    )
+    return False
+
+
 async def wait_for_input_ready(element, timeout_ms=5000, interval_ms=150):
     start = time.monotonic()
     last_state = None
@@ -563,11 +594,14 @@ async def clear_field_with_keyboard(element):
 async def fill_text_field(
     element,
     value,
+    network_state=None,
     min_delay=40,
     max_delay=150,
     pause_chance=0.08,
 ):
     await focus_human(element)
+    if network_state is not None:
+        await wait_for_network_quiet(network_state)
     await wait_for_input_ready(element)
     await clear_field(element)
     await sleep_ms(random.uniform(200, 500))
@@ -597,8 +631,7 @@ async def fill_text_field(
 
 async def collect_page_summary(tab):
     try:
-        return await tab.evaluate(
-            """
+        return await tab.evaluate("""
             (() => {
                 const visibleText = document.body
                     ? document.body.innerText.replace(/\\s+/g, ' ').trim()
@@ -642,8 +675,7 @@ async def collect_page_summary(tab):
                     buttons,
                 };
             })()
-            """
-        )
+            """)
     except Exception as exc:
         return {"error": repr(exc), "url": getattr(tab, "url", "")}
 
@@ -973,6 +1005,7 @@ async def main():
         "record_login_responses": False,
         "recent_responses": [],
     }
+    network_state = {"pending": set(), "last_activity": time.monotonic()}
     if payload.get("simulateNavigationAuthCode"):
         state["auth_code"] = payload["simulateNavigationAuthCode"]
     browser = None
@@ -980,7 +1013,12 @@ async def main():
     virtual_display = None
     phase = "initializing"
 
+    def mark_network_activity():
+        network_state["last_activity"] = time.monotonic()
+
     async def send_handler(event):
+        mark_network_activity()
+        network_state["pending"].add(event.request_id)
         request_url = getattr(getattr(event, "request", None), "url", "")
         capture_auth_redirect(state, request_url, "network request")
         document_url = getattr(event, "document_url", "")
@@ -990,6 +1028,7 @@ async def main():
         capture_auth_redirect(state, redirect_url, "network redirect response")
 
     async def response_handler(event):
+        mark_network_activity()
         response = getattr(event, "response", None)
         if not response:
             return
@@ -1032,6 +1071,14 @@ async def main():
                 state["access_denied"] = True
         except Exception:
             pass
+
+    async def loading_finished_handler(event):
+        mark_network_activity()
+        network_state["pending"].discard(event.request_id)
+
+    async def loading_failed_handler(event):
+        mark_network_activity()
+        network_state["pending"].discard(event.request_id)
 
     async def frame_started_navigating_handler(event):
         capture_auth_redirect(
@@ -1101,6 +1148,8 @@ async def main():
         progress("Registering redirect capture handlers")
         tab.add_handler(cdp.network.RequestWillBeSent, send_handler)
         tab.add_handler(cdp.network.ResponseReceived, response_handler)
+        tab.add_handler(cdp.network.LoadingFinished, loading_finished_handler)
+        tab.add_handler(cdp.network.LoadingFailed, loading_failed_handler)
         tab.add_handler(
             cdp.page.FrameStartedNavigating,
             frame_started_navigating_handler,
@@ -1163,7 +1212,14 @@ async def main():
         progress("Locating email input field")
         email_field = await select_first(tab, EMAIL_SELECTOR)
         progress("Entering email address")
-        await fill_text_field(email_field, payload["username"], 50, 150, 0.1)
+        await fill_text_field(
+            email_field,
+            payload["username"],
+            network_state,
+            50,
+            150,
+            0.1,
+        )
 
         progress("Locating continue button")
         continue_button = await select_first(tab, CONTINUE_SELECTOR)
@@ -1179,6 +1235,7 @@ async def main():
         await fill_text_field(
             password_field,
             payload["password"],
+            network_state,
             40,
             120,
             0.08,
@@ -1276,6 +1333,7 @@ async def main():
                     await fill_text_field(
                         otp_field,
                         pyotp.TOTP(totp_secret).now(),
+                        network_state,
                         50,
                         150,
                         0.0,
