@@ -72,7 +72,8 @@ pnpm run setup:env:bash
 - Creates a local `.venv` virtual environment for Zendriver authentication
 - Tries `python3` before `python` on Linux/macOS to avoid systems without a `python` alias
 - Installs `zendriver` and `pyotp` inside the virtual environment instead of the system Python environment
-- Supports `ONSTARJS_ZENDRIVER_VENV`, `ONSTARJS_PYTHON`, or `PYTHON` overrides
+- Downloads a portable Chromium-compatible browser into `.cache/onstarjs-browsers`
+- Supports `ONSTARJS_ZENDRIVER_VENV`, `ONSTARJS_PYTHON`, `PYTHON`, `ONSTARJS_BROWSER_CACHE`, or `ONSTARJS_BROWSER_EXECUTABLE` overrides
 
 #### Zendriver Setup Usage
 

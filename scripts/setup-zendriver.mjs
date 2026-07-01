@@ -3,6 +3,14 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  Browser,
+  BrowserTag,
+  canDownload,
+  detectBrowserPlatform,
+  install,
+  resolveBuildId,
+} from "@puppeteer/browsers";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDir, "..");
@@ -13,6 +21,11 @@ const isWindows = process.platform === "win32";
 const venvPython = isWindows
   ? path.join(venvDir, "Scripts", "python.exe")
   : path.join(venvDir, "bin", "python");
+const browserCacheDir = path.resolve(
+  process.env.ONSTARJS_BROWSER_CACHE ??
+    path.join(projectRoot, ".cache", "onstarjs-browsers"),
+);
+const browserManifestPath = path.join(browserCacheDir, "zendriver-browser.json");
 
 const pythonCandidates = [
   process.env.ONSTARJS_PYTHON
@@ -84,6 +97,82 @@ function findPython() {
   return candidate;
 }
 
+async function installPortableBrowser() {
+  if (process.env.ONSTARJS_BROWSER_EXECUTABLE) {
+    const configuredBrowser = path.resolve(process.env.ONSTARJS_BROWSER_EXECUTABLE);
+    if (!fs.existsSync(configuredBrowser)) {
+      throw new Error(
+        `ONSTARJS_BROWSER_EXECUTABLE does not exist: ${configuredBrowser}`,
+      );
+    }
+    console.log(`Using configured browser executable at ${configuredBrowser}`);
+    return configuredBrowser;
+  }
+
+  const platform = detectBrowserPlatform();
+  if (!platform) {
+    throw new Error(
+      `Unsupported browser platform: ${process.platform}/${process.arch}`,
+    );
+  }
+
+  fs.mkdirSync(browserCacheDir, { recursive: true });
+
+  const installTargets = [
+    { browser: Browser.CHROMIUM, tag: BrowserTag.LATEST },
+    { browser: Browser.CHROME, tag: BrowserTag.STABLE },
+  ];
+
+  for (const target of installTargets) {
+    const buildId = await resolveBuildId(target.browser, platform, target.tag);
+    const downloadable = await canDownload({
+      browser: target.browser,
+      buildId,
+      cacheDir: browserCacheDir,
+      platform,
+    });
+
+    if (!downloadable) {
+      console.log(
+        `Skipping ${target.browser} ${buildId}; no download is available for ${platform}`,
+      );
+      continue;
+    }
+
+    console.log(`Installing ${target.browser} ${buildId} for ${platform}`);
+    const installedBrowser = await install({
+      browser: target.browser,
+      buildId,
+      buildIdAlias: "zendriver",
+      cacheDir: browserCacheDir,
+      platform,
+      downloadProgressCallback: "default",
+    });
+    const executablePath = installedBrowser.executablePath;
+
+    fs.writeFileSync(
+      browserManifestPath,
+      `${JSON.stringify(
+        {
+          browser: target.browser,
+          buildId,
+          platform,
+          executablePath,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    console.log(`Browser setup complete. Executable: ${executablePath}`);
+    return executablePath;
+  }
+
+  throw new Error(
+    `Unable to find a portable Chromium download for ${process.platform}/${process.arch}. Set ONSTARJS_BROWSER_EXECUTABLE to a local Chrome or Chromium binary and rerun setup.`,
+  );
+}
+
 try {
   const python = findPython();
 
@@ -96,6 +185,7 @@ try {
 
   run(venvPython, ["-m", "pip", "install", "--upgrade", "pip"]);
   run(venvPython, ["-m", "pip", "install", "zendriver", "pyotp"]);
+  await installPortableBrowser();
 
   console.log(`Zendriver setup complete. Python: ${venvPython}`);
 } catch (error) {

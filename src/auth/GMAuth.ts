@@ -19,6 +19,10 @@ interface ZendriverAuthResult {
   accessDenied?: boolean;
 }
 
+interface ZendriverBrowserManifest {
+  executablePath?: string;
+}
+
 // Define an interface for the vehicle structure and the payload containing them
 interface Vehicle {
   vin: string;
@@ -538,6 +542,52 @@ export class GMAuth {
     );
   }
 
+  private getZendriverBrowserExecutable(
+    scriptPath: string,
+  ): string | undefined {
+    const configuredBrowser = process.env.ONSTARJS_BROWSER_EXECUTABLE;
+    if (configuredBrowser) {
+      return configuredBrowser;
+    }
+
+    const scriptDir = path.dirname(scriptPath);
+    const manifestCandidates = [
+      process.env.ONSTARJS_BROWSER_MANIFEST,
+      path.resolve(".cache", "onstarjs-browsers", "zendriver-browser.json"),
+      path.resolve(
+        scriptDir,
+        "..",
+        "..",
+        ".cache",
+        "onstarjs-browsers",
+        "zendriver-browser.json",
+      ),
+    ].filter((candidate): candidate is string => Boolean(candidate));
+
+    for (const manifestPath of manifestCandidates) {
+      if (!fs.existsSync(manifestPath)) {
+        continue;
+      }
+
+      try {
+        const manifest = JSON.parse(
+          fs.readFileSync(manifestPath, "utf-8"),
+        ) as ZendriverBrowserManifest;
+        if (manifest.executablePath && fs.existsSync(manifest.executablePath)) {
+          return manifest.executablePath;
+        }
+      } catch (error) {
+        if (this.debugMode) {
+          console.warn(
+            `Ignoring invalid Zendriver browser manifest: ${manifestPath}`,
+          );
+        }
+      }
+    }
+
+    return undefined;
+  }
+
   private async runZendriverAuth(
     authorizationUrl: string,
     useRandomFingerprint: boolean = false,
@@ -578,6 +628,8 @@ export class GMAuth {
 
     const scriptPath = this.getZendriverAuthScriptPath();
     const pythonExecutable = this.getZendriverPythonExecutable(scriptPath);
+    const browserExecutablePath =
+      this.getZendriverBrowserExecutable(scriptPath);
     const payload = {
       authorizationUrl,
       username: this.config.username,
@@ -586,6 +638,7 @@ export class GMAuth {
       fingerprint,
       profilePath,
       browserArgs,
+      browserExecutablePath,
     };
 
     return await new Promise<ZendriverAuthResult>((resolve, reject) => {
