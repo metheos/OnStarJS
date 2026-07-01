@@ -18,6 +18,7 @@ if sys.platform == "win32":
 try:
     import zendriver as zd
     from zendriver import cdp
+    from zendriver.core.element import SpecialKeys
 except Exception as exc:
     error_message = (
         "Zendriver is not installed for this Python interpreter. Run "
@@ -1016,6 +1017,25 @@ async def click_human(element):
         )
 
 
+async def focus_button(element):
+    try:
+        await element.apply(
+            """
+            (element) => {
+                element.scrollIntoView({block: 'center', inline: 'center'});
+                element.focus({preventScroll: true});
+            }
+            """,
+            await_promise=True,
+        )
+        await sleep_ms(random.uniform(100, 250))
+    except Exception:
+        try:
+            await element.focus()
+        except Exception:
+            pass
+
+
 async def click_direct(element):
     await element.apply(
         """
@@ -1026,6 +1046,65 @@ async def click_direct(element):
         """,
         await_promise=True,
     )
+
+
+async def activate_button(element, method):
+    await focus_button(element)
+    if method == "mouse":
+        await click_human(element)
+    elif method == "enter":
+        await element.send_keys(SpecialKeys.ENTER)
+    elif method == "space":
+        await element.send_keys(SpecialKeys.SPACE)
+    elif method == "direct":
+        await click_direct(element)
+    else:
+        raise ValueError(f"Unknown button activation method: {method}")
+
+
+async def click_until(
+    element,
+    is_complete,
+    label,
+    methods=("mouse", "enter", "space", "direct"),
+    settle_ms=500,
+):
+    last_state = None
+    for method in methods:
+        progress_json(
+            "Activating button",
+            {
+                "label": label,
+                "method": method,
+                "button": await get_element_state(element),
+            },
+        )
+        try:
+            await activate_button(element, method)
+        except Exception as exc:
+            progress_json(
+                "Button activation method failed",
+                {
+                    "label": label,
+                    "method": method,
+                    "error": repr(exc),
+                },
+            )
+            continue
+        await sleep_ms(settle_ms)
+        last_state = await is_complete()
+        if last_state:
+            progress_json(
+                "Button activation changed page state",
+                {"label": label, "method": method, "state": last_state},
+            )
+            return last_state
+
+    progress_json(
+        "Button activation did not change page state",
+        {"label": label, "lastState": last_state},
+    )
+    return last_state
 
 
 async def find_login_button(tab):
@@ -1688,12 +1767,23 @@ async def main():
                 "Submitting email step",
                 {"attempt": continue_attempt},
             )
-            await click_human(continue_button)
-            progress("Waiting for password page readiness")
-            await wait_ready(tab)
-            transition_state = await wait_for_password_page_after_continue(
-                tab,
-                state,
+
+            async def is_email_step_complete():
+                progress("Waiting for password page readiness")
+                await wait_ready(tab)
+                next_state = await wait_for_password_page_after_continue(
+                    tab,
+                    state,
+                    timeout_ms=5000,
+                )
+                if next_state in ("password", "auth_code", "access_denied"):
+                    return next_state
+                return None
+
+            transition_state = await click_until(
+                continue_button,
+                is_email_step_complete,
+                "email continue",
             )
             if transition_state == "password":
                 password_page_ready = True
@@ -1704,7 +1794,7 @@ async def main():
             if transition_state == "access_denied":
                 post_login_state = "access_denied"
                 break
-            if transition_state == "email" and continue_attempt < 3:
+            if transition_state in (None, "email") and continue_attempt < 3:
                 progress("Email page is still active after Continue; retrying")
                 continue
             raise TimeoutError(
@@ -1732,32 +1822,25 @@ async def main():
             progress("Submitting credentials")
             state["record_login_responses"] = True
             state["recent_responses"] = []
-            await click_human(submit_button)
-            await sleep_ms(500)
-            progress("Monitoring for authorization redirect or MFA challenge")
-            post_login_state = await wait_for_auth_code_or_mfa(
-                tab,
-                state,
-                5000,
-            )
-            if post_login_state == "timeout":
-                title_after_submit = await maybe_value(
-                    await tab.evaluate("document.title")
+
+            async def is_login_submit_complete():
+                progress(
+                    "Monitoring for authorization redirect or MFA challenge"
                 )
-                if (
-                    not state.get("access_denied")
-                    and "sign in" in str(title_after_submit).lower()
-                ):
-                    progress(
-                        "Still on sign-in page after submit; retrying "
-                        "login click"
-                    )
-                    await click_direct(submit_button)
-                    post_login_state = await wait_for_auth_code_or_mfa(
-                        tab,
-                        state,
-                        15000,
-                    )
+                next_state = await wait_for_auth_code_or_mfa(
+                    tab,
+                    state,
+                    5000,
+                )
+                if next_state != "timeout":
+                    return next_state
+                return None
+
+            post_login_state = await click_until(
+                submit_button,
+                is_login_submit_complete,
+                "login submit",
+            ) or "timeout"
             state["record_login_responses"] = False
 
             if post_login_state == "mfa":
@@ -1841,18 +1924,30 @@ async def main():
                     progress("Locating MFA submit button")
                     submit_mfa = await find_mfa_submit_button(tab)
                     progress("Submitting TOTP verification code")
-                    await click_human(submit_mfa)
-                    progress("Waiting for post-MFA page readiness")
-                    await wait_ready(tab)
-                    progress(
-                        "Monitoring for authorization redirect or Access "
-                        "Denied after MFA"
-                    )
-                    post_mfa_state = await wait_for_auth_code_or_access_denied(
-                        tab,
-                        state,
-                        60000,
-                    )
+
+                    async def is_mfa_submit_complete():
+                        progress("Waiting for post-MFA page readiness")
+                        await wait_ready(tab)
+                        progress(
+                            "Monitoring for authorization redirect or Access "
+                            "Denied after MFA"
+                        )
+                        next_state = (
+                            await wait_for_auth_code_or_access_denied(
+                                tab,
+                                state,
+                                15000,
+                            )
+                        )
+                        if next_state != "timeout":
+                            return next_state
+                        return None
+
+                    post_mfa_state = await click_until(
+                        submit_mfa,
+                        is_mfa_submit_complete,
+                        "mfa submit",
+                    ) or "timeout"
                     if post_mfa_state == "auth_code":
                         progress("Authorization redirect captured after MFA")
                     elif post_mfa_state == "access_denied":
