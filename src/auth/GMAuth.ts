@@ -1,5 +1,5 @@
 // auth/GMAuth.ts
-import axios, { AxiosInstance, AxiosResponse } from "axios";
+import axios, { AxiosInstance } from "axios";
 import { CookieJar } from "tough-cookie";
 import { HttpCookieAgent, HttpsCookieAgent } from "http-cookie-agent/http";
 import * as openidClient from "openid-client";
@@ -80,8 +80,6 @@ export class GMAuth {
   };
   private jar: CookieJar;
   private axiosClient: AxiosInstance;
-  private csrfToken: string | null;
-  private transId: string | null;
 
   private currentGMAPIToken: GMAPITokenResponse | null = null;
   private debugMode: boolean = true; // Default to visible mode for reliability
@@ -139,8 +137,6 @@ export class GMAuth {
       maxRedirects: 0,
       validateStatus: (status) => status >= 200 && status < 400,
     });
-    this.csrfToken = null;
-    this.transId = null;
     // Load the current GM API token
     this.loadCurrentGMAPIToken();
   }
@@ -171,7 +167,17 @@ export class GMAuth {
       return await this.getGMAPIToken(loadedTokenSet);
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        this.handleRequestError(error);
+        if (error.response) {
+          console.error(
+            `HTTP Error ${error.response.status}: ${error.response.statusText}`,
+          );
+          console.debug("Response data:", error.response.data);
+        } else if (error.request) {
+          console.error("No response received from server");
+          console.debug(error.request);
+        } else {
+          console.error("Request Error:", error.message);
+        }
       } else {
         console.error("Authentication failed:", error);
       }
@@ -792,246 +798,6 @@ export class GMAuth {
       } else {
         console.error("Request Error:", error.message);
       }
-      throw error;
-    }
-  }
-
-  // Add this method to manually extract and add cookies from response headers
-  private processCookieHeaders(response: AxiosResponse, url: string): void {
-    const setCookieHeaders = response.headers["set-cookie"];
-    if (setCookieHeaders && Array.isArray(setCookieHeaders)) {
-      setCookieHeaders.forEach((cookieString) => {
-        const parsedUrl = new URL(url);
-        try {
-          // Use setCookieSync to handle each Set-Cookie header
-          this.jar.setCookieSync(cookieString, parsedUrl.origin);
-          if (this.debugMode) {
-            console.log(`Added cookie: ${cookieString.split(";")[0]}`);
-          }
-        } catch (error) {
-          console.error(`Failed to add cookie: ${error}`);
-        }
-      });
-    }
-  }
-
-  private async getRequest(url: string): Promise<AxiosResponse> {
-    try {
-      // Get cookies for this URL before the request
-      const cookieStringBefore = await this.jar.getCookieString(url);
-
-      if (this.debugMode) {
-        console.log("Cookies before GET:", cookieStringBefore);
-        console.log("GET URL:", url);
-      }
-
-      const response = await this.axiosClient.get(url, {
-        withCredentials: true,
-        maxRedirects: 0,
-        headers: {
-          Accept:
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Encoding": "gzip, deflate, br",
-          "Accept-Language": "en-US,en;q=0.9",
-          Connection: "keep-alive",
-          "User-Agent":
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.6 Mobile/15E148 Safari/604.1",
-          ...(cookieStringBefore && { Cookie: cookieStringBefore }),
-        },
-      });
-
-      // Process and store cookies from the response
-      this.processCookieHeaders(response, url);
-
-      if (this.debugMode) {
-        console.log(
-          "Set-Cookie headers after GET:",
-          response.headers["set-cookie"],
-        );
-        console.log(
-          "Current cookies after GET:",
-          await this.jar.getCookieString(url),
-        );
-
-        // Also check for cookies for the domain
-        const domain = new URL(url).hostname;
-        console.log(
-          `Cookies for domain ${domain}:`,
-          await this.jar.getCookieString(`https://${domain}/`),
-        );
-      }
-
-      return response;
-    } catch (error: any) {
-      if (axios.isAxiosError(error)) {
-        this.handleRequestError(error);
-      } else {
-        console.error("GET Request failed:", error);
-      }
-      return error.response;
-    }
-  }
-
-  private async postRequest(
-    url: string,
-    postData: any,
-    csrfToken: string | null,
-  ): Promise<AxiosResponse> {
-    try {
-      // Properly serialize form data
-      const formData = new URLSearchParams();
-      for (const [key, value] of Object.entries(postData)) {
-        formData.append(key, value as string);
-      }
-
-      // Get cookies for the specific URL and also for the base domain
-      const urlObj = new URL(url);
-      const domain = urlObj.hostname;
-
-      // Try to get cookies from both URL path and root path
-      const cookieString = await this.jar.getCookieString(url);
-      const domainCookieString = await this.jar.getCookieString(
-        `https://${domain}/`,
-      );
-
-      // Combine cookie strings if they're different
-      const combinedCookies =
-        cookieString !== domainCookieString
-          ? `${cookieString}; ${domainCookieString}`.replace(/;\s+;/g, "; ")
-          : cookieString;
-
-      if (this.debugMode) {
-        console.log("POST URL:", url);
-        console.log("Cookies before POST (URL):", cookieString);
-        console.log("Cookies before POST (domain):", domainCookieString);
-        console.log("Combined cookies:", combinedCookies);
-        console.log("POST data:", postData);
-      }
-
-      const response = await this.axiosClient.post(url, formData.toString(), {
-        withCredentials: true,
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-          Accept: "application/json, text/javascript, */*; q=0.01",
-          "Accept-Language": "en-US,en;q=0.9",
-          Origin: "https://custlogin.gm.com",
-          "x-csrf-token": csrfToken,
-          "User-Agent":
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.6 Mobile/15E148 Safari/604.1",
-          "X-Requested-With": "XMLHttpRequest",
-          "Accept-Encoding": "gzip, deflate, br",
-          Connection: "keep-alive",
-          // Using the combined cookies
-          ...(combinedCookies && { Cookie: combinedCookies }),
-        },
-      });
-
-      // Process and store cookies from the response
-      this.processCookieHeaders(response, url);
-
-      if (this.debugMode) {
-        console.log(
-          "Set-Cookie headers after POST:",
-          response.headers["set-cookie"],
-        );
-        console.log(
-          "Current cookies after POST:",
-          await this.jar.getCookieString(url),
-        );
-      }
-
-      return response;
-    } catch (error: any) {
-      if (axios.isAxiosError(error)) {
-        this.handleRequestError(error);
-      } else {
-        console.error("POST Request failed:", error);
-      }
-      return error.response;
-    }
-  }
-
-  private handleRequestError(error: any): void {
-    console.log("reqer");
-    if (error.response) {
-      console.error(
-        `HTTP Error ${error.response.status}: ${error.response.statusText}`,
-      );
-      console.debug("Response data:", error.response.data);
-      if (error.response.status === 401) {
-        console.error("Authentication failed. Please check your credentials.");
-      }
-    } else if (error.request) {
-      console.error("No response received from server");
-      console.debug(error.request);
-    } else {
-      console.error("Request Error:", error.message);
-    }
-  }
-
-  private getRegexMatch(haystack: string, regexString: string): string | null {
-    const re = new RegExp(regexString);
-    const r = haystack.match(re);
-    return r ? r[1] : null;
-  }
-
-  private async captureRedirectLocation(url: string): Promise<string> {
-    try {
-      // Get cookies for this URL before the request
-      const cookieStringBefore = await this.jar.getCookieString(url);
-
-      if (this.debugMode) {
-        console.log("Cookies before redirect capture:", cookieStringBefore);
-        console.log("Redirect capture URL:", url);
-      }
-
-      const response = await this.axiosClient.get(url, {
-        maxRedirects: 0,
-        validateStatus: (status) => status >= 200 && status < 400,
-        headers: {
-          Accept:
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Encoding": "gzip, deflate, br",
-          "Accept-Language": "en-US,en;q=0.9",
-          Connection: "keep-alive",
-          "User-Agent":
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.6 Mobile/15E148 Safari/604.1",
-          ...(cookieStringBefore && { Cookie: cookieStringBefore }),
-        },
-      });
-
-      // Process and store cookies from the response
-      this.processCookieHeaders(response, url);
-
-      if (this.debugMode) {
-        console.log(
-          "Set-Cookie headers after redirect capture:",
-          response.headers["set-cookie"],
-        );
-        console.log(
-          "Current cookies after redirect capture:",
-          await this.jar.getCookieString(url),
-        );
-
-        // Check for domain cookies too
-        const domain = new URL(url).hostname;
-        console.log(
-          `Cookies for domain ${domain}:`,
-          await this.jar.getCookieString(`https://${domain}/`),
-        );
-      }
-
-      if (response.status === 302) {
-        const redirectLocation = response.headers["location"];
-        if (!redirectLocation) {
-          throw new Error("No redirect location found in response headers");
-        }
-        return redirectLocation;
-      }
-
-      throw new Error(`Unexpected response status: ${response.status}`);
-    } catch (error: any) {
-      this.handleRequestError(error);
       throw error;
     }
   }

@@ -349,8 +349,7 @@ async def main():
         response_url = str(getattr(response, "url", ""))
         response_status = int(getattr(response, "status", 0) or 0)
         should_check_body = (
-            response_status in (401, 403)
-            or "selfasserted" in response_url.lower()
+            response_status in (401, 403) or "selfasserted" in response_url.lower()
         )
         if not should_check_body:
             return
@@ -361,9 +360,7 @@ async def main():
             if encoded:
                 body = base64.b64decode(body).decode("utf-8", "replace")
             if is_access_denied_html(body):
-                progress(
-                    "Access Denied response detected after auth request"
-                )
+                progress("Access Denied response detected after auth request")
                 state["access_denied"] = True
         except Exception:
             pass
@@ -441,16 +438,12 @@ async def main():
         progress("Monitoring for authorization redirect or MFA challenge")
         post_login_state = await wait_for_auth_code_or_mfa(tab, state, 5000)
         if post_login_state == "timeout":
-            title_after_submit = await maybe_value(
-                await tab.evaluate("document.title")
-            )
+            title_after_submit = await maybe_value(await tab.evaluate("document.title"))
             if (
                 not state.get("access_denied")
                 and "sign in" in str(title_after_submit).lower()
             ):
-                progress(
-                    "Still on sign-in page after submit; retrying login click"
-                )
+                progress("Still on sign-in page after submit; retrying login click")
                 await click_direct(submit_button)
                 post_login_state = await wait_for_auth_code_or_mfa(
                     tab,
@@ -464,19 +457,12 @@ async def main():
         elif post_login_state == "access_denied":
             progress("Access Denied detected after credentials")
         else:
-            progress(
-                "No auth redirect or MFA challenge detected before timeout"
-            )
+            progress("No auth redirect or MFA challenge detected before timeout")
 
         title = await maybe_value(await tab.evaluate("document.title"))
-        page_html_result = await tab.evaluate(
-            "document.documentElement.outerHTML"
-        )
+        page_html_result = await tab.evaluate("document.documentElement.outerHTML")
         page_html = (await maybe_value(page_html_result)) or ""
-        if (
-            is_access_denied_html(page_html)
-            or "Access Denied" in str(title)
-        ):
+        if is_access_denied_html(page_html) or "Access Denied" in str(title):
             progress("Access Denied page detected")
             state["access_denied"] = True
 
