@@ -5,8 +5,10 @@ import os
 import random
 import re
 import shutil
+import subprocess
 import sys
 import time
+import traceback
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -77,6 +79,10 @@ def log(*parts):
 
 def progress(message):
     log(f"[zendriver] {message}")
+
+
+def progress_json(label, value):
+    progress(f"{label}: {json.dumps(value, default=str)}")
 
 
 def extract_auth_code(url):
@@ -320,6 +326,87 @@ async def maybe_value(result):
     return getattr(result, "value", result)
 
 
+def collect_environment_diagnostics(browser_executable_path, profile_path):
+    diagnostics = {
+        "platform": sys.platform,
+        "python": sys.executable,
+        "cwd": os.getcwd(),
+        "display": os.environ.get("DISPLAY"),
+        "xvfb": shutil.which("Xvfb"),
+        "browserExecutablePath": browser_executable_path,
+        "browserExecutableExists": bool(
+            browser_executable_path and os.path.exists(browser_executable_path)
+        ),
+        "profilePath": profile_path,
+        "profileExists": bool(profile_path and os.path.exists(profile_path)),
+    }
+
+    if browser_executable_path and os.path.exists(browser_executable_path):
+        try:
+            diagnostics["browserExecutableSize"] = os.path.getsize(
+                browser_executable_path
+            )
+        except Exception as exc:
+            diagnostics["browserExecutableSizeError"] = repr(exc)
+
+    return diagnostics
+
+
+def log_browser_preflight(browser_executable_path):
+    if not browser_executable_path:
+        progress("No explicit browser executable path was provided")
+        return
+
+    if not os.path.exists(browser_executable_path):
+        progress(
+            f"Browser executable does not exist: {browser_executable_path}"
+        )
+        return
+
+    try:
+        version_result = subprocess.run(
+            [browser_executable_path, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        progress_json(
+            "Browser version probe",
+            {
+                "returncode": version_result.returncode,
+                "stdout": version_result.stdout.strip(),
+                "stderr": version_result.stderr.strip(),
+            },
+        )
+    except Exception as exc:
+        progress(f"Browser version probe failed: {repr(exc)}")
+
+    if sys.platform.startswith("linux") and shutil.which("ldd"):
+        try:
+            ldd_result = subprocess.run(
+                ["ldd", browser_executable_path],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            missing = [
+                line.strip()
+                for line in ldd_result.stdout.splitlines()
+                if "not found" in line
+            ]
+            progress_json(
+                "Browser shared library probe",
+                {
+                    "returncode": ldd_result.returncode,
+                    "missing": missing,
+                },
+            )
+        except Exception as exc:
+            progress(f"Browser shared library probe failed: {repr(exc)}")
+
+
 def start_virtual_display_if_needed():
     if sys.platform != "linux" or os.environ.get("DISPLAY"):
         return None
@@ -343,7 +430,13 @@ def start_virtual_display_if_needed():
     progress("No DISPLAY detected; starting Xvfb virtual display")
     display = Display(visible=False, size=(1365, 1024), color_depth=24)
     display.start()
-    progress(f"Virtual display started on DISPLAY={os.environ.get('DISPLAY')}")
+    progress_json(
+        "Virtual display started",
+        {
+            "display": os.environ.get("DISPLAY"),
+            "xvfb": shutil.which("Xvfb"),
+        },
+    )
     return display
 
 
@@ -356,7 +449,9 @@ async def main():
     browser_executable_path = payload.get("browserExecutablePath")
     state = {"auth_code": None, "access_denied": False}
     browser = None
+    tab = None
     virtual_display = None
+    phase = "initializing"
 
     async def send_handler(event):
         request_url = getattr(getattr(event, "request", None), "url", "")
@@ -379,10 +474,14 @@ async def main():
                 state["auth_code"] = code
         response_url = str(getattr(response, "url", ""))
         response_status = int(getattr(response, "status", 0) or 0)
-        should_check_body = response_status in (
-            401,
-            403,
-        ) or "selfasserted" in response_url.lower()
+        should_check_body = (
+            response_status
+            in (
+                401,
+                403,
+            )
+            or "selfasserted" in response_url.lower()
+        )
         if not should_check_body:
             return
         try:
@@ -398,6 +497,17 @@ async def main():
             pass
 
     try:
+        progress_json(
+            "Environment diagnostics",
+            collect_environment_diagnostics(
+                browser_executable_path,
+                profile_path,
+            ),
+        )
+        progress_json("Browser args", browser_args)
+        log_browser_preflight(browser_executable_path)
+
+        phase = "configuring browser session"
         progress("Configuring browser session")
         virtual_display = start_virtual_display_if_needed()
         config = zd.Config(
@@ -409,14 +519,20 @@ async def main():
             user_agent=fingerprint.get("userAgent"),
         )
 
+        phase = "starting browser"
         progress("Starting browser")
         browser = await zd.start(config)
+        progress("Browser started")
+        phase = "navigating to authorization URL"
         progress("Navigating to authorization URL")
         tab = await browser.get(payload["authorizationUrl"])
+        progress(f"Navigation started; current URL: {getattr(tab, 'url', '')}")
+        phase = "registering network handlers"
         progress("Registering network redirect handlers")
         tab.add_handler(cdp.network.RequestWillBeSent, send_handler)
         tab.add_handler(cdp.network.ResponseReceived, response_handler)
         await tab.send(cdp.network.enable())
+        phase = "applying user agent"
         progress("Applying user agent and language settings")
         await tab.set_user_agent(
             fingerprint.get("userAgent"),
@@ -431,6 +547,7 @@ async def main():
             "Applying mobile viewport "
             f"{int(viewport['width'])}x{int(viewport['height'])}"
         )
+        phase = "applying viewport"
         await tab.send(
             cdp.emulation.set_device_metrics_override(
                 width=int(viewport["width"]),
@@ -439,9 +556,11 @@ async def main():
                 mobile=True,
             )
         )
+        phase = "waiting for auth page"
         progress("Waiting for authentication page readiness")
         await wait_ready(tab)
 
+        phase = "entering email"
         progress("Locating email input field")
         email_field = await select_first(tab, EMAIL_SELECTOR)
         progress("Entering email address")
@@ -454,6 +573,7 @@ async def main():
         progress("Waiting for password page readiness")
         await wait_ready(tab)
 
+        phase = "entering password"
         progress("Locating password input field")
         password_field = await select_first(tab, PASSWORD_SELECTOR)
         progress("Entering password")
@@ -467,6 +587,7 @@ async def main():
 
         progress("Locating login button")
         submit_button = await find_login_button(tab)
+        phase = "submitting credentials"
         progress("Submitting credentials")
         await click_human(submit_button)
         await sleep_ms(500)
@@ -511,6 +632,7 @@ async def main():
 
         if not state["auth_code"] and not state["access_denied"]:
             try:
+                phase = "checking MFA challenge"
                 progress("Checking for MFA challenge")
                 await select_first(tab, MFA_SELECTOR, timeout=10)
                 page_html_result = await tab.evaluate(
@@ -548,6 +670,7 @@ async def main():
                         raise ValueError(totp_length_error)
                     progress("Locating TOTP input field")
                     otp_field = await select_first(tab, OTP_SELECTOR)
+                    phase = "submitting MFA"
                     progress("Entering TOTP verification code")
                     await fill_text_field(
                         otp_field,
@@ -596,12 +719,33 @@ async def main():
             )
         )
     except Exception as exc:
+        traceback_text = traceback.format_exc()
+        progress(f"Failure during phase: {phase}")
+        progress(f"Exception type: {exc.__class__.__name__}")
+        progress(f"Exception repr: {repr(exc)}")
+        progress("Traceback follows")
+        log(traceback_text)
+        final_url = getattr(tab, "url", "") if tab is not None else ""
+        final_title = None
+        if tab is not None:
+            try:
+                final_title = await maybe_value(
+                    await tab.evaluate("document.title")
+                )
+            except Exception:
+                final_title = None
         print(
             json.dumps(
                 {
                     "ok": False,
-                    "error": str(exc),
+                    "error": str(exc)
+                    or f"Zendriver authentication failed during {phase}",
+                    "detail": repr(exc),
                     "type": exc.__class__.__name__,
+                    "phase": phase,
+                    "traceback": traceback_text,
+                    "finalUrl": final_url,
+                    "finalTitle": final_title,
                     "accessDenied": state.get("access_denied", False),
                 }
             )

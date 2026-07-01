@@ -684,10 +684,17 @@ export class GMAuth {
         try {
           const parsed = JSON.parse(lastLine);
           if (!parsed.ok) {
+            const details = [
+              parsed.detail,
+              parsed.phase ? `phase=${parsed.phase}` : undefined,
+              parsed.finalTitle ? `finalTitle=${parsed.finalTitle}` : undefined,
+              parsed.finalUrl ? `finalUrl=${parsed.finalUrl}` : undefined,
+              parsed.traceback ? `traceback=${parsed.traceback}` : undefined,
+            ].filter(Boolean);
             reject(
               new Error(
-                parsed.detail
-                  ? `${parsed.error} (${parsed.detail})`
+                details.length > 0
+                  ? `${parsed.error || "Zendriver authentication failed"} (${details.join("; ")})`
                   : parsed.error || "Zendriver authentication failed",
               ),
             );
