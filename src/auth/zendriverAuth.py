@@ -574,9 +574,6 @@ def start_virtual_display_if_needed():
 
 async def main():
     payload = json.loads(sys.stdin.read())
-    fingerprint = payload.get("fingerprint") or {}
-    viewport = fingerprint.get("viewport") or {"width": 430, "height": 932}
-    browser_args = payload.get("browserArgs") or []
     profile_path = payload.get("profilePath")
     browser_executable_path = payload.get("browserExecutablePath")
     navigation_timeout_seconds = get_navigation_timeout_seconds(payload)
@@ -639,7 +636,6 @@ async def main():
                 profile_path,
             ),
         )
-        progress_json("Browser args", browser_args)
         log_browser_preflight(browser_executable_path)
 
         phase = "configuring browser session"
@@ -648,10 +644,7 @@ async def main():
         config = zd.Config(
             headless=False,
             user_data_dir=profile_path,
-            browser_args=browser_args,
             browser_executable_path=browser_executable_path,
-            sandbox=False,
-            user_agent=fingerprint.get("userAgent"),
         )
 
         phase = "starting browser"
@@ -667,30 +660,6 @@ async def main():
         tab.add_handler(cdp.network.RequestWillBeSent, send_handler)
         tab.add_handler(cdp.network.ResponseReceived, response_handler)
         await tab.send(cdp.network.enable())
-        phase = "applying user agent"
-        progress("Applying user agent and language settings")
-        await tab.set_user_agent(
-            fingerprint.get("userAgent"),
-            accept_language="en-US,en;q=0.9",
-            platform=(
-                "iPhone"
-                if "iPhone" in fingerprint.get("userAgent", "")
-                else "Linux armv8l"
-            ),
-        )
-        progress(
-            "Applying mobile viewport "
-            f"{int(viewport['width'])}x{int(viewport['height'])}"
-        )
-        phase = "applying viewport"
-        await tab.send(
-            cdp.emulation.set_device_metrics_override(
-                width=int(viewport["width"]),
-                height=int(viewport["height"]),
-                device_scale_factor=3,
-                mobile=True,
-            )
-        )
         phase = "navigating to authorization URL"
         progress("Navigating to authorization URL")
         tab = await navigate_existing_tab(

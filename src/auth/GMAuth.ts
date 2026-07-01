@@ -9,7 +9,6 @@ import https from "https";
 
 import path from "path";
 import jwt from "jsonwebtoken";
-import { randomInt } from "crypto";
 import { spawn } from "child_process";
 
 interface ZendriverAuthResult {
@@ -192,7 +191,6 @@ export class GMAuth {
   async doFullAuthSequence(): Promise<TokenSet> {
     const maxRetries = 4; // Increased from 2 to 4 (5 total attempts)
     let lastError: Error | null = null;
-    let useRandomFingerprint = true; // Always use randomized fingerprint for better evasion
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
@@ -222,16 +220,7 @@ export class GMAuth {
         const { authorizationUrl, code_verifier } =
           await this.startMSAuthorizationFlow();
 
-        // Use Zendriver with randomized fingerprint for better evasion
-        if (attempt === 0) {
-          console.log(
-            "🎭 Using randomized browser fingerprint for authentication",
-          );
-        }
-        const authCode = await this.submitCredentials(
-          authorizationUrl,
-          useRandomFingerprint,
-        );
+        const authCode = await this.submitCredentials(authorizationUrl);
         if (!authCode) {
           throw new Error(
             "🚫 Failed to get authorization code after all attempts. Possible incorrect credentials, MFA issue, or unexpected page flow.",
@@ -286,210 +275,6 @@ export class GMAuth {
       fs.writeFileSync(tokenFilePath, JSON.stringify(this.currentGMAPIToken));
       // console.log("Saved current GM API token to ", tokenFilePath);
     }
-  }
-
-  // Generate randomized browser fingerprint to avoid detection
-  private generateRandomFingerprint() {
-    const deviceProfiles = [
-      // iPhones
-      {
-        type: "iPhone",
-        osVersions: [
-          "15_8_3",
-          "16_0",
-          "16_1",
-          "16_2",
-          "16_3",
-          "16_4",
-          "16_5",
-          "16_6",
-          "16_7",
-          "17_0",
-          "17_1",
-          "17_2",
-          "17_3",
-          "17_4",
-          "17_5",
-          "17_6",
-          "18_0",
-          "18_1",
-          "18_2",
-          "18_3",
-        ],
-        safariVersions: [
-          "604.1",
-          "605.1.15",
-          "606.1.36",
-          "607.1.56",
-          "608.1.49",
-          "609.1.20",
-          "610.4.3",
-          "611.2.7",
-        ],
-        webkitVersions: [
-          "605.1.15",
-          "606.4.10",
-          "607.3.10",
-          "608.4.9",
-          "609.4.1",
-          "610.1.28",
-          "611.3.10",
-          "612.1.6",
-        ],
-        viewports: [
-          { width: 430, height: 932 }, // iPhone 15 Pro Max
-          { width: 393, height: 852 }, // iPhone 15 Pro
-          { width: 390, height: 844 }, // iPhone 15/15 Plus
-          { width: 428, height: 926 }, // iPhone 14 Pro Max
-          { width: 393, height: 852 }, // iPhone 14 Pro
-          { width: 390, height: 844 }, // iPhone 14/14 Plus
-          { width: 428, height: 926 }, // iPhone 13 Pro Max
-          { width: 390, height: 844 }, // iPhone 13/13 Pro/13 Mini
-          { width: 375, height: 812 }, // iPhone 12/12 Pro/12 Mini
-          { width: 414, height: 896 }, // iPhone 11/11 Pro Max/XR/XS Max
-          { width: 375, height: 812 }, // iPhone X/XS/11 Pro
-          { width: 414, height: 736 }, // iPhone 8 Plus/7 Plus/6s Plus
-          { width: 375, height: 667 }, // iPhone 8/7/6s/6/SE
-        ],
-        getUserAgent: (p: any) =>
-          `Mozilla/5.0 (iPhone; CPU iPhone OS ${this.getRandom(p.osVersions)} like Mac OS X) AppleWebKit/${this.getRandom(p.webkitVersions)} (KHTML, like Gecko) Version/${this.getRandom(p.safariVersions)} Mobile/15E148 Safari/${this.getRandom(p.safariVersions)}`,
-      },
-      // iPads
-      {
-        type: "iPad",
-        osVersions: [
-          "15_8_3",
-          "16_0",
-          "16_1",
-          "16_2",
-          "16_3",
-          "16_4",
-          "16_5",
-          "16_6",
-          "16_7",
-          "17_0",
-          "17_1",
-          "17_2",
-          "17_3",
-          "17_4",
-          "17_5",
-          "17_6",
-          "18_0",
-          "18_1",
-        ],
-        safariVersions: [
-          "604.1",
-          "605.1.15",
-          "606.1.36",
-          "607.1.56",
-          "608.1.49",
-          "609.1.20",
-        ],
-        webkitVersions: [
-          "605.1.15",
-          "606.4.10",
-          "607.3.10",
-          "608.4.9",
-          "609.4.1",
-          "610.1.28",
-        ],
-        viewports: [
-          { width: 1024, height: 1366 }, // iPad Pro 12.9"
-          { width: 834, height: 1194 }, // iPad Pro 11"
-          { width: 820, height: 1180 }, // iPad Air
-          { width: 768, height: 1024 }, // iPad Mini/9.7"
-        ],
-        getUserAgent: (p: any) =>
-          `Mozilla/5.0 (iPad; CPU OS ${this.getRandom(p.osVersions)} like Mac OS X) AppleWebKit/${this.getRandom(p.webkitVersions)} (KHTML, like Gecko) Version/${this.getRandom(p.safariVersions)} Mobile/15E148 Safari/${this.getRandom(p.safariVersions)}`,
-      },
-      // Samsung Phones (Android)
-      {
-        type: "Samsung Phone",
-        androidVersions: ["13", "14", "15"],
-        chromeVersions: ["124.0.6367.113", "125.0.6422.112", "126.0.6478.71"],
-        models: [
-          "SM-S928B", // Galaxy S24 Ultra
-          "SM-S918U", // Galaxy S23 Ultra
-          "SM-G998B", // Galaxy S21 Ultra
-          "SM-F946B", // Galaxy Z Fold 5
-        ],
-        viewports: [
-          { width: 412, height: 915 },
-          { width: 384, height: 854 },
-          { width: 360, height: 740 },
-        ],
-        getUserAgent: (p: any) =>
-          `Mozilla/5.0 (Linux; Android ${this.getRandom(p.androidVersions)}; ${this.getRandom(p.models)}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${this.getRandom(p.chromeVersions)} Mobile Safari/537.36`,
-      },
-      // Google Pixel Phones (Android)
-      {
-        type: "Google Pixel",
-        androidVersions: ["12", "13", "14", "15"],
-        chromeVersions: [
-          "122.0.6261.119",
-          "123.0.6312.99",
-          "124.0.6367.113",
-          "125.0.6422.112",
-          "126.0.6478.71",
-          "127.0.6533.64",
-        ],
-        models: [
-          "Pixel 9 Pro XL",
-          "Pixel 9 Pro",
-          "Pixel 9",
-          "Pixel 8a",
-          "Pixel 8 Pro",
-          "Pixel 8",
-          "Pixel 7a",
-          "Pixel 7 Pro",
-          "Pixel 7",
-          "Pixel 6a",
-          "Pixel 6 Pro",
-          "Pixel 6",
-          "Pixel 5a",
-          "Pixel 5",
-          "Pixel 4a",
-          "Pixel 4",
-        ],
-        viewports: [
-          { width: 412, height: 915 }, // Pixel 9 Pro XL
-          { width: 384, height: 854 }, // Pixel 9 Pro
-          { width: 393, height: 851 }, // Pixel 9/8/7
-          { width: 412, height: 892 }, // Pixel 8a/7a/6a
-          { width: 412, height: 869 }, // Pixel 6 Pro
-          { width: 393, height: 786 }, // Pixel 5a/5
-          { width: 393, height: 851 }, // Pixel 4a/4
-        ],
-        getUserAgent: (p: any) =>
-          `Mozilla/5.0 (Linux; Android ${this.getRandom(p.androidVersions)}; ${this.getRandom(p.models)}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${this.getRandom(p.chromeVersions)} Mobile Safari/537.36`,
-      },
-      // Microsoft Surface (Windows Tablet)
-      {
-        type: "Microsoft Surface",
-        edgeVersions: ["124.0.2478.80", "125.0.2535.51", "126.0.2592.56"],
-        chromeVersions: ["124.0.6367.113", "125.0.6422.112", "126.0.6478.71"],
-        viewports: [
-          { width: 915, height: 1368 }, // Surface Pro
-          { width: 810, height: 1080 }, // Surface Go
-        ],
-        getUserAgent: (p: any) =>
-          `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${this.getRandom(p.chromeVersions)} Safari/537.36 Edg/${this.getRandom(p.edgeVersions)}`,
-      },
-    ];
-
-    // Select a random device profile
-    const profile = this.getRandom(deviceProfiles);
-
-    // Generate user agent and viewport from the selected profile
-    const userAgent = profile.getUserAgent(profile);
-    const viewport = this.getRandom(profile.viewports);
-
-    return { userAgent, viewport, deviceType: profile.type };
-  }
-
-  // Helper to get a random element from an array
-  private getRandom(arr: any[]) {
-    return arr[Math.floor(Math.random() * arr.length)];
   }
 
   private getZendriverAuthScriptPath(): string {
@@ -590,42 +375,7 @@ export class GMAuth {
 
   private async runZendriverAuth(
     authorizationUrl: string,
-    useRandomFingerprint: boolean = false,
   ): Promise<ZendriverAuthResult> {
-    const fingerprint = useRandomFingerprint
-      ? this.generateRandomFingerprint()
-      : {
-          userAgent:
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 15_8_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6.6 Mobile/15E148 Safari/604.1",
-          viewport: { width: 430, height: 932 },
-          deviceType: "iPhone (default)",
-        };
-    const profilePath = path.resolve("./temp-browser-profile");
-    const browserArgs = [
-      "--disable-blink-features=AutomationControlled",
-      "--disable-automation",
-      "--no-first-run",
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-password-manager",
-      "--disable-save-password",
-      "--disable-sync",
-      "--disable-translate",
-      "--disable-background-timer-throttling",
-      "--disable-renderer-backgrounding",
-      "--disable-hang-monitor",
-      "--process-per-tab",
-      "--process-per-site",
-      "--renderer-process-limit=2",
-    ];
-
-    if (process.platform === "win32") {
-      browserArgs.push("--disable-features=msSmartScreenProtection");
-    } else if (process.platform === "linux") {
-      browserArgs.push("--use-gl=swiftshader");
-    }
-
     const scriptPath = this.getZendriverAuthScriptPath();
     const pythonExecutable = this.getZendriverPythonExecutable(scriptPath);
     const browserExecutablePath =
@@ -635,9 +385,6 @@ export class GMAuth {
       username: this.config.username,
       password: this.config.password,
       totpKey: this.config.totpKey,
-      fingerprint,
-      profilePath,
-      browserArgs,
       browserExecutablePath,
     };
 
@@ -713,17 +460,11 @@ export class GMAuth {
     });
   }
 
-  private async submitCredentials(
-    authorizationUrl: string,
-    useRandomFingerprint: boolean = false,
-  ): Promise<string> {
+  private async submitCredentials(authorizationUrl: string): Promise<string> {
     console.log("🌐 Launching Zendriver authentication for Microsoft login");
 
     try {
-      const result = await this.runZendriverAuth(
-        authorizationUrl,
-        useRandomFingerprint,
-      );
+      const result = await this.runZendriverAuth(authorizationUrl);
 
       if (result.accessDenied) {
         throw new Error(

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -77,43 +76,10 @@ function getBrowserExecutablePath() {
   return manifest.executablePath;
 }
 
-function getBrowserArgs() {
-  const browserArgs = [
-    "--disable-blink-features=AutomationControlled",
-    "--disable-automation",
-    "--no-first-run",
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-password-manager",
-    "--disable-save-password",
-    "--disable-sync",
-    "--disable-translate",
-    "--disable-background-timer-throttling",
-    "--disable-renderer-backgrounding",
-    "--disable-hang-monitor",
-    "--process-per-tab",
-    "--process-per-site",
-    "--renderer-process-limit=2",
-  ];
-
-  if (process.platform === "win32") {
-    browserArgs.push("--disable-features=msSmartScreenProtection");
-  } else if (process.platform === "linux") {
-    browserArgs.push("--use-gl=swiftshader");
-  }
-
-  return browserArgs;
-}
-
 async function runDiagnostic() {
   const pythonExecutable = getPythonExecutable();
   const authScriptPath = getAuthScriptPath();
   const browserExecutablePath = getBrowserExecutablePath();
-  const profilePath = path.resolve(
-    process.env.ONSTARJS_BROWSER_DIAGNOSTIC_PROFILE ??
-      path.join(os.tmpdir(), "onstarjs-zendriver-diagnostic-profile"),
-  );
   const payload = {
     authorizationUrl: process.env.ONSTARJS_BROWSER_DIAGNOSTIC_URL ?? "about:blank",
     diagnosticOnly: process.env.ONSTARJS_BROWSER_DIAGNOSTIC_AUTH_CODE
@@ -122,13 +88,6 @@ async function runDiagnostic() {
     simulateNavigationAuthCode:
       process.env.ONSTARJS_BROWSER_DIAGNOSTIC_AUTH_CODE,
     browserExecutablePath,
-    profilePath,
-    browserArgs: getBrowserArgs(),
-    fingerprint: {
-      userAgent:
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      viewport: { width: 430, height: 932 },
-    },
   };
 
   console.log(`Using Python: ${pythonExecutable}`);
