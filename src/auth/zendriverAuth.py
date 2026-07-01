@@ -358,10 +358,9 @@ def log_browser_preflight(browser_executable_path):
         return
 
     if not os.path.exists(browser_executable_path):
-        progress(
+        raise FileNotFoundError(
             f"Browser executable does not exist: {browser_executable_path}"
         )
-        return
 
     try:
         version_result = subprocess.run(
@@ -407,6 +406,118 @@ def log_browser_preflight(browser_executable_path):
             progress(f"Browser shared library probe failed: {repr(exc)}")
 
 
+class XvfbDisplay:
+    def __init__(self, width=1365, height=1024, color_depth=24):
+        self.width = width
+        self.height = height
+        self.color_depth = color_depth
+        self.display = None
+        self.process = None
+        self.previous_display = os.environ.get("DISPLAY")
+
+    def is_ready(self, display, socket_path):
+        xdpyinfo_path = shutil.which("xdpyinfo")
+        if xdpyinfo_path:
+            try:
+                result = subprocess.run(
+                    [xdpyinfo_path, "-display", display],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=1,
+                    check=False,
+                )
+                return result.returncode == 0
+            except subprocess.TimeoutExpired:
+                return False
+
+        return os.path.exists(socket_path)
+
+    def stop_process(self):
+        stdout = ""
+        stderr = ""
+        if self.process is not None and self.process.poll() is None:
+            self.process.terminate()
+            try:
+                stdout, stderr = self.process.communicate(timeout=3)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                stdout, stderr = self.process.communicate(timeout=3)
+        elif self.process is not None:
+            stdout, stderr = self.process.communicate(timeout=1)
+
+        return stdout.strip(), stderr.strip()
+
+    def start(self, timeout=5):
+        xvfb_path = shutil.which("Xvfb")
+        if not xvfb_path:
+            raise RuntimeError("Xvfb binary was not found")
+
+        for display_number in range(99, 120):
+            lock_path = f"/tmp/.X{display_number}-lock"
+            socket_path = f"/tmp/.X11-unix/X{display_number}"
+            if os.path.exists(lock_path) or os.path.exists(socket_path):
+                continue
+
+            display = f":{display_number}"
+            command = [
+                xvfb_path,
+                display,
+                "-screen",
+                "0",
+                f"{self.width}x{self.height}x{self.color_depth}",
+                "-nolisten",
+                "tcp",
+                "-ac",
+            ]
+            progress_json("Starting Xvfb", {"command": command})
+            self.process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                if self.process.poll() is not None:
+                    stdout, stderr = self.process.communicate(timeout=1)
+                    raise RuntimeError(
+                        "Xvfb exited during startup: "
+                        f"code={self.process.returncode}, "
+                        f"stdout={stdout.strip()}, stderr={stderr.strip()}"
+                    )
+                if self.is_ready(display, socket_path):
+                    self.display = display
+                    os.environ["DISPLAY"] = display
+                    progress_json(
+                        "Virtual display started",
+                        {
+                            "display": display,
+                            "pid": self.process.pid,
+                            "xvfb": xvfb_path,
+                            "socket": socket_path,
+                        },
+                    )
+                    return self
+                time.sleep(0.1)
+
+            stdout, stderr = self.stop_process()
+            raise RuntimeError(
+                "Timed out waiting for Xvfb display readiness: "
+                f"display={display}, socket={socket_path}, "
+                f"stdout={stdout}, stderr={stderr}"
+            )
+
+        raise RuntimeError("No free Xvfb display number found in :99-:119")
+
+    def stop(self):
+        self.stop_process()
+        if self.previous_display is None:
+            os.environ.pop("DISPLAY", None)
+        else:
+            os.environ["DISPLAY"] = self.previous_display
+
+
 def start_virtual_display_if_needed():
     if sys.platform != "linux" or os.environ.get("DISPLAY"):
         return None
@@ -419,25 +530,8 @@ def start_virtual_display_if_needed():
             "on this Linux host or set DISPLAY before running auth."
         )
 
-    try:
-        from pyvirtualdisplay import Display
-    except Exception as exc:
-        raise RuntimeError(
-            "No DISPLAY is available and pyvirtualdisplay is not installed. "
-            "Run 'pnpm run setup:zendriver' to install Python auth helpers."
-        ) from exc
-
     progress("No DISPLAY detected; starting Xvfb virtual display")
-    display = Display(visible=False, size=(1365, 1024), color_depth=24)
-    display.start()
-    progress_json(
-        "Virtual display started",
-        {
-            "display": os.environ.get("DISPLAY"),
-            "xvfb": shutil.which("Xvfb"),
-        },
-    )
-    return display
+    return XvfbDisplay().start()
 
 
 async def main():

@@ -230,7 +230,6 @@ try {
     "install",
     "zendriver",
     "pyotp",
-    "pyvirtualdisplay",
   ]);
   checkVirtualDisplaySupport();
   await installPortableBrowser();
