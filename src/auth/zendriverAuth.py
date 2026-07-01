@@ -151,6 +151,19 @@ def is_access_denied_html(body):
     )
 
 
+def log_access_denied_detail(state, source, detail):
+    if state.get("access_denied_detail_logged"):
+        return
+    state["access_denied_detail_logged"] = True
+    progress_json(
+        "Access Denied detection detail",
+        {
+            "source": source,
+            **detail,
+        },
+    )
+
+
 def serialize_fingerprint(value):
     if is_dataclass(value):
         return asdict(value)
@@ -302,16 +315,27 @@ async def wait_for_auth_code(state, timeout_ms=10000, interval_ms=500):
     return False
 
 
-async def detect_access_denied_page(tab):
+async def get_access_denied_page_detail(tab):
     try:
         title = await maybe_value(await tab.evaluate("document.title"))
-        if "Access Denied" in str(title):
-            return True
         page_html_result = await tab.evaluate(
             "document.documentElement.outerHTML"
         )
         page_html = (await maybe_value(page_html_result)) or ""
-        return is_access_denied_html(page_html)
+        if "Access Denied" in str(title) or is_access_denied_html(page_html):
+            return {
+                "url": getattr(tab, "url", ""),
+                "title": title,
+                "body": page_html,
+            }
+        return None
+    except Exception:
+        return None
+
+
+async def detect_access_denied_page(tab):
+    try:
+        return bool(await get_access_denied_page_detail(tab))
     except Exception:
         return False
 
@@ -329,8 +353,14 @@ async def wait_for_auth_code_or_access_denied(
             return "auth_code"
         if state.get("access_denied"):
             return "access_denied"
-        if await detect_access_denied_page(tab):
+        access_denied_detail = await get_access_denied_page_detail(tab)
+        if access_denied_detail:
             state["access_denied"] = True
+            log_access_denied_detail(
+                state,
+                "post-MFA page poll",
+                access_denied_detail,
+            )
             progress("Access Denied page detected after MFA submit")
             return "access_denied"
         await sleep_ms(interval_ms)
@@ -1136,8 +1166,14 @@ async def wait_for_password_page_after_continue(
             "email continue transition",
         ):
             return "auth_code"
-        if await detect_access_denied_page(tab):
+        access_denied_detail = await get_access_denied_page_detail(tab)
+        if access_denied_detail:
             state["access_denied"] = True
+            log_access_denied_detail(
+                state,
+                "email continue transition",
+                access_denied_detail,
+            )
             return "access_denied"
 
         password_field = await select_optional(tab, PASSWORD_SELECTOR)
@@ -1603,6 +1639,19 @@ async def main():
                 body = base64.b64decode(body).decode("utf-8", "replace")
             if is_access_denied_html(body):
                 progress("Access Denied response detected after auth request")
+                log_access_denied_detail(
+                    state,
+                    "network response",
+                    {
+                        "requestId": str(event.request_id),
+                        "url": response_url,
+                        "status": response_status,
+                        "statusText": getattr(response, "status_text", ""),
+                        "headers": headers,
+                        "bodyEncoded": encoded,
+                        "body": body,
+                    },
+                )
                 state["access_denied"] = True
         except Exception:
             pass
@@ -1872,6 +1921,15 @@ async def main():
         page_html = (await maybe_value(page_html_result)) or ""
         if is_access_denied_html(page_html) or "Access Denied" in str(title):
             progress("Access Denied page detected")
+            log_access_denied_detail(
+                state,
+                "final page check",
+                {
+                    "url": getattr(tab, "url", ""),
+                    "title": title,
+                    "body": page_html,
+                },
+            )
             state["access_denied"] = True
 
         if not state["auth_code"] and not state["access_denied"]:
