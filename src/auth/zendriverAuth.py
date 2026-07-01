@@ -110,6 +110,29 @@ def extract_auth_code(url):
     return match.group(1) if match else None
 
 
+def is_auth_redirect_url(url):
+    return str(url or "").lower().startswith(AUTH_REDIRECT_PREFIX)
+
+
+def capture_auth_redirect(state, url, source):
+    if not is_auth_redirect_url(url):
+        return False
+    code = extract_auth_code(str(url))
+    if not code:
+        progress_json(
+            "Observed auth redirect without code",
+            {"source": source, "url": str(url)},
+        )
+        return False
+    if not state.get("auth_code"):
+        progress_json(
+            "Captured auth code from redirect",
+            {"source": source},
+        )
+    state["auth_code"] = code
+    return True
+
+
 def is_access_denied_html(body):
     body_text = body or ""
     return (
@@ -270,6 +293,41 @@ async def wait_for_auth_code(state, timeout_ms=10000, interval_ms=500):
     return False
 
 
+async def detect_access_denied_page(tab):
+    try:
+        title = await maybe_value(await tab.evaluate("document.title"))
+        if "Access Denied" in str(title):
+            return True
+        page_html_result = await tab.evaluate(
+            "document.documentElement.outerHTML"
+        )
+        page_html = (await maybe_value(page_html_result)) or ""
+        return is_access_denied_html(page_html)
+    except Exception:
+        return False
+
+
+async def wait_for_auth_code_or_access_denied(
+    tab,
+    state,
+    timeout_ms=60000,
+    interval_ms=500,
+):
+    start = time.monotonic()
+    while (time.monotonic() - start) * 1000 < timeout_ms:
+        await capture_current_tab_redirect(tab, state, "post-MFA poll")
+        if state.get("auth_code"):
+            return "auth_code"
+        if state.get("access_denied"):
+            return "access_denied"
+        if await detect_access_denied_page(tab):
+            state["access_denied"] = True
+            progress("Access Denied page detected after MFA submit")
+            return "access_denied"
+        await sleep_ms(interval_ms)
+    return "timeout"
+
+
 async def wait_for_auth_code_or_mfa(
     tab,
     state,
@@ -278,6 +336,7 @@ async def wait_for_auth_code_or_mfa(
 ):
     start = time.monotonic()
     while (time.monotonic() - start) * 1000 < timeout_ms:
+        await capture_current_tab_redirect(tab, state, "poll")
         if state.get("auth_code"):
             return "auth_code"
         if state.get("access_denied"):
@@ -294,6 +353,19 @@ async def wait_for_auth_code_or_mfa(
             pass
         await sleep_ms(interval_ms)
     return "timeout"
+
+
+async def capture_current_tab_redirect(tab, state, source):
+    current_url = getattr(tab, "url", "")
+    if capture_auth_redirect(state, current_url, source):
+        return True
+    try:
+        location_href = await maybe_value(
+            await tab.evaluate("window.location.href"),
+        )
+        return capture_auth_redirect(state, location_href, source)
+    except Exception:
+        return False
 
 
 async def select_first(tab, selector, timeout=60):
@@ -746,11 +818,12 @@ async def main():
 
     async def send_handler(event):
         request_url = getattr(getattr(event, "request", None), "url", "")
-        if request_url.lower().startswith(AUTH_REDIRECT_PREFIX):
-            code = extract_auth_code(request_url)
-            if code:
-                log("[zendriver] captured auth code from request redirect")
-                state["auth_code"] = code
+        capture_auth_redirect(state, request_url, "network request")
+        document_url = getattr(event, "document_url", "")
+        capture_auth_redirect(state, document_url, "network document")
+        redirect_response = getattr(event, "redirect_response", None)
+        redirect_url = getattr(redirect_response, "url", "")
+        capture_auth_redirect(state, redirect_url, "network redirect response")
 
     async def response_handler(event):
         response = getattr(event, "response", None)
@@ -758,12 +831,9 @@ async def main():
             return
         headers = getattr(response, "headers", {}) or {}
         location = headers.get("location") or headers.get("Location")
-        if location and str(location).lower().startswith(AUTH_REDIRECT_PREFIX):
-            code = extract_auth_code(str(location))
-            if code:
-                log("[zendriver] captured auth code from response redirect")
-                state["auth_code"] = code
+        capture_auth_redirect(state, location, "response location")
         response_url = str(getattr(response, "url", ""))
+        capture_auth_redirect(state, response_url, "network response")
         response_status = int(getattr(response, "status", 0) or 0)
         should_check_body = (
             response_status
@@ -786,6 +856,35 @@ async def main():
                 state["access_denied"] = True
         except Exception:
             pass
+
+    async def frame_started_navigating_handler(event):
+        capture_auth_redirect(
+            state,
+            getattr(event, "url", ""),
+            "frame started navigating",
+        )
+
+    async def frame_requested_navigation_handler(event):
+        capture_auth_redirect(
+            state,
+            getattr(event, "url", ""),
+            "frame requested navigation",
+        )
+
+    async def navigated_within_document_handler(event):
+        capture_auth_redirect(
+            state,
+            getattr(event, "url", ""),
+            "navigated within document",
+        )
+
+    async def frame_navigated_handler(event):
+        frame = getattr(event, "frame", None)
+        capture_auth_redirect(
+            state,
+            getattr(frame, "url", ""),
+            "frame navigated",
+        )
 
     try:
         progress_json(
@@ -823,9 +922,22 @@ async def main():
         tab = await get_initial_tab(browser)
 
         phase = "registering network handlers"
-        progress("Registering network redirect handlers")
+        progress("Registering redirect capture handlers")
         tab.add_handler(cdp.network.RequestWillBeSent, send_handler)
         tab.add_handler(cdp.network.ResponseReceived, response_handler)
+        tab.add_handler(
+            cdp.page.FrameStartedNavigating,
+            frame_started_navigating_handler,
+        )
+        tab.add_handler(
+            cdp.page.FrameRequestedNavigation,
+            frame_requested_navigation_handler,
+        )
+        tab.add_handler(
+            cdp.page.NavigatedWithinDocument,
+            navigated_within_document_handler,
+        )
+        tab.add_handler(cdp.page.FrameNavigated, frame_navigated_handler)
         await tab.send(cdp.network.enable())
         phase = "applying browser fingerprint"
         await apply_mobile_fingerprint(tab, mobile_fingerprint)
@@ -836,21 +948,6 @@ async def main():
             payload["authorizationUrl"],
             navigation_timeout_seconds,
         )
-        if payload.get("diagnosticOnly"):
-            title = await maybe_value(await tab.evaluate("document.title"))
-            progress("Diagnostic browser navigation succeeded")
-            print(
-                json.dumps(
-                    {
-                        "ok": True,
-                        "diagnosticOnly": True,
-                        "finalUrl": getattr(tab, "url", ""),
-                        "finalTitle": title,
-                    }
-                )
-            )
-            return
-
         if state["auth_code"]:
             title = await maybe_value(await tab.evaluate("document.title"))
             progress("Authorization redirect captured during navigation")
@@ -862,6 +959,21 @@ async def main():
                         "finalUrl": getattr(tab, "url", ""),
                         "finalTitle": title,
                         "accessDenied": state["access_denied"],
+                    }
+                )
+            )
+            return
+
+        if payload.get("diagnosticOnly"):
+            title = await maybe_value(await tab.evaluate("document.title"))
+            progress("Diagnostic browser navigation succeeded")
+            print(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "diagnosticOnly": True,
+                        "finalUrl": getattr(tab, "url", ""),
+                        "finalTitle": title,
                     }
                 )
             )
@@ -988,8 +1100,24 @@ async def main():
                     await click_human(submit_mfa)
                     progress("Waiting for post-MFA page readiness")
                     await wait_ready(tab)
-                    progress("Monitoring for authorization redirect after MFA")
-                    await wait_for_auth_code(state, 60000)
+                    progress(
+                        "Monitoring for authorization redirect or Access "
+                        "Denied after MFA"
+                    )
+                    post_mfa_state = await wait_for_auth_code_or_access_denied(
+                        tab,
+                        state,
+                        60000,
+                    )
+                    if post_mfa_state == "auth_code":
+                        progress("Authorization redirect captured after MFA")
+                    elif post_mfa_state == "access_denied":
+                        progress("Access Denied detected after MFA")
+                    else:
+                        progress(
+                            "No auth redirect or Access Denied detected "
+                            "after MFA before timeout"
+                        )
                 elif "emailMfa" in page_html:
                     progress("Email MFA challenge detected")
                     email_mfa_error = (
