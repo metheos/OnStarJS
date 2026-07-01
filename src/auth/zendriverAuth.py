@@ -319,9 +319,7 @@ async def wait_ready(tab, timeout=60):
     except TypeError:
         await tab.wait_for_ready_state("complete")
     except Exception as exc:
-        progress(
-            f"Page readiness wait ended without complete state: {repr(exc)}"
-        )
+        progress(f"Page readiness wait ended without complete state: {repr(exc)}")
         await sleep_ms(1000)
 
 
@@ -362,9 +360,7 @@ async def navigate_existing_tab(tab, url, timeout_seconds):
     navigation_result = await tab.send(cdp.page.navigate(url))
     progress_json("Page.navigate result", navigation_result)
     await wait_ready(tab, timeout=timeout_seconds)
-    progress(
-        f"Navigation command completed; current URL: {getattr(tab, 'url', '')}"
-    )
+    progress(f"Navigation command completed; current URL: {getattr(tab, 'url', '')}")
     return tab
 
 
@@ -585,6 +581,8 @@ async def main():
     browser_executable_path = payload.get("browserExecutablePath")
     navigation_timeout_seconds = get_navigation_timeout_seconds(payload)
     state = {"auth_code": None, "access_denied": False}
+    if payload.get("simulateNavigationAuthCode"):
+        state["auth_code"] = payload["simulateNavigationAuthCode"]
     browser = None
     tab = None
     virtual_display = None
@@ -715,6 +713,22 @@ async def main():
             )
             return
 
+        if state["auth_code"]:
+            title = await maybe_value(await tab.evaluate("document.title"))
+            progress("Authorization redirect captured during navigation")
+            print(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "authCode": state["auth_code"],
+                        "finalUrl": getattr(tab, "url", ""),
+                        "finalTitle": title,
+                        "accessDenied": state["access_denied"],
+                    }
+                )
+            )
+            return
+
         phase = "waiting for auth page"
         progress("Waiting for authentication page readiness")
         await wait_ready(tab)
@@ -753,16 +767,12 @@ async def main():
         progress("Monitoring for authorization redirect or MFA challenge")
         post_login_state = await wait_for_auth_code_or_mfa(tab, state, 5000)
         if post_login_state == "timeout":
-            title_after_submit = await maybe_value(
-                await tab.evaluate("document.title")
-            )
+            title_after_submit = await maybe_value(await tab.evaluate("document.title"))
             if (
                 not state.get("access_denied")
                 and "sign in" in str(title_after_submit).lower()
             ):
-                progress(
-                    "Still on sign-in page after submit; retrying login click"
-                )
+                progress("Still on sign-in page after submit; retrying login click")
                 await click_direct(submit_button)
                 post_login_state = await wait_for_auth_code_or_mfa(
                     tab,
@@ -776,14 +786,10 @@ async def main():
         elif post_login_state == "access_denied":
             progress("Access Denied detected after credentials")
         else:
-            progress(
-                "No auth redirect or MFA challenge detected before timeout"
-            )
+            progress("No auth redirect or MFA challenge detected before timeout")
 
         title = await maybe_value(await tab.evaluate("document.title"))
-        page_html_result = await tab.evaluate(
-            "document.documentElement.outerHTML"
-        )
+        page_html_result = await tab.evaluate("document.documentElement.outerHTML")
         page_html = (await maybe_value(page_html_result)) or ""
         if is_access_denied_html(page_html) or "Access Denied" in str(title):
             progress("Access Denied page detected")
@@ -888,9 +894,7 @@ async def main():
         final_title = None
         if tab is not None:
             try:
-                final_title = await maybe_value(
-                    await tab.evaluate("document.title")
-                )
+                final_title = await maybe_value(await tab.evaluate("document.title"))
             except Exception:
                 final_title = None
         print(

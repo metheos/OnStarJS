@@ -116,7 +116,11 @@ async function runDiagnostic() {
   );
   const payload = {
     authorizationUrl: process.env.ONSTARJS_BROWSER_DIAGNOSTIC_URL ?? "about:blank",
-    diagnosticOnly: true,
+    diagnosticOnly: process.env.ONSTARJS_BROWSER_DIAGNOSTIC_AUTH_CODE
+      ? false
+      : true,
+    simulateNavigationAuthCode:
+      process.env.ONSTARJS_BROWSER_DIAGNOSTIC_AUTH_CODE,
     browserExecutablePath,
     profilePath,
     browserArgs: getBrowserArgs(),
