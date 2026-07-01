@@ -17,6 +17,7 @@ if sys.platform == "win32":
 try:
     import zendriver as zd
     from zendriver import cdp
+    from zendriver.core.keys import KeyEvents, KeyModifiers, SpecialKeys
 except Exception as exc:
     error_message = (
         "Zendriver is not installed for this Python interpreter. Run "
@@ -103,6 +104,13 @@ def progress(message):
 
 def progress_json(label, value):
     progress(f"{label}: {json.dumps(value, default=str)}")
+
+
+def sanitize_url(url):
+    value = str(url or "")
+    if "?" in value:
+        return value.split("?", 1)[0] + "?[redacted]"
+    return value
 
 
 def extract_auth_code(url):
@@ -466,6 +474,92 @@ async def get_field_value(element):
     return "" if value is None else str(value)
 
 
+async def wait_for_input_ready(element, timeout_ms=5000, interval_ms=150):
+    start = time.monotonic()
+    last_state = None
+    while (time.monotonic() - start) * 1000 < timeout_ms:
+        try:
+            last_state = await element.apply(
+                """
+                (element) => ({
+                    disabled: Boolean(element.disabled),
+                    readOnly: Boolean(element.readOnly),
+                    visible: Boolean(
+                        element.offsetWidth ||
+                        element.offsetHeight ||
+                        element.getClientRects().length
+                    ),
+                    focused: document.activeElement === element,
+                })
+                """,
+                await_promise=True,
+            )
+            if (
+                last_state
+                and last_state.get("visible")
+                and not last_state.get("disabled")
+                and not last_state.get("readOnly")
+            ):
+                return last_state
+        except Exception as exc:
+            last_state = {"error": repr(exc)}
+        await sleep_ms(interval_ms)
+    raise TimeoutError(f"Input was not ready for typing: {last_state}")
+
+
+async def clear_field_with_keyboard(element):
+    await focus_human(element)
+    modifier = (
+        KeyModifiers.Meta
+        if sys.platform == "darwin"
+        else KeyModifiers.Ctrl
+    )
+    try:
+        await element.send_keys(
+            KeyEvents.from_mixed_input(
+                [
+                    ("a", modifier),
+                    SpecialKeys.BACKSPACE,
+                ]
+            )
+        )
+        await sleep_ms(random.uniform(100, 250))
+        return
+    except Exception as exc:
+        progress(f"Keyboard clear failed; using event fallback: {repr(exc)}")
+
+    await element.apply(
+        """
+        (element) => {
+            element.focus();
+            element.select();
+            for (const key of ['Backspace']) {
+                element.dispatchEvent(new KeyboardEvent('keydown', {
+                    key,
+                    code: key,
+                    bubbles: true,
+                    cancelable: true,
+                }));
+                element.value = '';
+                element.dispatchEvent(new InputEvent('input', {
+                    bubbles: true,
+                    inputType: 'deleteContentBackward',
+                    data: null,
+                }));
+                element.dispatchEvent(new KeyboardEvent('keyup', {
+                    key,
+                    code: key,
+                    bubbles: true,
+                    cancelable: true,
+                }));
+            }
+            element.dispatchEvent(new Event('change', {bubbles: true}));
+        }
+        """,
+        await_promise=True,
+    )
+
+
 async def fill_text_field(
     element,
     value,
@@ -474,6 +568,7 @@ async def fill_text_field(
     pause_chance=0.08,
 ):
     await focus_human(element)
+    await wait_for_input_ready(element)
     await clear_field(element)
     await sleep_ms(random.uniform(200, 500))
     await type_human(element, value, min_delay, max_delay, pause_chance)
@@ -481,12 +576,76 @@ async def fill_text_field(
 
     actual_value = await get_field_value(element)
     if actual_value != value:
-        log(
-            "[zendriver] typed value did not match field value; "
-            "repairing with input/change events"
+        progress_json(
+            "Typed value did not match field value; repairing with keyboard",
+            {
+                "expectedLength": len(value),
+                "actualLength": len(actual_value),
+            },
         )
-        await set_field_value(element, value)
+        await clear_field_with_keyboard(element)
+        await type_human(element, value, min_delay, max_delay, pause_chance)
         await sleep_ms(random.uniform(150, 350))
+        repaired_value = await get_field_value(element)
+        if repaired_value != value:
+            raise RuntimeError(
+                "Input field value still mismatched after keyboard repair: "
+                f"expectedLength={len(value)}, "
+                f"actualLength={len(repaired_value)}"
+            )
+
+
+async def collect_page_summary(tab):
+    try:
+        return await tab.evaluate(
+            """
+            (() => {
+                const visibleText = document.body
+                    ? document.body.innerText.replace(/\\s+/g, ' ').trim()
+                    : '';
+                const inputs = Array.from(document.querySelectorAll('input'))
+                    .slice(0, 12)
+                    .map((input) => ({
+                        type: input.type,
+                        name: input.name,
+                        id: input.id,
+                        ariaLabel: input.getAttribute('aria-label'),
+                        valueLength: input.value ? input.value.length : 0,
+                        disabled: Boolean(input.disabled),
+                        readOnly: Boolean(input.readOnly),
+                    }));
+                const buttonSelector = [
+                    'button',
+                    '[role="button"]',
+                    'input[type="submit"]',
+                ].join(', ');
+                const buttons = Array.from(
+                    document.querySelectorAll(buttonSelector)
+                )
+                    .slice(0, 12)
+                    .map((button) => ({
+                        tag: button.tagName,
+                        id: button.id,
+                        ariaLabel: button.getAttribute('aria-label'),
+                        text: (button.innerText || button.value || '')
+                            .replace(/\\s+/g, ' ')
+                            .trim()
+                            .slice(0, 120),
+                        disabled: Boolean(button.disabled),
+                    }));
+                return {
+                    url: window.location.href,
+                    title: document.title,
+                    readyState: document.readyState,
+                    textSnippet: visibleText.slice(0, 500),
+                    inputs,
+                    buttons,
+                };
+            })()
+            """
+        )
+    except Exception as exc:
+        return {"error": repr(exc), "url": getattr(tab, "url", "")}
 
 
 async def click_human(element):
@@ -808,7 +967,12 @@ async def main():
     browser_args = payload.get("browserArgs") or []
     browser_executable_path = payload.get("browserExecutablePath")
     navigation_timeout_seconds = get_navigation_timeout_seconds(payload)
-    state = {"auth_code": None, "access_denied": False}
+    state = {
+        "auth_code": None,
+        "access_denied": False,
+        "record_login_responses": False,
+        "recent_responses": [],
+    }
     if payload.get("simulateNavigationAuthCode"):
         state["auth_code"] = payload["simulateNavigationAuthCode"]
     browser = None
@@ -835,6 +999,18 @@ async def main():
         response_url = str(getattr(response, "url", ""))
         capture_auth_redirect(state, response_url, "network response")
         response_status = int(getattr(response, "status", 0) or 0)
+        if state.get("record_login_responses"):
+            state["recent_responses"].append(
+                {
+                    "status": response_status,
+                    "url": sanitize_url(response_url),
+                    "type": str(getattr(event, "type_", "")),
+                    "contentType": headers.get("content-type")
+                    or headers.get("Content-Type"),
+                    "location": sanitize_url(location) if location else None,
+                }
+            )
+            state["recent_responses"] = state["recent_responses"][-20:]
         should_check_body = (
             response_status
             in (
@@ -1012,6 +1188,8 @@ async def main():
         submit_button = await find_login_button(tab)
         phase = "submitting credentials"
         progress("Submitting credentials")
+        state["record_login_responses"] = True
+        state["recent_responses"] = []
         await click_human(submit_button)
         await sleep_ms(500)
         progress("Monitoring for authorization redirect or MFA challenge")
@@ -1029,6 +1207,7 @@ async def main():
                     state,
                     15000,
                 )
+        state["record_login_responses"] = False
         if post_login_state == "mfa":
             progress("MFA challenge became ready before auth redirect")
         elif post_login_state == "auth_code":
@@ -1037,6 +1216,13 @@ async def main():
             progress("Access Denied detected after credentials")
         else:
             progress("No auth redirect or MFA challenge detected before timeout")
+            progress_json(
+                "Unexpected post-login response summary",
+                {
+                    "responses": state.get("recent_responses", []),
+                    "page": await collect_page_summary(tab),
+                },
+            )
 
         title = await maybe_value(await tab.evaluate("document.title"))
         page_html_result = await tab.evaluate("document.documentElement.outerHTML")
