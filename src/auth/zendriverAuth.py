@@ -260,6 +260,102 @@ def generate_mobile_fingerprint():
     }
 
 
+def get_chrome_version(value):
+    match = re.search(r"(?:Chrome|Chromium)/(\d+(?:\.\d+){0,3})", value or "")
+    return match.group(1) if match else None
+
+
+def get_chrome_major(value):
+    version = get_chrome_version(value)
+    if not version:
+        return None
+    return version.split(".", 1)[0]
+
+
+def normalize_chrome_version(version):
+    parts = str(version).split(".")
+    return ".".join((parts + ["0", "0", "0", "0"])[:4])
+
+
+def align_fingerprint_to_browser_version(fingerprint, browser_version):
+    browser_chrome_version = get_chrome_version(browser_version)
+    if not browser_chrome_version:
+        return fingerprint
+
+    original_user_agent = fingerprint["userAgent"]
+    original_version = get_chrome_version(original_user_agent)
+    if not original_version:
+        return fingerprint
+
+    aligned_version = normalize_chrome_version(browser_chrome_version)
+    fingerprint["userAgent"] = re.sub(
+        r"Chrome/\d+(?:\.\d+){0,3}",
+        f"Chrome/{aligned_version}",
+        original_user_agent,
+    )
+    fingerprint["headers"]["User-Agent"] = fingerprint["userAgent"]
+    if original_version != aligned_version:
+        progress_json(
+            "Aligned mobile fingerprint Chrome version",
+            {
+                "from": original_version,
+                "to": aligned_version,
+                "browserVersion": browser_version,
+            },
+        )
+    return fingerprint
+
+
+async def get_running_browser_version(tab):
+    try:
+        protocol_version, product, revision, user_agent, js_version = (
+            await tab.send(cdp.browser.get_version())
+        )
+        progress_json(
+            "Running browser version",
+            {
+                "protocolVersion": protocol_version,
+                "product": product,
+                "revision": revision,
+                "userAgent": user_agent,
+                "jsVersion": js_version,
+            },
+        )
+        return product or user_agent
+    except Exception as exc:
+        progress(f"Browser version lookup failed: {repr(exc)}")
+        return None
+
+
+def build_user_agent_metadata(fingerprint, browser_version):
+    full_version = normalize_chrome_version(
+        get_chrome_version(browser_version)
+        or get_chrome_version(fingerprint["userAgent"])
+        or "0"
+    )
+    major = full_version.split(".", 1)[0]
+    brands = [
+        cdp.emulation.UserAgentBrandVersion("Chromium", major),
+        cdp.emulation.UserAgentBrandVersion("Google Chrome", major),
+        cdp.emulation.UserAgentBrandVersion("Not.A/Brand", "99"),
+    ]
+    full_version_list = [
+        cdp.emulation.UserAgentBrandVersion("Chromium", full_version),
+        cdp.emulation.UserAgentBrandVersion("Google Chrome", full_version),
+        cdp.emulation.UserAgentBrandVersion("Not.A/Brand", "99.0.0.0"),
+    ]
+    return cdp.emulation.UserAgentMetadata(
+        platform="Android",
+        platform_version="10",
+        architecture="",
+        model="K",
+        mobile=True,
+        brands=brands,
+        full_version_list=full_version_list,
+        full_version=full_version,
+    )
+
+
 def has_chrome_arg(browser_args, name):
     prefix = f"{name}="
     return any(
@@ -292,7 +388,7 @@ def build_fingerprint_browser_args(browser_args, fingerprint):
     return args
 
 
-async def apply_mobile_fingerprint(tab, fingerprint):
+async def apply_mobile_fingerprint(tab, fingerprint, browser_version=None):
     screen = fingerprint["screen"]
     progress_json(
         "Applying BrowserForge mobile fingerprint",
@@ -310,10 +406,16 @@ async def apply_mobile_fingerprint(tab, fingerprint):
             build_mobile_fingerprint_script(fingerprint),
         )
     )
-    await tab.set_user_agent(
-        fingerprint["userAgent"],
-        accept_language=fingerprint["acceptLanguage"],
-        platform=fingerprint["platform"],
+    await tab.send(
+        cdp.network.set_user_agent_override(
+            fingerprint["userAgent"],
+            accept_language=fingerprint["acceptLanguage"],
+            platform=fingerprint["platform"],
+            user_agent_metadata=build_user_agent_metadata(
+                fingerprint,
+                browser_version,
+            ),
+        )
     )
     await tab.send(cdp.emulation.set_locale_override(fingerprint["language"]))
     await tab.send(
@@ -1719,9 +1821,10 @@ async def main():
 
     async def send_handler(event):
         mark_network_activity()
+        request_id = str(event.request_id)
         request = getattr(event, "request", None)
         request_url = getattr(request, "url", "")
-        network_state["pending"][event.request_id] = {
+        network_state["pending"][request_id] = {
             "url": sanitize_url(request_url),
             "type": str(getattr(event, "type_", "")),
             "documentUrl": sanitize_url(getattr(event, "document_url", "")),
@@ -1784,7 +1887,7 @@ async def main():
                     {
                         "requestId": str(event.request_id),
                         "request": network_state["pending"].get(
-                            event.request_id,
+                            str(event.request_id),
                             {},
                         ),
                         "url": response_url,
@@ -1801,11 +1904,11 @@ async def main():
 
     async def loading_finished_handler(event):
         mark_network_activity()
-        network_state["pending"].pop(event.request_id, None)
+        network_state["pending"].pop(str(event.request_id), None)
 
     async def loading_failed_handler(event):
         mark_network_activity()
-        network_state["pending"].pop(event.request_id, None)
+        network_state["pending"].pop(str(event.request_id), None)
 
     async def frame_started_navigating_handler(event):
         capture_auth_redirect(
@@ -1877,6 +1980,12 @@ async def main():
         phase = "acquiring initial tab"
         progress("Acquiring initial browser tab")
         tab = await get_initial_tab(browser)
+        browser_version = await get_running_browser_version(tab)
+        if browser_version:
+            mobile_fingerprint = align_fingerprint_to_browser_version(
+                mobile_fingerprint,
+                browser_version,
+            )
 
         phase = "registering network handlers"
         progress("Registering redirect capture handlers")
@@ -1899,7 +2008,11 @@ async def main():
         tab.add_handler(cdp.page.FrameNavigated, frame_navigated_handler)
         await tab.send(cdp.network.enable())
         phase = "applying browser fingerprint"
-        await apply_mobile_fingerprint(tab, mobile_fingerprint)
+        await apply_mobile_fingerprint(
+            tab,
+            mobile_fingerprint,
+            browser_version,
+        )
         phase = "navigating to authorization URL"
         progress("Navigating to authorization URL")
         tab = await navigate_existing_tab(
