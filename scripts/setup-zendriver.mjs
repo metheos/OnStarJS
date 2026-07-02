@@ -25,7 +25,10 @@ const browserCacheDir = path.resolve(
   process.env.ONSTARJS_BROWSER_CACHE ??
     path.join(projectRoot, ".cache", "onstarjs-browsers"),
 );
-const browserManifestPath = path.join(browserCacheDir, "zendriver-browser.json");
+const browserManifestPath = path.join(
+  browserCacheDir,
+  "zendriver-browser.json",
+);
 
 const pythonCandidates = [
   process.env.ONSTARJS_PYTHON
@@ -131,7 +134,9 @@ function checkVirtualDisplaySupport() {
 
 async function installPortableBrowser() {
   if (process.env.ONSTARJS_BROWSER_EXECUTABLE) {
-    const configuredBrowser = path.resolve(process.env.ONSTARJS_BROWSER_EXECUTABLE);
+    const configuredBrowser = path.resolve(
+      process.env.ONSTARJS_BROWSER_EXECUTABLE,
+    );
     if (!fs.existsSync(configuredBrowser)) {
       throw new Error(
         `ONSTARJS_BROWSER_EXECUTABLE does not exist: ${configuredBrowser}`,
@@ -151,8 +156,8 @@ async function installPortableBrowser() {
   fs.mkdirSync(browserCacheDir, { recursive: true });
 
   const installTargets = [
-    { browser: Browser.CHROMIUM, tag: BrowserTag.LATEST },
     { browser: Browser.CHROME, tag: BrowserTag.STABLE },
+    { browser: Browser.CHROMIUM, tag: BrowserTag.LATEST },
   ];
 
   for (const target of installTargets) {
@@ -209,7 +214,7 @@ async function installPortableBrowser() {
   }
 
   throw new Error(
-    `Unable to find a portable Chromium download for ${process.platform}/${process.arch}. Set ONSTARJS_BROWSER_EXECUTABLE to a local Chrome or Chromium binary and rerun setup.`,
+    `Unable to find a portable Chrome or Chromium download for ${process.platform}/${process.arch}. Set ONSTARJS_BROWSER_EXECUTABLE to a local Chrome or Chromium binary and rerun setup.`,
   );
 }
 

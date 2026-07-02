@@ -263,8 +263,7 @@ def generate_mobile_fingerprint():
 def has_chrome_arg(browser_args, name):
     prefix = f"{name}="
     return any(
-        arg == name or str(arg).startswith(prefix)
-        for arg in browser_args
+        arg == name or str(arg).startswith(prefix) for arg in browser_args
     )
 
 
