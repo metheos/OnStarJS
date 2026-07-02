@@ -1439,6 +1439,7 @@ async def click_until(
     label,
     methods=("cdp-touch", "cdp-mouse", "direct", "mouse", "enter", "space"),
     settle_ms=500,
+    activation_timeout_seconds=6,
 ):
     last_state = None
     for method in methods:
@@ -1455,7 +1456,11 @@ async def click_until(
                 "Button activation method started",
                 {"label": label, "method": method},
             )
-            await activate_button_with_timeout(element, method)
+            await activate_button_with_timeout(
+                element,
+                method,
+                timeout_seconds=activation_timeout_seconds,
+            )
             progress_json(
                 "Button activation method completed",
                 {"label": label, "method": method},
@@ -1466,7 +1471,7 @@ async def click_until(
                 {
                     "label": label,
                     "method": method,
-                    "timeoutSeconds": 6,
+                    "timeoutSeconds": activation_timeout_seconds,
                 },
             )
             continue
