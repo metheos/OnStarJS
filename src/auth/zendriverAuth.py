@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 import traceback
+import urllib.parse
 from dataclasses import asdict, is_dataclass
 
 if sys.platform == "win32":
@@ -112,6 +113,30 @@ def sanitize_url(url):
     if "?" in value:
         return value.split("?", 1)[0] + "?[redacted]"
     return value
+
+
+def sanitize_post_data(post_data):
+    if not post_data:
+        return None
+    value = str(post_data)
+    parsed_fields = urllib.parse.parse_qsl(value, keep_blank_values=True)
+    if not parsed_fields:
+        return {"length": len(value)}
+
+    sensitive_names = ("password", "passwd", "secret", "token", "code")
+    fields = []
+    for name, field_value in parsed_fields:
+        lower_name = name.lower()
+        is_sensitive = any(part in lower_name for part in sensitive_names)
+        fields.append(
+            {
+                "name": name,
+                "valueLength": len(field_value),
+                "redacted": is_sensitive,
+                **({"value": field_value} if not is_sensitive else {}),
+            }
+        )
+    return {"length": len(value), "fields": fields}
 
 
 def extract_auth_code(url):
@@ -1896,7 +1921,11 @@ async def main():
         "record_login_responses": False,
         "recent_responses": [],
     }
-    network_state = {"pending": {}, "last_activity": time.monotonic()}
+    network_state = {
+        "pending": {},
+        "recent_requests": [],
+        "last_activity": time.monotonic(),
+    }
     if payload.get("simulateNavigationAuthCode"):
         state["auth_code"] = payload["simulateNavigationAuthCode"]
     browser = None
@@ -1907,26 +1936,70 @@ async def main():
     def mark_network_activity():
         network_state["last_activity"] = time.monotonic()
 
+    def remember_request(request_id, detail):
+        detail = {"requestId": request_id, **detail}
+        network_state["pending"][request_id] = detail
+        network_state["recent_requests"].append(detail)
+        network_state["recent_requests"] = network_state["recent_requests"][
+            -80:
+        ]
+
+    def get_request_detail(request_id, response_url):
+        request_id = str(request_id)
+        if request_id in network_state["pending"]:
+            return network_state["pending"][request_id]
+
+        sanitized_response_url = sanitize_url(response_url)
+        response_base_url = str(response_url or "").split("?", 1)[0]
+        for request in reversed(network_state["recent_requests"]):
+            if request.get("requestId") == request_id:
+                return request
+            if request.get("rawUrl") == response_url:
+                return request
+            if request.get("url") == sanitized_response_url:
+                return request
+            if request.get("baseUrl") == response_base_url:
+                return request
+        return {}
+
     async def send_handler(event):
         mark_network_activity()
         request_id = str(event.request_id)
         request = getattr(event, "request", None)
         request_url = getattr(request, "url", "")
-        network_state["pending"][request_id] = {
-            "url": sanitize_url(request_url),
-            "type": str(getattr(event, "type_", "")),
-            "documentUrl": sanitize_url(getattr(event, "document_url", "")),
-            "method": getattr(request, "method", None),
-            "headers": getattr(request, "headers", {}) or {},
-            "postData": getattr(request, "post_data", None),
-            "startedAt": time.monotonic(),
-        }
+        remember_request(
+            request_id,
+            {
+                "rawUrl": request_url,
+                "url": sanitize_url(request_url),
+                "baseUrl": str(request_url or "").split("?", 1)[0],
+                "type": str(getattr(event, "type_", "")),
+                "documentUrl": sanitize_url(
+                    getattr(event, "document_url", "")
+                ),
+                "method": getattr(request, "method", None),
+                "headers": getattr(request, "headers", {}) or {},
+                "postData": sanitize_post_data(
+                    getattr(request, "post_data", None)
+                ),
+                "startedAt": time.monotonic(),
+            },
+        )
         capture_auth_redirect(state, request_url, "network request")
         document_url = getattr(event, "document_url", "")
         capture_auth_redirect(state, document_url, "network document")
         redirect_response = getattr(event, "redirect_response", None)
         redirect_url = getattr(redirect_response, "url", "")
         capture_auth_redirect(state, redirect_url, "network redirect response")
+
+    async def request_extra_info_handler(event):
+        mark_network_activity()
+        request_id = str(event.request_id)
+        request = get_request_detail(request_id, "")
+        if not request:
+            request = {}
+        request["extraHeaders"] = getattr(event, "headers", {}) or {}
+        remember_request(request_id, request)
 
     async def response_handler(event):
         mark_network_activity()
@@ -1974,9 +2047,9 @@ async def main():
                     "network response",
                     {
                         "requestId": str(event.request_id),
-                        "request": network_state["pending"].get(
+                        "request": get_request_detail(
                             str(event.request_id),
-                            {},
+                            response_url,
                         ),
                         "url": response_url,
                         "status": response_status,
@@ -1992,11 +2065,16 @@ async def main():
 
     async def loading_finished_handler(event):
         mark_network_activity()
-        network_state["pending"].pop(str(event.request_id), None)
+        request = network_state["pending"].pop(str(event.request_id), None)
+        if request is not None:
+            request["finishedAt"] = time.monotonic()
 
     async def loading_failed_handler(event):
         mark_network_activity()
-        network_state["pending"].pop(str(event.request_id), None)
+        request = network_state["pending"].pop(str(event.request_id), None)
+        if request is not None:
+            request["failedAt"] = time.monotonic()
+            request["failure"] = getattr(event, "error_text", None)
 
     async def frame_started_navigating_handler(event):
         capture_auth_redirect(
@@ -2078,6 +2156,10 @@ async def main():
         phase = "registering network handlers"
         progress("Registering redirect capture handlers")
         tab.add_handler(cdp.network.RequestWillBeSent, send_handler)
+        tab.add_handler(
+            cdp.network.RequestWillBeSentExtraInfo,
+            request_extra_info_handler,
+        )
         tab.add_handler(cdp.network.ResponseReceived, response_handler)
         tab.add_handler(cdp.network.LoadingFinished, loading_finished_handler)
         tab.add_handler(cdp.network.LoadingFailed, loading_failed_handler)
@@ -2094,7 +2176,7 @@ async def main():
             navigated_within_document_handler,
         )
         tab.add_handler(cdp.page.FrameNavigated, frame_navigated_handler)
-        await tab.send(cdp.network.enable())
+        await tab.send(cdp.network.enable(max_post_data_size=65536))
         phase = "applying browser fingerprint"
         await apply_mobile_fingerprint(
             tab,
