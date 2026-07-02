@@ -790,6 +790,33 @@ async def get_field_value(element):
     return "" if value is None else str(value)
 
 
+async def select_field_contents(element):
+    await element.apply(
+        """
+        (element) => {
+            element.scrollIntoView({block: 'center', inline: 'center'});
+            element.focus();
+            if (typeof element.select === 'function') {
+                element.select();
+            }
+        }
+        """,
+        await_promise=True,
+    )
+
+
+async def insert_text_cdp(element, value, min_delay=40, max_delay=150):
+    tab = getattr(element, "tab", None)
+    if tab is None:
+        raise RuntimeError("Element has no tab for CDP text insertion")
+    await focus_human(element)
+    await select_field_contents(element)
+    await sleep_ms(random.uniform(120, 260))
+    for character in value:
+        await tab.send(cdp.input_.insert_text(character))
+        await sleep_ms(random.uniform(min_delay, max_delay))
+
+
 async def wait_for_network_quiet(
     network_state,
     quiet_ms=5000,
@@ -1043,13 +1070,34 @@ async def fill_text_field(
     await wait_for_input_ready(element)
     await clear_field(element)
     await sleep_ms(random.uniform(200, 500))
-    await element.send_keys(value)
+    progress_json(
+        "Text insertion method attempt",
+        {
+            "method": "cdp-insert-text",
+            "expectedLength": len(value),
+            "input": await get_input_state(element),
+        },
+    )
+    await insert_text_cdp(element, value, min_delay, max_delay)
     await sleep_ms(random.uniform(250, 600))
 
     actual_value = await get_field_value(element)
+    if actual_value == value:
+        progress_json(
+            "Text insertion method succeeded",
+            {
+                "method": "cdp-insert-text",
+                "expectedLength": len(value),
+                "actualLength": len(actual_value),
+                "input": await get_input_state(element),
+            },
+        )
+        return
+
     if actual_value != value:
         progress_json(
-            "Native send_keys value did not match field value; retrying",
+            "CDP text insertion value did not match field value; "
+            "trying native send_keys",
             {
                 "expectedLength": len(value),
                 "actualLength": len(actual_value),
@@ -1059,22 +1107,62 @@ async def fill_text_field(
         await focus_human(element)
         await clear_field(element)
         await sleep_ms(random.uniform(150, 350))
+        progress_json(
+            "Text insertion method attempt",
+            {
+                "method": "native-send-keys",
+                "expectedLength": len(value),
+                "input": await get_input_state(element),
+            },
+        )
         await element.send_keys(value)
         await sleep_ms(random.uniform(150, 350))
         repaired_value = await get_field_value(element)
+        if repaired_value == value:
+            progress_json(
+                "Text insertion method succeeded",
+                {
+                    "method": "native-send-keys",
+                    "expectedLength": len(value),
+                    "actualLength": len(repaired_value),
+                    "input": await get_input_state(element),
+                },
+            )
+            return
+
         if repaired_value != value:
             progress_json(
-                "Native send_keys retry still mismatched; "
-                "using value fallback",
+                "Native send_keys fallback still mismatched; "
+                "using DOM value fallback",
                 {
                     "expectedLength": len(value),
                     "actualLength": len(repaired_value),
                     "input": await get_input_state(element),
                 },
             )
+            progress_json(
+                "Text insertion method attempt",
+                {
+                    "method": "dom-value-fallback",
+                    "expectedLength": len(value),
+                    "input": await get_input_state(element),
+                },
+            )
             await set_field_value(element, value)
             await sleep_ms(random.uniform(150, 350))
             fallback_value = await get_field_value(element)
+            if fallback_value == value:
+                progress_json(
+                    "Text insertion method succeeded",
+                    {
+                        "method": "dom-value-fallback",
+                        "expectedLength": len(value),
+                        "actualLength": len(fallback_value),
+                        "input": await get_input_state(element),
+                    },
+                )
+                return
+
             if fallback_value != value:
                 raise RuntimeError(
                     "Input field value still mismatched after value fallback: "
