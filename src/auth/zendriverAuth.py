@@ -1110,9 +1110,96 @@ async def click_direct(element):
     )
 
 
+async def get_element_center(element):
+    rect = await element.apply(
+        """
+        (element) => {
+            element.scrollIntoView({block: 'center', inline: 'center'});
+            const rect = element.getBoundingClientRect();
+            return {
+                x: rect.left + rect.width / 2,
+                y: rect.top + rect.height / 2,
+                width: rect.width,
+                height: rect.height,
+            };
+        }
+        """,
+        await_promise=True,
+    )
+    jitter_x = random.uniform(-0.2, 0.2) * min(float(rect["width"]), 24)
+    jitter_y = random.uniform(-0.2, 0.2) * min(float(rect["height"]), 18)
+    return float(rect["x"]) + jitter_x, float(rect["y"]) + jitter_y
+
+
+async def click_cdp_touch(element):
+    tab = getattr(element, "tab", None)
+    if tab is None:
+        raise RuntimeError("Element has no tab for CDP touch activation")
+    x, y = await get_element_center(element)
+    touch_id = random.randint(1, 100000)
+    touch_point = cdp.input_.TouchPoint(
+        x=x,
+        y=y,
+        radius_x=random.uniform(3, 8),
+        radius_y=random.uniform(3, 8),
+        force=random.uniform(0.4, 0.8),
+        id_=touch_id,
+    )
+    await tab.send(
+        cdp.input_.dispatch_touch_event("touchStart", [touch_point])
+    )
+    await sleep_ms(random.uniform(80, 180))
+    await tab.send(cdp.input_.dispatch_touch_event("touchEnd", []))
+
+
+async def click_cdp_mouse(element):
+    tab = getattr(element, "tab", None)
+    if tab is None:
+        raise RuntimeError("Element has no tab for CDP mouse activation")
+    x, y = await get_element_center(element)
+    await tab.send(
+        cdp.input_.dispatch_mouse_event(
+            "mouseMoved",
+            x=x,
+            y=y,
+            button=cdp.input_.MouseButton.NONE,
+            buttons=0,
+            pointer_type="mouse",
+        )
+    )
+    await sleep_ms(random.uniform(80, 180))
+    await tab.send(
+        cdp.input_.dispatch_mouse_event(
+            "mousePressed",
+            x=x,
+            y=y,
+            button=cdp.input_.MouseButton.LEFT,
+            buttons=1,
+            click_count=1,
+            pointer_type="mouse",
+        )
+    )
+    await sleep_ms(random.uniform(70, 160))
+    await tab.send(
+        cdp.input_.dispatch_mouse_event(
+            "mouseReleased",
+            x=x,
+            y=y,
+            button=cdp.input_.MouseButton.LEFT,
+            buttons=0,
+            click_count=1,
+            pointer_type="mouse",
+        )
+    )
+
+
 async def activate_button(element, method):
     await focus_button(element)
-    if method == "mouse":
+    if method == "cdp-touch":
+        await click_cdp_touch(element)
+    elif method == "cdp-mouse":
+        await click_cdp_mouse(element)
+    elif method == "mouse":
         await click_human(element)
     elif method == "enter":
         await element.send_keys(SpecialKeys.ENTER)
@@ -1128,7 +1215,7 @@ async def click_until(
     element,
     is_complete,
     label,
-    methods=("direct", "mouse", "enter", "space"),
+    methods=("cdp-touch", "cdp-mouse", "direct", "mouse", "enter", "space"),
     settle_ms=500,
 ):
     last_state = None
@@ -1632,11 +1719,15 @@ async def main():
 
     async def send_handler(event):
         mark_network_activity()
-        request_url = getattr(getattr(event, "request", None), "url", "")
+        request = getattr(event, "request", None)
+        request_url = getattr(request, "url", "")
         network_state["pending"][event.request_id] = {
             "url": sanitize_url(request_url),
             "type": str(getattr(event, "type_", "")),
             "documentUrl": sanitize_url(getattr(event, "document_url", "")),
+            "method": getattr(request, "method", None),
+            "headers": getattr(request, "headers", {}) or {},
+            "postData": getattr(request, "post_data", None),
             "startedAt": time.monotonic(),
         }
         capture_auth_redirect(state, request_url, "network request")
@@ -1692,6 +1783,10 @@ async def main():
                     "network response",
                     {
                         "requestId": str(event.request_id),
+                        "request": network_state["pending"].get(
+                            event.request_id,
+                            {},
+                        ),
                         "url": response_url,
                         "status": response_status,
                         "statusText": getattr(response, "status_text", ""),
