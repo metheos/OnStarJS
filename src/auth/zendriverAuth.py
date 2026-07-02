@@ -123,7 +123,18 @@ def sanitize_post_data(post_data):
     if not parsed_fields:
         return {"length": len(value)}
 
-    sensitive_names = ("password", "passwd", "secret", "token", "code")
+    sensitive_names = (
+        "account",
+        "code",
+        "email",
+        "identifier",
+        "login",
+        "password",
+        "passwd",
+        "secret",
+        "token",
+        "username",
+    )
     fields = []
     for name, field_value in parsed_fields:
         lower_name = name.lower()
@@ -137,6 +148,45 @@ def sanitize_post_data(post_data):
             }
         )
     return {"length": len(value), "fields": fields}
+
+
+def sanitize_headers(headers):
+    if not headers:
+        return {}
+
+    sensitive_names = (
+        "authorization",
+        "cookie",
+        "csrf",
+        "proxy-authorization",
+        "set-cookie",
+        "token",
+    )
+    sanitized = {}
+    for name, value in dict(headers).items():
+        lower_name = str(name).lower()
+        if any(part in lower_name for part in sensitive_names):
+            sanitized[name] = "[redacted]"
+        elif lower_name == "referer":
+            sanitized[name] = sanitize_url(value)
+        else:
+            sanitized[name] = value
+    return sanitized
+
+
+def sanitize_request_detail(request):
+    if not request:
+        return {}
+
+    sanitized = dict(request)
+    for key in ("rawUrl", "url", "documentUrl"):
+        if key in sanitized:
+            sanitized[key] = sanitize_url(sanitized[key])
+    if "headers" in sanitized:
+        sanitized["headers"] = sanitize_headers(sanitized["headers"])
+    if "extraHeaders" in sanitized:
+        sanitized["extraHeaders"] = sanitize_headers(sanitized["extraHeaders"])
+    return sanitized
 
 
 def extract_auth_code(url):
@@ -2077,14 +2127,16 @@ async def main():
                     "network response",
                     {
                         "requestId": str(event.request_id),
-                        "request": get_request_detail(
-                            str(event.request_id),
-                            response_url,
+                        "request": sanitize_request_detail(
+                            get_request_detail(
+                                str(event.request_id),
+                                response_url,
+                            )
                         ),
-                        "url": response_url,
+                        "url": sanitize_url(response_url),
                         "status": response_status,
                         "statusText": getattr(response, "status_text", ""),
-                        "headers": headers,
+                        "headers": sanitize_headers(headers),
                         "bodyEncoded": encoded,
                         "body": body,
                     },
