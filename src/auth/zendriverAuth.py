@@ -1426,6 +1426,13 @@ async def activate_button(element, method):
         raise ValueError(f"Unknown button activation method: {method}")
 
 
+async def activate_button_with_timeout(element, method, timeout_seconds=6):
+    return await asyncio.wait_for(
+        activate_button(element, method),
+        timeout=timeout_seconds,
+    )
+
+
 async def click_until(
     element,
     is_complete,
@@ -1444,7 +1451,25 @@ async def click_until(
             },
         )
         try:
-            await activate_button(element, method)
+            progress_json(
+                "Button activation method started",
+                {"label": label, "method": method},
+            )
+            await activate_button_with_timeout(element, method)
+            progress_json(
+                "Button activation method completed",
+                {"label": label, "method": method},
+            )
+        except asyncio.TimeoutError:
+            progress_json(
+                "Button activation method timed out",
+                {
+                    "label": label,
+                    "method": method,
+                    "timeoutSeconds": 6,
+                },
+            )
+            continue
         except Exception as exc:
             progress_json(
                 "Button activation method failed",
