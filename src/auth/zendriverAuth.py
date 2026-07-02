@@ -260,6 +260,39 @@ def generate_mobile_fingerprint():
     }
 
 
+def has_chrome_arg(browser_args, name):
+    prefix = f"{name}="
+    return any(
+        arg == name or str(arg).startswith(prefix)
+        for arg in browser_args
+    )
+
+
+def append_chrome_arg(browser_args, name, value=None):
+    if has_chrome_arg(browser_args, name):
+        return
+    if value is None:
+        browser_args.append(name)
+    else:
+        browser_args.append(f"{name}={value}")
+
+
+def build_fingerprint_browser_args(browser_args, fingerprint):
+    args = list(browser_args or [])
+    screen = fingerprint["screen"]
+    width = int(screen["width"])
+    height = int(screen["height"])
+    scale_factor = screen["deviceScaleFactor"]
+    language = fingerprint.get("language") or "en-US"
+
+    append_chrome_arg(args, "--lang", language)
+    append_chrome_arg(args, "--window-size", f"{width},{height}")
+    append_chrome_arg(args, "--force-device-scale-factor", scale_factor)
+    append_chrome_arg(args, "--no-first-run")
+    append_chrome_arg(args, "--no-default-browser-check")
+    return args
+
+
 async def apply_mobile_fingerprint(tab, fingerprint):
     screen = fingerprint["screen"]
     progress_json(
@@ -1543,7 +1576,7 @@ class XvfbDisplay:
             os.environ["DISPLAY"] = self.previous_display
 
 
-def start_virtual_display_if_needed():
+def start_virtual_display_if_needed(fingerprint=None):
     if sys.platform != "linux" or os.environ.get("DISPLAY"):
         return None
     if os.environ.get("ONSTARJS_DISABLE_XVFB") == "1":
@@ -1555,8 +1588,24 @@ def start_virtual_display_if_needed():
             "on this Linux host or set DISPLAY before running auth."
         )
 
-    progress("No DISPLAY detected; starting Xvfb virtual display")
-    return XvfbDisplay().start()
+    width = 1365
+    height = 1024
+    color_depth = 24
+    if fingerprint:
+        screen = fingerprint.get("screen") or {}
+        width = int(screen.get("width") or width)
+        height = int(screen.get("height") or height)
+        color_depth = int(screen.get("colorDepth") or color_depth)
+
+    progress_json(
+        "No DISPLAY detected; starting Xvfb virtual display",
+        {
+            "width": width,
+            "height": height,
+            "colorDepth": color_depth,
+        },
+    )
+    return XvfbDisplay(width, height, color_depth).start()
 
 
 async def main():
@@ -1706,8 +1755,13 @@ async def main():
 
         phase = "configuring browser session"
         progress("Configuring browser session")
-        virtual_display = start_virtual_display_if_needed()
         mobile_fingerprint = generate_mobile_fingerprint()
+        browser_args = build_fingerprint_browser_args(
+            browser_args,
+            mobile_fingerprint,
+        )
+        progress_json("Resolved browser args", browser_args)
+        virtual_display = start_virtual_display_if_needed(mobile_fingerprint)
         sandbox_enabled = sys.platform != "linux"
         if not sandbox_enabled:
             progress(
