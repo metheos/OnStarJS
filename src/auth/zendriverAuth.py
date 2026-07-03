@@ -810,22 +810,12 @@ async def type_human(
             await sleep_ms(random.uniform(150, 700))
 
 
-async def focus_human(element):
+async def prepare_text_input(element):
     try:
         await asyncio.wait_for(element.scroll_into_view(), timeout=3)
     except Exception as exc:
         progress_json("Input scroll into view failed", {"error": repr(exc)})
-    try:
-        await asyncio.wait_for(element.mouse_move(), timeout=3)
-    except Exception as exc:
-        progress_json("Input mouse move failed", {"error": repr(exc)})
-    try:
-        await asyncio.wait_for(element.mouse_click("left"), timeout=5)
-        await sleep_ms(random.uniform(200, 500))
-        return True
-    except Exception as exc:
-        progress_json("Input mouse click focus failed", {"error": repr(exc)})
-        return False
+    await sleep_ms(random.uniform(200, 500))
 
 
 async def clear_field(element):
@@ -987,9 +977,7 @@ async def fill_text_field(
 ):
     if network_state is not None:
         await wait_for_network_quiet(network_state)
-    focused = await focus_human(element)
-    if not focused:
-        raise TimeoutError("Zendriver element mouse_click did not focus input")
+    await prepare_text_input(element)
     await asyncio.wait_for(clear_field(element), timeout=5)
     await sleep_ms(random.uniform(200, 500))
     progress_json(
