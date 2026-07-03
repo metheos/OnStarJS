@@ -19,7 +19,6 @@ if sys.platform == "win32":
 try:
     import zendriver as zd
     from zendriver import cdp
-    from zendriver.core.element import SpecialKeys
 except Exception as exc:
     error_message = (
         "Zendriver is not installed for this Python interpreter. Run "
@@ -94,6 +93,12 @@ MFA_SUBMIT_SELECTOR = (
     'input[type="submit"][value*="Submit" i], '
     'input[type="submit"][value*="Verify" i]'
 )
+
+DEFAULT_WARMUP_URLS = [
+    "https://www.google.com/",
+    "https://www.youtube.com/",
+    "https://www.wikipedia.org/",
+]
 
 
 def log(*parts):
@@ -807,57 +812,14 @@ async def type_human(
 
 async def focus_human(element):
     try:
-        await element.apply(
-            """
-            (element) => {
-                element.scrollIntoView({block: 'center', inline: 'center'});
-                element.focus();
-            }
-            """,
-            await_promise=True,
-        )
-        await sleep_ms(random.uniform(250, 600))
+        await click_cdp_touch(element)
     except Exception:
-        await element.focus()
-        await sleep_ms(random.uniform(250, 600))
+        await click_cdp_mouse(element)
+    await sleep_ms(random.uniform(200, 500))
 
 
 async def clear_field(element):
-    try:
-        await element.clear_input()
-    except Exception:
-        await element.apply(
-            """
-            (element) => {
-                const setter = Object.getOwnPropertyDescriptor(
-                    HTMLInputElement.prototype,
-                    'value'
-                ).set;
-                setter.call(element, '');
-                element.dispatchEvent(new Event('input', {bubbles: true}));
-                element.dispatchEvent(new Event('change', {bubbles: true}));
-            }
-            """,
-            await_promise=True,
-        )
-
-
-async def set_field_value(element, value):
-    await element.apply(
-        f"""
-        (element) => {{
-            const value = {json.dumps(value)};
-            const setter = Object.getOwnPropertyDescriptor(
-                HTMLInputElement.prototype,
-                'value'
-            ).set;
-            setter.call(element, value);
-            element.dispatchEvent(new Event('input', {{bubbles: true}}));
-            element.dispatchEvent(new Event('change', {{bubbles: true}}));
-        }}
-        """,
-        await_promise=True,
-    )
+    await element.clear_input()
 
 
 async def get_field_value(element):
@@ -865,28 +827,12 @@ async def get_field_value(element):
     return "" if value is None else str(value)
 
 
-async def select_field_contents(element):
-    await element.apply(
-        """
-        (element) => {
-            element.scrollIntoView({block: 'center', inline: 'center'});
-            element.focus();
-            if (typeof element.select === 'function') {
-                element.select();
-            }
-        }
-        """,
-        await_promise=True,
-    )
-
-
 async def insert_text_cdp(element, value, min_delay=40, max_delay=150):
+    await focus_human(element)
+    await sleep_ms(random.uniform(120, 260))
     tab = getattr(element, "tab", None)
     if tab is None:
         raise RuntimeError("Element has no tab for CDP text insertion")
-    await focus_human(element)
-    await select_field_contents(element)
-    await sleep_ms(random.uniform(120, 260))
     for character in value:
         await tab.send(cdp.input_.insert_text(character))
         await sleep_ms(random.uniform(min_delay, max_delay))
@@ -1171,80 +1117,19 @@ async def fill_text_field(
 
     if actual_value != value:
         progress_json(
-            "CDP text insertion value did not match field value; "
-            "trying native send_keys",
+            "CDP text insertion value did not match field value",
             {
                 "expectedLength": len(value),
                 "actualLength": len(actual_value),
                 "input": await get_input_state(element),
             },
         )
-        await focus_human(element)
-        await clear_field(element)
-        await sleep_ms(random.uniform(150, 350))
-        progress_json(
-            "Text insertion method attempt",
-            {
-                "method": "native-send-keys",
-                "expectedLength": len(value),
-                "input": await get_input_state(element),
-            },
+        raise RuntimeError(
+            "Input field value mismatched after CDP insertion: "
+            f"expectedLength={len(value)}, "
+            f"actualLength={len(actual_value)}, "
+            f"input={await get_input_state(element)}"
         )
-        await element.send_keys(value)
-        await sleep_ms(random.uniform(150, 350))
-        repaired_value = await get_field_value(element)
-        if repaired_value == value:
-            progress_json(
-                "Text insertion method succeeded",
-                {
-                    "method": "native-send-keys",
-                    "expectedLength": len(value),
-                    "actualLength": len(repaired_value),
-                    "input": await get_input_state(element),
-                },
-            )
-            return
-
-        if repaired_value != value:
-            progress_json(
-                "Native send_keys fallback still mismatched; "
-                "using DOM value fallback",
-                {
-                    "expectedLength": len(value),
-                    "actualLength": len(repaired_value),
-                    "input": await get_input_state(element),
-                },
-            )
-            progress_json(
-                "Text insertion method attempt",
-                {
-                    "method": "dom-value-fallback",
-                    "expectedLength": len(value),
-                    "input": await get_input_state(element),
-                },
-            )
-            await set_field_value(element, value)
-            await sleep_ms(random.uniform(150, 350))
-            fallback_value = await get_field_value(element)
-            if fallback_value == value:
-                progress_json(
-                    "Text insertion method succeeded",
-                    {
-                        "method": "dom-value-fallback",
-                        "expectedLength": len(value),
-                        "actualLength": len(fallback_value),
-                        "input": await get_input_state(element),
-                    },
-                )
-                return
-
-            if fallback_value != value:
-                raise RuntimeError(
-                    "Input field value still mismatched after value fallback: "
-                    f"expectedLength={len(value)}, "
-                    f"actualLength={len(fallback_value)}, "
-                    f"input={await get_input_state(element)}"
-                )
 
 
 async def save_error_screenshot(tab, phase):
@@ -1324,55 +1209,108 @@ async def collect_page_summary(tab):
         return {"error": repr(exc), "url": getattr(tab, "url", "")}
 
 
-async def click_human(element):
-    try:
-        await element.mouse_move()
-        await sleep_ms(random.uniform(100, 400))
-    except Exception:
-        pass
-    try:
-        await element.mouse_click()
-    except Exception:
-        await element.apply(
-            """
-            (element) => {
-                element.scrollIntoView({block: 'center', inline: 'center'});
-                element.click();
-            }
-            """,
-            await_promise=True,
-        )
-
-
 async def focus_button(element):
     try:
-        await element.apply(
-            """
-            (element) => {
-                element.scrollIntoView({block: 'center', inline: 'center'});
-                element.focus({preventScroll: true});
-            }
-            """,
-            await_promise=True,
-        )
+        await click_cdp_touch(element)
         await sleep_ms(random.uniform(100, 250))
     except Exception:
-        try:
-            await element.focus()
-        except Exception:
-            pass
+        await click_cdp_mouse(element)
+        await sleep_ms(random.uniform(100, 250))
 
 
-async def click_direct(element):
-    await element.apply(
-        """
-        (element) => {
-            element.scrollIntoView({block: 'center', inline: 'center'});
-            element.click();
-        }
-        """,
-        await_promise=True,
+async def random_mouse_wheel(tab, viewport_width, viewport_height):
+    x = random.uniform(max(20, viewport_width * 0.2), viewport_width * 0.8)
+    y = random.uniform(max(20, viewport_height * 0.2), viewport_height * 0.8)
+    delta_y = random.uniform(-550, 650)
+    await tab.send(
+        cdp.input_.dispatch_mouse_event(
+            "mouseWheel",
+            x=x,
+            y=y,
+            delta_x=random.uniform(-12, 12),
+            delta_y=delta_y,
+            button=cdp.input_.MouseButton.NONE,
+            buttons=0,
+            pointer_type="mouse",
+        )
     )
+
+
+async def maybe_random_zoom(tab, config):
+    if random.random() >= config["zoomProbability"]:
+        return
+    try:
+        factor = random.uniform(0.92, 1.08)
+        await tab.send(cdp.emulation.set_page_scale_factor(factor))
+        await sleep_ms(random.uniform(120, 300))
+        await tab.send(cdp.emulation.set_page_scale_factor(1.0))
+    except Exception as exc:
+        progress_json("Random zoom step failed", {"error": repr(exc)})
+
+
+async def perform_human_behavior(tab, config, viewport_width, viewport_height):
+    if not config.get("enabled"):
+        return
+    await sleep_ms(
+        random.uniform(
+            config["preActionPauseMinMs"],
+            config["preActionPauseMaxMs"],
+        )
+    )
+    for _ in range(config["scrollsPerAction"]):
+        try:
+            await random_mouse_wheel(tab, viewport_width, viewport_height)
+            await sleep_ms(random.uniform(80, 280))
+        except Exception as exc:
+            progress_json("Random scroll step failed", {"error": repr(exc)})
+            break
+    await maybe_random_zoom(tab, config)
+
+
+async def run_session_warmup(
+    tab,
+    config,
+    viewport_width,
+    viewport_height,
+    timeout_seconds,
+):
+    if not (config.get("enabled") and config.get("warmupEnabled")):
+        return
+    warmup_urls = list(config.get("warmupUrls") or [])
+    if not warmup_urls:
+        return
+    page_count = min(config.get("warmupPageCount", 0), len(warmup_urls))
+    if page_count <= 0:
+        return
+
+    progress_json(
+        "Running session warmup",
+        {
+            "pageCount": page_count,
+            "urls": [sanitize_url(url) for url in warmup_urls[:page_count]],
+        },
+    )
+    for warmup_url in warmup_urls[:page_count]:
+        try:
+            await navigate_existing_tab(tab, warmup_url, timeout_seconds)
+            await wait_ready(tab, timeout=timeout_seconds)
+            await perform_human_behavior(
+                tab,
+                config,
+                viewport_width,
+                viewport_height,
+            )
+            await sleep_ms(
+                random.uniform(
+                    config["warmupDwellMinMs"],
+                    config["warmupDwellMaxMs"],
+                )
+            )
+        except Exception as exc:
+            progress_json(
+                "Warmup page step failed",
+                {"url": sanitize_url(warmup_url), "error": repr(exc)},
+            )
 
 
 async def get_element_center(element):
@@ -1464,14 +1402,6 @@ async def activate_button(element, method):
         await click_cdp_touch(element)
     elif method == "cdp-mouse":
         await click_cdp_mouse(element)
-    elif method == "mouse":
-        await click_human(element)
-    elif method == "enter":
-        await element.send_keys(SpecialKeys.ENTER)
-    elif method == "space":
-        await element.send_keys(SpecialKeys.SPACE)
-    elif method == "direct":
-        await click_direct(element)
     else:
         raise ValueError(f"Unknown button activation method: {method}")
 
@@ -1487,62 +1417,92 @@ async def click_until(
     element,
     is_complete,
     label,
-    methods=("cdp-touch", "cdp-mouse", "direct", "mouse", "enter", "space"),
+    methods=("cdp-touch", "cdp-mouse"),
     settle_ms=500,
     activation_timeout_seconds=6,
+    retry_rounds=3,
 ):
     last_state = None
-    for method in methods:
-        progress_json(
-            "Activating button",
-            {
-                "label": label,
-                "method": method,
-                "button": await get_element_state(element),
-            },
-        )
-        try:
+    for attempt in range(1, retry_rounds + 1):
+        for method in methods:
             progress_json(
-                "Button activation method started",
-                {"label": label, "method": method},
-            )
-            await activate_button_with_timeout(
-                element,
-                method,
-                timeout_seconds=activation_timeout_seconds,
-            )
-            progress_json(
-                "Button activation method completed",
-                {"label": label, "method": method},
-            )
-        except asyncio.TimeoutError:
-            progress_json(
-                "Button activation method timed out",
+                "Activating button",
                 {
                     "label": label,
                     "method": method,
-                    "timeoutSeconds": activation_timeout_seconds,
+                    "attempt": attempt,
+                    "retryRounds": retry_rounds,
+                    "button": await get_element_state(element),
                 },
             )
-            continue
-        except Exception as exc:
+            try:
+                progress_json(
+                    "Button activation method started",
+                    {
+                        "label": label,
+                        "method": method,
+                        "attempt": attempt,
+                    },
+                )
+                await activate_button_with_timeout(
+                    element,
+                    method,
+                    timeout_seconds=activation_timeout_seconds,
+                )
+                progress_json(
+                    "Button activation method completed",
+                    {
+                        "label": label,
+                        "method": method,
+                        "attempt": attempt,
+                    },
+                )
+            except asyncio.TimeoutError:
+                progress_json(
+                    "Button activation method timed out",
+                    {
+                        "label": label,
+                        "method": method,
+                        "attempt": attempt,
+                        "timeoutSeconds": activation_timeout_seconds,
+                    },
+                )
+                continue
+            except Exception as exc:
+                progress_json(
+                    "Button activation method failed",
+                    {
+                        "label": label,
+                        "method": method,
+                        "attempt": attempt,
+                        "error": repr(exc),
+                    },
+                )
+                continue
+            await sleep_ms(settle_ms)
+            last_state = await is_complete()
+            if last_state:
+                progress_json(
+                    "Button activation changed page state",
+                    {
+                        "label": label,
+                        "method": method,
+                        "attempt": attempt,
+                        "state": last_state,
+                    },
+                )
+                return last_state
+
+        if attempt < retry_rounds:
             progress_json(
-                "Button activation method failed",
+                "Button activation attempt exhausted; retrying",
                 {
                     "label": label,
-                    "method": method,
-                    "error": repr(exc),
+                    "attempt": attempt,
+                    "retryRounds": retry_rounds,
                 },
             )
-            continue
-        await sleep_ms(settle_ms)
-        last_state = await is_complete()
-        if last_state:
-            progress_json(
-                "Button activation changed page state",
-                {"label": label, "method": method, "state": last_state},
-            )
-            return last_state
+            await sleep_ms(random.uniform(180, 520))
 
     progress_json(
         "Button activation did not change page state",
@@ -1649,6 +1609,138 @@ def get_navigation_timeout_seconds(payload):
         return max(10, int(configured_timeout))
     except (TypeError, ValueError):
         return 60
+
+
+def to_int(value, default, minimum=None, maximum=None):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    if minimum is not None:
+        parsed = max(minimum, parsed)
+    if maximum is not None:
+        parsed = min(maximum, parsed)
+    return parsed
+
+
+def to_float(value, default, minimum=None, maximum=None):
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        parsed = default
+    if minimum is not None:
+        parsed = max(minimum, parsed)
+    if maximum is not None:
+        parsed = min(maximum, parsed)
+    return parsed
+
+
+def parse_warmup_urls(value):
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    return []
+
+
+def get_human_behavior_config(payload):
+    payload = payload or {}
+    warmup_urls = parse_warmup_urls(
+        payload.get("warmupUrls") or os.environ.get("ONSTARJS_WARMUP_URLS")
+    )
+    if not warmup_urls:
+        warmup_urls = list(DEFAULT_WARMUP_URLS)
+
+    enabled = str(
+        payload.get(
+            "humanBehaviorEnabled",
+            os.environ.get("ONSTARJS_HUMAN_BEHAVIOR", "1"),
+        )
+    ).lower() not in ("0", "false", "off", "no")
+
+    return {
+        "enabled": enabled,
+        "warmupEnabled": str(
+            payload.get(
+                "warmupEnabled",
+                os.environ.get("ONSTARJS_WARMUP_ENABLED", "1"),
+            )
+        ).lower()
+        not in ("0", "false", "off", "no"),
+        "warmupUrls": warmup_urls,
+        "warmupPageCount": to_int(
+            payload.get(
+                "warmupPageCount",
+                os.environ.get("ONSTARJS_WARMUP_PAGE_COUNT", 2),
+            ),
+            default=2,
+            minimum=0,
+            maximum=5,
+        ),
+        "interactionRetries": to_int(
+            payload.get(
+                "interactionRetries",
+                os.environ.get("ONSTARJS_INTERACTION_RETRIES", 3),
+            ),
+            default=3,
+            minimum=1,
+            maximum=8,
+        ),
+        "preActionPauseMinMs": to_int(
+            payload.get(
+                "preActionPauseMinMs",
+                os.environ.get("ONSTARJS_PRE_ACTION_MIN_MS", 180),
+            ),
+            default=180,
+            minimum=0,
+            maximum=2000,
+        ),
+        "preActionPauseMaxMs": to_int(
+            payload.get(
+                "preActionPauseMaxMs",
+                os.environ.get("ONSTARJS_PRE_ACTION_MAX_MS", 650),
+            ),
+            default=650,
+            minimum=0,
+            maximum=3000,
+        ),
+        "scrollsPerAction": to_int(
+            payload.get(
+                "scrollsPerAction",
+                os.environ.get("ONSTARJS_SCROLLS_PER_ACTION", 2),
+            ),
+            default=2,
+            minimum=0,
+            maximum=6,
+        ),
+        "zoomProbability": to_float(
+            payload.get(
+                "zoomProbability",
+                os.environ.get("ONSTARJS_ZOOM_PROBABILITY", 0.35),
+            ),
+            default=0.35,
+            minimum=0.0,
+            maximum=1.0,
+        ),
+        "warmupDwellMinMs": to_int(
+            payload.get(
+                "warmupDwellMinMs",
+                os.environ.get("ONSTARJS_WARMUP_DWELL_MIN_MS", 700),
+            ),
+            default=700,
+            minimum=0,
+            maximum=10000,
+        ),
+        "warmupDwellMaxMs": to_int(
+            payload.get(
+                "warmupDwellMaxMs",
+                os.environ.get("ONSTARJS_WARMUP_DWELL_MAX_MS", 2200),
+            ),
+            default=2200,
+            minimum=0,
+            maximum=15000,
+        ),
+    }
 
 
 async def get_initial_tab(browser):
@@ -1995,6 +2087,7 @@ async def main():
     browser_args = payload.get("browserArgs") or []
     browser_executable_path = payload.get("browserExecutablePath")
     navigation_timeout_seconds = get_navigation_timeout_seconds(payload)
+    human_behavior = get_human_behavior_config(payload)
     state = {
         "auth_code": None,
         "access_denied": False,
@@ -2197,6 +2290,7 @@ async def main():
         )
         log_browser_preflight(browser_executable_path)
         progress_json("Browser args", browser_args)
+        progress_json("Human behavior configuration", human_behavior)
 
         phase = "configuring browser session"
         progress("Configuring browser session")
@@ -2265,6 +2359,13 @@ async def main():
             mobile_fingerprint,
             browser_version,
         )
+        await run_session_warmup(
+            tab,
+            human_behavior,
+            mobile_fingerprint["screen"]["width"],
+            mobile_fingerprint["screen"]["height"],
+            navigation_timeout_seconds,
+        )
         phase = "navigating to authorization URL"
         progress("Navigating to authorization URL")
         tab = await navigate_existing_tab(
@@ -2329,6 +2430,12 @@ async def main():
                 "Submitting email step",
                 {"attempt": continue_attempt},
             )
+            await perform_human_behavior(
+                tab,
+                human_behavior,
+                mobile_fingerprint["screen"]["width"],
+                mobile_fingerprint["screen"]["height"],
+            )
 
             async def is_email_step_complete():
                 progress("Waiting for password page readiness")
@@ -2346,6 +2453,7 @@ async def main():
                 continue_button,
                 is_email_step_complete,
                 "email continue",
+                retry_rounds=human_behavior["interactionRetries"],
             )
             if transition_state == "password":
                 password_page_ready = True
@@ -2384,6 +2492,12 @@ async def main():
             progress("Submitting credentials")
             state["record_login_responses"] = True
             state["recent_responses"] = []
+            await perform_human_behavior(
+                tab,
+                human_behavior,
+                mobile_fingerprint["screen"]["width"],
+                mobile_fingerprint["screen"]["height"],
+            )
 
             async def is_login_submit_complete():
                 progress(
@@ -2403,6 +2517,7 @@ async def main():
                     submit_button,
                     is_login_submit_complete,
                     "login submit",
+                    retry_rounds=human_behavior["interactionRetries"],
                 )
                 or "timeout"
             )
@@ -2498,6 +2613,12 @@ async def main():
                     progress("Locating MFA submit button")
                     submit_mfa = await find_mfa_submit_button(tab)
                     progress("Submitting TOTP verification code")
+                    await perform_human_behavior(
+                        tab,
+                        human_behavior,
+                        mobile_fingerprint["screen"]["width"],
+                        mobile_fingerprint["screen"]["height"],
+                    )
 
                     async def is_mfa_submit_complete():
                         progress("Waiting for post-MFA page readiness")
@@ -2520,6 +2641,7 @@ async def main():
                             submit_mfa,
                             is_mfa_submit_complete,
                             "mfa submit",
+                            retry_rounds=human_behavior["interactionRetries"],
                         )
                         or "timeout"
                     )
