@@ -1267,9 +1267,41 @@ async def perform_human_behavior(tab, config, viewport_width, viewport_height):
     await maybe_random_zoom(tab, config)
 
 
+async def wait_for_background_transfers(
+    network_state,
+    quiet_ms=1200,
+    timeout_ms=10000,
+    interval_ms=250,
+):
+    start = time.monotonic()
+    while True:
+        now = time.monotonic()
+        elapsed_ms = (now - start) * 1000
+        quiet_for_ms = (now - network_state.get("last_activity", now)) * 1000
+        pending_count = len(network_state.get("pending", {}))
+        if pending_count == 0 and quiet_for_ms >= quiet_ms:
+            progress_json(
+                "Background transfers settled",
+                {"quietMs": int(quiet_for_ms), "elapsedMs": int(elapsed_ms)},
+            )
+            return
+        if elapsed_ms >= timeout_ms:
+            progress_json(
+                "Background transfer wait timed out",
+                {
+                    "pendingRequests": pending_count,
+                    "quietMs": int(quiet_for_ms),
+                    "timeoutMs": timeout_ms,
+                },
+            )
+            return
+        await sleep_ms(interval_ms)
+
+
 async def run_session_warmup(
     tab,
     config,
+    network_state,
     viewport_width,
     viewport_height,
     timeout_seconds,
@@ -1296,17 +1328,38 @@ async def run_session_warmup(
             # on pages that never reach "complete" state (e.g., Google, YouTube)
             warmup_timeout = min(10, timeout_seconds)
             await navigate_existing_tab(tab, warmup_url, warmup_timeout)
-            await perform_human_behavior(
-                tab,
-                config,
-                viewport_width,
-                viewport_height,
+            await wait_for_background_transfers(
+                network_state,
+                timeout_ms=warmup_timeout * 1000,
             )
+            progress_json(
+                "Performing warmup human behavior",
+                {"url": sanitize_url(warmup_url), "timeoutSeconds": 5},
+            )
+            try:
+                await asyncio.wait_for(
+                    perform_human_behavior(
+                        tab,
+                        config,
+                        viewport_width,
+                        viewport_height,
+                    ),
+                    timeout=5,
+                )
+            except asyncio.TimeoutError:
+                progress_json(
+                    "Warmup human behavior timed out",
+                    {"url": sanitize_url(warmup_url), "timeoutSeconds": 5},
+                )
             await sleep_ms(
                 random.uniform(
                     config.get("warmupDwellMinMs", 500),
                     config.get("warmupDwellMaxMs", 1500),
                 )
+            )
+            progress_json(
+                "Warmup page step completed",
+                {"url": sanitize_url(warmup_url)},
             )
         except Exception as exc:
             progress_json(
@@ -1601,13 +1654,9 @@ async def wait_ready(tab, timeout=60):
         try:
             await tab.wait_for_ready_state("complete")
         except Exception as exc:
-            progress(
-                f"Page readiness wait ended: {repr(exc)}"
-            )
+            progress(f"Page readiness wait ended: {repr(exc)}")
     except Exception as exc:
-        progress(
-            f"Page readiness wait ended: {repr(exc)}"
-        )
+        progress(f"Page readiness wait ended: {repr(exc)}")
     await sleep_ms(500)  # Brief pause before continuing
 
 
@@ -2378,6 +2427,7 @@ async def main():
         await run_session_warmup(
             tab,
             human_behavior,
+            network_state,
             mobile_fingerprint["screen"]["width"],
             mobile_fingerprint["screen"]["height"],
             navigation_timeout_seconds,
