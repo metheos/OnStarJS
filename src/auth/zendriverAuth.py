@@ -1292,8 +1292,10 @@ async def run_session_warmup(
     )
     for warmup_url in warmup_urls[:page_count]:
         try:
-            await navigate_existing_tab(tab, warmup_url, timeout_seconds)
-            await wait_ready(tab, timeout=timeout_seconds)
+            # Use shorter timeout for warmup URLs (10s max) to avoid hanging
+            # on pages that never reach "complete" state (e.g., Google, YouTube)
+            warmup_timeout = min(10, timeout_seconds)
+            await navigate_existing_tab(tab, warmup_url, warmup_timeout)
             await perform_human_behavior(
                 tab,
                 config,
@@ -1302,8 +1304,8 @@ async def run_session_warmup(
             )
             await sleep_ms(
                 random.uniform(
-                    config["warmupDwellMinMs"],
-                    config["warmupDwellMaxMs"],
+                    config.get("warmupDwellMinMs", 500),
+                    config.get("warmupDwellMaxMs", 1500),
                 )
             )
         except Exception as exc:
@@ -1584,15 +1586,29 @@ async def find_mfa_submit_button(tab):
 
 
 async def wait_ready(tab, timeout=60):
+    """Wait for page to reach 'complete' ready state or timeout gracefully."""
     try:
-        await tab.wait_for_ready_state("complete", timeout=timeout)
+        # Cap timeout at 15 seconds to prevent indefinite hangs on pages
+        # that continuously load resources (Google, YouTube, etc.)
+        actual_timeout = min(timeout, 15)
+        await tab.wait_for_ready_state("complete", timeout=actual_timeout)
+    except (asyncio.TimeoutError, TimeoutError):
+        progress(
+            f"Page readiness wait timed out after {actual_timeout}s "
+            "(expected for pages with continuous resource loading)"
+        )
     except TypeError:
-        await tab.wait_for_ready_state("complete")
+        try:
+            await tab.wait_for_ready_state("complete")
+        except Exception as exc:
+            progress(
+                f"Page readiness wait ended: {repr(exc)}"
+            )
     except Exception as exc:
         progress(
-            f"Page readiness wait ended without complete state: {repr(exc)}"
+            f"Page readiness wait ended: {repr(exc)}"
         )
-        await sleep_ms(1000)
+    await sleep_ms(500)  # Brief pause before continuing
 
 
 async def maybe_value(result):
