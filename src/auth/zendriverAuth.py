@@ -469,7 +469,23 @@ def build_fingerprint_browser_args(browser_args, fingerprint):
     return args
 
 
-async def apply_mobile_fingerprint(tab, fingerprint, browser_version=None):
+def get_bool_option(payload, name, env_name, default=False):
+    value = payload.get(name)
+    if value is None:
+        value = os.environ.get(env_name)
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+async def apply_mobile_fingerprint(
+    tab,
+    fingerprint,
+    browser_version=None,
+    keyboard_compatibility=True,
+):
     screen = fingerprint["screen"]
     progress_json(
         "Applying BrowserForge mobile fingerprint",
@@ -479,6 +495,7 @@ async def apply_mobile_fingerprint(tab, fingerprint, browser_version=None):
             "acceptLanguage": fingerprint["acceptLanguage"],
             "screen": screen,
             "maxTouchPoints": fingerprint["maxTouchPoints"],
+            "keyboardCompatibility": keyboard_compatibility,
         },
     )
     await tab.send(cdp.page.enable())
@@ -499,18 +516,23 @@ async def apply_mobile_fingerprint(tab, fingerprint, browser_version=None):
         )
     )
     await tab.send(cdp.emulation.set_locale_override(fingerprint["language"]))
-    await tab.send(
-        cdp.emulation.set_touch_emulation_enabled(
-            enabled=True,
-            max_touch_points=fingerprint["maxTouchPoints"],
+    if keyboard_compatibility:
+        await tab.send(
+            cdp.emulation.set_touch_emulation_enabled(enabled=False)
         )
-    )
+    else:
+        await tab.send(
+            cdp.emulation.set_touch_emulation_enabled(
+                enabled=True,
+                max_touch_points=fingerprint["maxTouchPoints"],
+            )
+        )
     await tab.send(
         cdp.emulation.set_device_metrics_override(
             width=screen["width"],
             height=screen["height"],
             device_scale_factor=screen["deviceScaleFactor"],
-            mobile=True,
+            mobile=not keyboard_compatibility,
             screen_width=screen["width"],
             screen_height=screen["height"],
         )
@@ -817,6 +839,10 @@ async def prepare_text_input(element):
         await element.scroll_into_view()
     except Exception as exc:
         progress_json("Input scroll into view failed", {"error": repr(exc)})
+    try:
+        await element.focus()
+    except Exception as exc:
+        progress_json("Input focus failed", {"error": repr(exc)})
     await sleep_ms(random.uniform(200, 500))
 
 
@@ -1944,6 +1970,12 @@ async def main():
     browser_executable_path = payload.get("browserExecutablePath")
     navigation_timeout_seconds = get_navigation_timeout_seconds(payload)
     human_behavior = get_human_behavior_config(payload)
+    keyboard_compatibility = get_bool_option(
+        payload,
+        "keyboardCompatibility",
+        "ONSTARJS_KEYBOARD_COMPATIBILITY",
+        True,
+    )
     state = {
         "auth_code": None,
         "access_denied": False,
@@ -2214,6 +2246,7 @@ async def main():
             tab,
             mobile_fingerprint,
             browser_version,
+            keyboard_compatibility,
         )
         await run_session_warmup(
             tab,
