@@ -537,6 +537,11 @@ async def apply_mobile_fingerprint(
             screen_height=screen["height"],
         )
     )
+    # Force the page to be treated as focused. Under a headless/Xvfb virtual
+    # display the page often reports document.hasFocus() === false, which
+    # causes Chrome to drop dispatched key events so typed text never lands
+    # in inputs even though the element is focused.
+    await tab.send(cdp.emulation.set_focus_emulation_enabled(enabled=True))
 
 
 async def sleep_ms(ms):
@@ -835,6 +840,12 @@ async def type_human(
 
 
 async def prepare_text_input(element):
+    tab = getattr(element, "tab", None)
+    if tab is not None:
+        try:
+            await tab.send(cdp.page.bring_to_front())
+        except Exception as exc:
+            progress_json("Bring tab to front failed", {"error": repr(exc)})
     try:
         await element.scroll_into_view()
     except Exception as exc:
