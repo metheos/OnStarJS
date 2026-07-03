@@ -812,9 +812,9 @@ async def type_human(
 
 async def focus_human(element):
     try:
-        await click_cdp_touch(element)
+        await asyncio.wait_for(click_cdp_touch(element), timeout=3)
     except Exception:
-        await click_cdp_mouse(element)
+        await asyncio.wait_for(click_cdp_mouse(element), timeout=3)
     await sleep_ms(random.uniform(200, 500))
 
 
@@ -848,7 +848,7 @@ async def wait_for_network_quiet(
         now = time.monotonic()
         summaries = []
         for request in network_state.get("pending", {}).values():
-            summary = dict(request)
+            summary = sanitize_request_detail(request)
             started_at = summary.pop("startedAt", now)
             summary["ageMs"] = int((now - started_at) * 1000)
             summaries.append(summary)
@@ -900,6 +900,7 @@ async def wait_for_network_quiet(
 
 async def wait_for_input_ready(
     element,
+    timeout_ms=10000,
     interval_ms=150,
     log_interval_ms=10000,
 ):
@@ -907,7 +908,7 @@ async def wait_for_input_ready(
     start = time.monotonic()
     last_log = start
     last_state = None
-    while True:
+    while (time.monotonic() - start) * 1000 < timeout_ms:
         try:
             last_state = await element.apply(
                 f"""
@@ -995,6 +996,14 @@ async def wait_for_input_ready(
             )
             last_log = now
         await sleep_ms(interval_ms)
+    progress_json(
+        "Input readiness wait timed out",
+        {"timeoutMs": timeout_ms, "state": last_state},
+    )
+    raise TimeoutError(
+        f"Input field did not become writable within {timeout_ms}ms: "
+        f"{last_state}"
+    )
 
 
 async def get_input_state(element):
@@ -2432,6 +2441,19 @@ async def main():
             mobile_fingerprint["screen"]["height"],
             navigation_timeout_seconds,
         )
+        if network_state["pending"] or network_state["recent_requests"]:
+            progress_json(
+                "Clearing warmup network tracking before auth navigation",
+                {
+                    "pendingCount": len(network_state["pending"]),
+                    "recentRequestCount": len(
+                        network_state["recent_requests"]
+                    ),
+                },
+            )
+        network_state["pending"].clear()
+        network_state["recent_requests"].clear()
+        network_state["last_activity"] = time.monotonic()
         phase = "navigating to authorization URL"
         progress("Navigating to authorization URL")
         tab = await navigate_existing_tab(
