@@ -1155,12 +1155,26 @@ async def focus_button(element):
 
 
 async def random_mouse_wheel(tab, viewport_width, viewport_height):
-    amount = random.randint(180, 650)
-    speed = random.randint(500, 1100)
-    if random.random() < 0.75:
-        await tab.scroll_down(amount=amount, speed=speed)
-    else:
-        await tab.scroll_up(amount=amount, speed=speed)
+    # Use a direct CDP mouse-wheel dispatch instead of tab.scroll_down/up.
+    # Zendriver's scroll helpers call Input.synthesizeScrollGesture, which only
+    # resolves once the browser signals the synthetic gesture finished. Under a
+    # headless/Xvfb virtual display that completion never arrives, so the call
+    # blocks forever. A dispatched mouseWheel event returns immediately.
+    x = random.uniform(max(20, viewport_width * 0.2), viewport_width * 0.8)
+    y = random.uniform(max(20, viewport_height * 0.2), viewport_height * 0.8)
+    delta_y = random.uniform(-550, 650)
+    await tab.send(
+        cdp.input_.dispatch_mouse_event(
+            "mouseWheel",
+            x=x,
+            y=y,
+            delta_x=random.uniform(-12, 12),
+            delta_y=delta_y,
+            button=cdp.input_.MouseButton.NONE,
+            buttons=0,
+            pointer_type="mouse",
+        )
+    )
 
 
 async def maybe_random_zoom(tab, config):
