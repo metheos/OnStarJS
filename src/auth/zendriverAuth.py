@@ -812,10 +812,20 @@ async def type_human(
 
 async def focus_human(element):
     try:
-        await asyncio.wait_for(click_cdp_touch(element), timeout=3)
-    except Exception:
-        await asyncio.wait_for(click_cdp_mouse(element), timeout=3)
-    await sleep_ms(random.uniform(200, 500))
+        await asyncio.wait_for(element.scroll_into_view(), timeout=3)
+    except Exception as exc:
+        progress_json("Input scroll into view failed", {"error": repr(exc)})
+    try:
+        await asyncio.wait_for(element.mouse_move(), timeout=3)
+    except Exception as exc:
+        progress_json("Input mouse move failed", {"error": repr(exc)})
+    try:
+        await asyncio.wait_for(element.mouse_click("left"), timeout=5)
+        await sleep_ms(random.uniform(200, 500))
+        return True
+    except Exception as exc:
+        progress_json("Input mouse click focus failed", {"error": repr(exc)})
+        return False
 
 
 async def clear_field(element):
@@ -825,17 +835,6 @@ async def clear_field(element):
 async def get_field_value(element):
     value = await element.apply("(element) => element.value")
     return "" if value is None else str(value)
-
-
-async def insert_text_cdp(element, value, min_delay=40, max_delay=150):
-    await focus_human(element)
-    await sleep_ms(random.uniform(120, 260))
-    tab = getattr(element, "tab", None)
-    if tab is None:
-        raise RuntimeError("Element has no tab for CDP text insertion")
-    for character in value:
-        await tab.send(cdp.input_.insert_text(character))
-        await sleep_ms(random.uniform(min_delay, max_delay))
 
 
 async def wait_for_network_quiet(
@@ -896,114 +895,6 @@ async def wait_for_network_quiet(
         },
     )
     return False
-
-
-async def wait_for_input_ready(
-    element,
-    timeout_ms=10000,
-    interval_ms=150,
-    log_interval_ms=10000,
-):
-    probe_value = "onstarjs-input-probe"
-    start = time.monotonic()
-    last_log = start
-    last_state = None
-    while (time.monotonic() - start) * 1000 < timeout_ms:
-        try:
-            last_state = await element.apply(
-                f"""
-                (element) => {{
-                    const probeValue = {json.dumps(probe_value)};
-                    const descriptor = Object.getOwnPropertyDescriptor(
-                        HTMLInputElement.prototype,
-                        'value'
-                    );
-                    const setValue = (nextValue) => {{
-                        descriptor.set.call(element, nextValue);
-                    }};
-                    const originalValue = element.value || '';
-                    const state = {{
-                    connected: Boolean(element.isConnected),
-                    disabled: Boolean(element.disabled),
-                    readOnly: Boolean(element.readOnly),
-                    visible: Boolean(
-                        element.offsetWidth ||
-                        element.offsetHeight ||
-                        element.getClientRects().length
-                    ),
-                        focusedBeforeProbe: document.activeElement === element,
-                        focusable: false,
-                        writable: false,
-                        probeValueLength: 0,
-                    }};
-                    if (
-                        state.connected &&
-                        !state.disabled &&
-                        !state.readOnly &&
-                        descriptor &&
-                        descriptor.set
-                    ) {{
-                        try {{
-                            element.focus();
-                            state.focusable =
-                                document.activeElement === element;
-                            setValue(probeValue);
-                            element.dispatchEvent(new InputEvent('input', {{
-                                bubbles: true,
-                                inputType: 'insertText',
-                                data: probeValue,
-                            }}));
-                            state.probeValueLength = element.value.length;
-                            state.writable = element.value === probeValue;
-                            setValue(originalValue);
-                            element.dispatchEvent(new InputEvent('input', {{
-                                bubbles: true,
-                                inputType: 'deleteContentBackward',
-                                data: null,
-                            }}));
-                            element.dispatchEvent(new Event('change', {{
-                                bubbles: true,
-                            }}));
-                        }} catch (error) {{
-                            state.probeError = String(error);
-                            try {{ setValue(originalValue); }} catch (_) {{}}
-                        }}
-                    }}
-                    state.focused = document.activeElement === element;
-                    return state;
-                }}
-                """,
-                await_promise=True,
-            )
-            if (
-                last_state
-                and last_state.get("connected")
-                and not last_state.get("disabled")
-                and not last_state.get("readOnly")
-                and last_state.get("writable")
-            ):
-                return last_state
-        except Exception as exc:
-            last_state = {"error": repr(exc)}
-        now = time.monotonic()
-        if (now - last_log) * 1000 >= log_interval_ms:
-            progress_json(
-                "Input not ready yet; continuing to wait",
-                {
-                    "waitedMs": int((now - start) * 1000),
-                    "state": last_state,
-                },
-            )
-            last_log = now
-        await sleep_ms(interval_ms)
-    progress_json(
-        "Input readiness wait timed out",
-        {"timeoutMs": timeout_ms, "state": last_state},
-    )
-    raise TimeoutError(
-        f"Input field did not become writable within {timeout_ms}ms: "
-        f"{last_state}"
-    )
 
 
 async def get_input_state(element):
@@ -1096,19 +987,24 @@ async def fill_text_field(
 ):
     if network_state is not None:
         await wait_for_network_quiet(network_state)
-    await focus_human(element)
-    await wait_for_input_ready(element)
-    await clear_field(element)
+    focused = await focus_human(element)
+    if not focused:
+        raise TimeoutError("Zendriver element mouse_click did not focus input")
+    await asyncio.wait_for(clear_field(element), timeout=5)
     await sleep_ms(random.uniform(200, 500))
     progress_json(
         "Text insertion method attempt",
         {
-            "method": "cdp-insert-text",
+            "method": "zendriver-element-send-keys",
             "expectedLength": len(value),
             "input": await get_input_state(element),
         },
     )
-    await insert_text_cdp(element, value, min_delay, max_delay)
+    await sleep_ms(random.uniform(120, 260))
+    await asyncio.wait_for(
+        type_human(element, value, min_delay, max_delay, pause_chance),
+        timeout=max(5, (len(value) * max_delay / 1000) + 5),
+    )
     await sleep_ms(random.uniform(250, 600))
 
     actual_value = await get_field_value(element)
@@ -1116,7 +1012,7 @@ async def fill_text_field(
         progress_json(
             "Text insertion method succeeded",
             {
-                "method": "cdp-insert-text",
+                "method": "zendriver-element-send-keys",
                 "expectedLength": len(value),
                 "actualLength": len(actual_value),
                 "input": await get_input_state(element),
@@ -1126,7 +1022,7 @@ async def fill_text_field(
 
     if actual_value != value:
         progress_json(
-            "CDP text insertion value did not match field value",
+            "Zendriver text insertion value did not match field value",
             {
                 "expectedLength": len(value),
                 "actualLength": len(actual_value),
@@ -1134,7 +1030,7 @@ async def fill_text_field(
             },
         )
         raise RuntimeError(
-            "Input field value mismatched after CDP insertion: "
+            "Input field value mismatched after Zendriver send_keys: "
             f"expectedLength={len(value)}, "
             f"actualLength={len(actual_value)}, "
             f"input={await get_input_state(element)}"
@@ -1220,29 +1116,23 @@ async def collect_page_summary(tab):
 
 async def focus_button(element):
     try:
-        await click_cdp_touch(element)
-        await sleep_ms(random.uniform(100, 250))
-    except Exception:
-        await click_cdp_mouse(element)
-        await sleep_ms(random.uniform(100, 250))
+        await asyncio.wait_for(element.scroll_into_view(), timeout=3)
+    except Exception as exc:
+        progress_json("Button scroll into view failed", {"error": repr(exc)})
+    try:
+        await asyncio.wait_for(element.mouse_move(), timeout=3)
+    except Exception as exc:
+        progress_json("Button mouse move failed", {"error": repr(exc)})
+    await sleep_ms(random.uniform(100, 250))
 
 
 async def random_mouse_wheel(tab, viewport_width, viewport_height):
-    x = random.uniform(max(20, viewport_width * 0.2), viewport_width * 0.8)
-    y = random.uniform(max(20, viewport_height * 0.2), viewport_height * 0.8)
-    delta_y = random.uniform(-550, 650)
-    await tab.send(
-        cdp.input_.dispatch_mouse_event(
-            "mouseWheel",
-            x=x,
-            y=y,
-            delta_x=random.uniform(-12, 12),
-            delta_y=delta_y,
-            button=cdp.input_.MouseButton.NONE,
-            buttons=0,
-            pointer_type="mouse",
-        )
-    )
+    amount = random.randint(180, 650)
+    speed = random.randint(500, 1100)
+    if random.random() < 0.75:
+        await tab.scroll_down(amount=amount, speed=speed)
+    else:
+        await tab.scroll_up(amount=amount, speed=speed)
 
 
 async def maybe_random_zoom(tab, config):
@@ -1377,95 +1267,12 @@ async def run_session_warmup(
             )
 
 
-async def get_element_center(element):
-    rect = await element.apply(
-        """
-        (element) => {
-            element.scrollIntoView({block: 'center', inline: 'center'});
-            const rect = element.getBoundingClientRect();
-            return {
-                x: rect.left + rect.width / 2,
-                y: rect.top + rect.height / 2,
-                width: rect.width,
-                height: rect.height,
-            };
-        }
-        """,
-        await_promise=True,
-    )
-    jitter_x = random.uniform(-0.2, 0.2) * min(float(rect["width"]), 24)
-    jitter_y = random.uniform(-0.2, 0.2) * min(float(rect["height"]), 18)
-    return float(rect["x"]) + jitter_x, float(rect["y"]) + jitter_y
-
-
-async def click_cdp_touch(element):
-    tab = getattr(element, "tab", None)
-    if tab is None:
-        raise RuntimeError("Element has no tab for CDP touch activation")
-    x, y = await get_element_center(element)
-    touch_id = random.randint(1, 100000)
-    touch_point = cdp.input_.TouchPoint(
-        x=x,
-        y=y,
-        radius_x=random.uniform(3, 8),
-        radius_y=random.uniform(3, 8),
-        force=random.uniform(0.4, 0.8),
-        id_=touch_id,
-    )
-    await tab.send(
-        cdp.input_.dispatch_touch_event("touchStart", [touch_point])
-    )
-    await sleep_ms(random.uniform(80, 180))
-    await tab.send(cdp.input_.dispatch_touch_event("touchEnd", []))
-
-
-async def click_cdp_mouse(element):
-    tab = getattr(element, "tab", None)
-    if tab is None:
-        raise RuntimeError("Element has no tab for CDP mouse activation")
-    x, y = await get_element_center(element)
-    await tab.send(
-        cdp.input_.dispatch_mouse_event(
-            "mouseMoved",
-            x=x,
-            y=y,
-            button=cdp.input_.MouseButton.NONE,
-            buttons=0,
-            pointer_type="mouse",
-        )
-    )
-    await sleep_ms(random.uniform(80, 180))
-    await tab.send(
-        cdp.input_.dispatch_mouse_event(
-            "mousePressed",
-            x=x,
-            y=y,
-            button=cdp.input_.MouseButton.LEFT,
-            buttons=1,
-            click_count=1,
-            pointer_type="mouse",
-        )
-    )
-    await sleep_ms(random.uniform(70, 160))
-    await tab.send(
-        cdp.input_.dispatch_mouse_event(
-            "mouseReleased",
-            x=x,
-            y=y,
-            button=cdp.input_.MouseButton.LEFT,
-            buttons=0,
-            click_count=1,
-            pointer_type="mouse",
-        )
-    )
-
-
 async def activate_button(element, method):
     await focus_button(element)
-    if method == "cdp-touch":
-        await click_cdp_touch(element)
-    elif method == "cdp-mouse":
-        await click_cdp_mouse(element)
+    if method == "mouse-click":
+        await element.mouse_click("left")
+    elif method == "send-enter":
+        await element.send_keys("\n")
     else:
         raise ValueError(f"Unknown button activation method: {method}")
 
@@ -1481,7 +1288,7 @@ async def click_until(
     element,
     is_complete,
     label,
-    methods=("cdp-touch", "cdp-mouse"),
+    methods=("mouse-click", "send-enter"),
     settle_ms=500,
     activation_timeout_seconds=6,
     retry_rounds=3,
