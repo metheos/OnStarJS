@@ -840,6 +840,10 @@ async def prepare_text_input(element):
     except Exception as exc:
         progress_json("Input scroll into view failed", {"error": repr(exc)})
     try:
+        await element.click()
+    except Exception as exc:
+        progress_json("Input click activation failed", {"error": repr(exc)})
+    try:
         await element.focus()
     except Exception as exc:
         progress_json("Input focus failed", {"error": repr(exc)})
