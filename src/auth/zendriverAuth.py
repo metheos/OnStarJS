@@ -19,6 +19,7 @@ if sys.platform == "win32":
 try:
     import zendriver as zd
     from zendriver import cdp
+    from zendriver.core.keys import KeyEvents, KeyPressEvent
 except Exception as exc:
     error_message = (
         "Zendriver is not installed for this Python interpreter. Run "
@@ -804,7 +805,8 @@ async def type_human(
     pause_chance=0.08,
 ):
     for char in text:
-        await element.send_keys(char)
+        key_events = KeyEvents.from_text(char, KeyPressEvent.DOWN_AND_UP)
+        await element.send_keys(key_events)
         await sleep_ms(random.uniform(min_delay, max_delay))
         if random.random() < pause_chance:
             await sleep_ms(random.uniform(150, 700))
@@ -812,7 +814,7 @@ async def type_human(
 
 async def prepare_text_input(element):
     try:
-        await asyncio.wait_for(element.scroll_into_view(), timeout=3)
+        await element.scroll_into_view()
     except Exception as exc:
         progress_json("Input scroll into view failed", {"error": repr(exc)})
     await sleep_ms(random.uniform(200, 500))
@@ -978,7 +980,7 @@ async def fill_text_field(
     if network_state is not None:
         await wait_for_network_quiet(network_state)
     await prepare_text_input(element)
-    await asyncio.wait_for(clear_field(element), timeout=5)
+    await clear_field(element)
     await sleep_ms(random.uniform(200, 500))
     progress_json(
         "Text insertion method attempt",
@@ -989,10 +991,7 @@ async def fill_text_field(
         },
     )
     await sleep_ms(random.uniform(120, 260))
-    await asyncio.wait_for(
-        type_human(element, value, min_delay, max_delay, pause_chance),
-        timeout=max(5, (len(value) * max_delay / 1000) + 5),
-    )
+    await type_human(element, value, min_delay, max_delay, pause_chance)
     await sleep_ms(random.uniform(250, 600))
 
     actual_value = await get_field_value(element)
@@ -1104,11 +1103,11 @@ async def collect_page_summary(tab):
 
 async def focus_button(element):
     try:
-        await asyncio.wait_for(element.scroll_into_view(), timeout=3)
+        await element.scroll_into_view()
     except Exception as exc:
         progress_json("Button scroll into view failed", {"error": repr(exc)})
     try:
-        await asyncio.wait_for(element.mouse_move(), timeout=3)
+        await element.mouse_move()
     except Exception as exc:
         progress_json("Button mouse move failed", {"error": repr(exc)})
     await sleep_ms(random.uniform(100, 250))
@@ -1221,23 +1220,14 @@ async def run_session_warmup(
             )
             progress_json(
                 "Performing warmup human behavior",
-                {"url": sanitize_url(warmup_url), "timeoutSeconds": 5},
+                {"url": sanitize_url(warmup_url)},
             )
-            try:
-                await asyncio.wait_for(
-                    perform_human_behavior(
-                        tab,
-                        config,
-                        viewport_width,
-                        viewport_height,
-                    ),
-                    timeout=5,
-                )
-            except asyncio.TimeoutError:
-                progress_json(
-                    "Warmup human behavior timed out",
-                    {"url": sanitize_url(warmup_url), "timeoutSeconds": 5},
-                )
+            await perform_human_behavior(
+                tab,
+                config,
+                viewport_width,
+                viewport_height,
+            )
             await sleep_ms(
                 random.uniform(
                     config.get("warmupDwellMinMs", 500),
@@ -1266,10 +1256,7 @@ async def activate_button(element, method):
 
 
 async def activate_button_with_timeout(element, method, timeout_seconds=6):
-    return await asyncio.wait_for(
-        activate_button(element, method),
-        timeout=timeout_seconds,
-    )
+    return await activate_button(element, method)
 
 
 async def click_until(
