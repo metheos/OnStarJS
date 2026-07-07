@@ -18,6 +18,7 @@ __pycache__/
 # Token and credential files
 tokens.json
 *_tokens.json
+*_tokens.json.old
 credentials.json
 testCredentials.json
 **/token*test*/
