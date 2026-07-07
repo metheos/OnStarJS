@@ -7,7 +7,7 @@ sudo apt-get update
 echo -e '\n=== Upgrading packages ==='
 sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 
-echo -e '\n=== Installing Zendriver system dependencies ==='
+echo -e '\n=== Installing invisible_playwright (Firefox) system dependencies ==='
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   ca-certificates \
   fonts-liberation \
@@ -19,12 +19,18 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   libatk-bridge2.0-0 \
   libatk1.0-0 \
   libcairo2 \
+  libcairo-gobject2 \
   libcups2 \
   libdbus-1-3 \
+  libdbus-glib-1-2 \
   libdrm2 \
+  libfontconfig1 \
+  libfreetype6 \
+  libgdk-pixbuf-2.0-0 \
   libgbm1 \
   libglib2.0-0 \
   libgtk-3-0 \
+  libharfbuzz0b \
   libnspr4 \
   libnss3 \
   libpango-1.0-0 \
@@ -32,6 +38,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   libx11-6 \
   libx11-xcb1 \
   libxcb1 \
+  libxcb-shm0 \
   libxcomposite1 \
   libxcursor1 \
   libxdamage1 \
@@ -41,6 +48,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   libxkbcommon0 \
   libxrandr2 \
   libxrender1 \
+  libxshmfence1 \
   libxss1 \
   libxtst6 \
   xdg-utils
@@ -76,11 +84,11 @@ COREPACK_ENABLE_DOWNLOAD_PROMPT=0 SHELL=/bin/bash pnpm setup
 export PNPM_HOME="$HOME/.local/share/pnpm"
 export PATH="$PNPM_HOME/bin:$PNPM_HOME:$PATH"
 
-echo -e '\n=== Installing npm packages ==='
+echo -e '\n=== Installing pnpm packages ==='
 COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm install
 
-echo -e '\n=== Setting up Zendriver ==='
-COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm run setup:zendriver
+echo -e '\n=== Setting up invisible_playwright ==='
+COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm run setup:invisible_playwright
 
 echo -e '\n=== Setting up environment ==='
 chmod +x scripts/setup-env.sh
