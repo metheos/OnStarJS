@@ -113,13 +113,13 @@ def is_access_denied_html(body):
 
 def check_and_clear_profile_if_user_changed(profile_dir, current_username):
     """Check if the username has changed; if so, clear the profile directory.
-    
+
     Stores the current username in a .lastuser file for tracking across runs.
     Returns True if profile was cleared, False otherwise.
     """
     if not profile_dir:
         return False
-    
+
     profile_path = Path(profile_dir)
     if not profile_path.exists():
         # Profile doesn't exist yet; just store the username
@@ -130,15 +130,17 @@ def check_and_clear_profile_if_user_changed(profile_dir, current_username):
         except Exception as e:
             progress(f"Warning: could not store username tracking: {e}")
         return False
-    
+
     lastuser_file = profile_path / ".lastuser"
-    
+
     # Check if username has changed
     try:
         if lastuser_file.exists():
             last_username = lastuser_file.read_text().strip()
             if last_username != current_username:
-                progress(f"Username changed from '{last_username}' to '{current_username}'")
+                progress(
+                    f"Username changed from '{last_username}' to '{current_username}'"
+                )
                 progress(f"Clearing profile directory: {profile_dir}")
                 try:
                     shutil.rmtree(profile_dir)
@@ -154,7 +156,7 @@ def check_and_clear_profile_if_user_changed(profile_dir, current_username):
             lastuser_file.write_text(current_username)
     except Exception as e:
         progress(f"Warning: could not check/update username tracking: {e}")
-    
+
     return False
 
 
@@ -198,11 +200,13 @@ async def main():
 
         profile_dir = payload.get("profilePath") or None
         current_username = payload.get("username", "").strip()
-        
+
         if profile_dir:
             progress(f"Using persistent browser profile: {profile_dir}")
             if current_username:
-                check_and_clear_profile_if_user_changed(profile_dir, current_username)
+                check_and_clear_profile_if_user_changed(
+                    profile_dir, current_username
+                )
 
         async with InvisiblePlaywright(
             profile_dir=profile_dir, headless=True
