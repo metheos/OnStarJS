@@ -189,6 +189,8 @@ async def main():
                 """Wait for auth_event, polling the JS variable every 250 ms."""
                 deadline = asyncio.get_event_loop().time() + timeout
                 while asyncio.get_event_loop().time() < deadline:
+                    if state["access_denied"]:
+                        return False
                     if auth_event.is_set():
                         return True
                     await poll_js_url()
@@ -200,10 +202,12 @@ async def main():
 
             async def wait_for_auth_or_mfa(timeout=30.0):
                 """Poll every 250 ms for auth redirect OR MFA/OTP field.
-                Returns 'auth_code', 'mfa', or 'timeout'.
+                Returns 'auth_code', 'mfa', 'access_denied', or 'timeout'.
                 """
                 deadline = asyncio.get_event_loop().time() + timeout
                 while asyncio.get_event_loop().time() < deadline:
+                    if state["access_denied"]:
+                        return "access_denied"
                     if auth_event.is_set():
                         return "auth_code"
                     await poll_js_url()
@@ -216,6 +220,8 @@ async def main():
                         pass
                     await asyncio.sleep(0.25)
                 await poll_js_url()
+                if state["access_denied"]:
+                    return "access_denied"
                 return "auth_code" if auth_event.is_set() else "timeout"
 
             def on_request(request):
@@ -385,7 +391,12 @@ async def main():
             progress("Waiting for authorization redirect or MFA challenge")
             post_login_state = await wait_for_auth_or_mfa(timeout=30.0)
 
-            if post_login_state == "mfa":
+            if post_login_state == "access_denied":
+                phase = "access denied after login attempt"
+                state["access_denied"] = True
+                progress("Access Denied detected during auth flow")
+
+            elif post_login_state == "mfa":
                 phase = "handling MFA"
                 progress("TOTP MFA challenge detected")
                 if pyotp is None:
@@ -419,7 +430,11 @@ async def main():
                     await otp_field.press("Enter")
                 phase = "waiting for auth redirect after MFA"
                 progress("Waiting for authorization redirect after MFA")
-                await wait_for_auth(timeout=60.0)
+                mfa_result = await wait_for_auth(timeout=60.0)
+                if not mfa_result:
+                    phase = "access denied after MFA"
+                    state["access_denied"] = True
+                    progress("Access Denied detected after MFA")
 
             elif post_login_state == "timeout" and not auth_event.is_set():
                 # Check for unsupported MFA types presented instead of TOTP
