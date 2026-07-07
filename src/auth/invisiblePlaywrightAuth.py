@@ -151,7 +151,9 @@ async def main():
         if profile_dir:
             progress(f"Using persistent browser profile: {profile_dir}")
 
-        async with InvisiblePlaywright(profile_dir=profile_dir) as ctx_or_browser:
+        async with InvisiblePlaywright(
+            profile_dir=profile_dir, headless=True
+        ) as ctx_or_browser:
             page = await ctx_or_browser.new_page()
 
             # Inject URL interceptor so JS-initiated custom-scheme navigations
@@ -393,9 +395,7 @@ async def main():
                     )
                 totp_secret = payload.get("totpKey", "").strip()
                 if "secret=" in totp_secret:
-                    secret_match = re.search(
-                        r"secret=([^&]+)", totp_secret
-                    )
+                    secret_match = re.search(r"secret=([^&]+)", totp_secret)
                     if secret_match:
                         totp_secret = secret_match.group(1)
                 if len(totp_secret) != 16:
