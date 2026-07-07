@@ -3,8 +3,8 @@ import { dirname, join } from "path";
 
 const assets = [
   {
-    from: join("src", "auth", "zendriverAuth.py"),
-    to: join("dist", "auth", "zendriverAuth.py"),
+    from: join("src", "auth", "invisiblePlaywrightAuth.py"),
+    to: join("dist", "auth", "invisiblePlaywrightAuth.py"),
   },
 ];
 

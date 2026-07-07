@@ -65,29 +65,28 @@ pnpm run setup:env:bash
 ./scripts/setup-env.sh
 ```
 
-### `setup-zendriver.mjs`
+### `setup-invisible_playwright.mjs`
 
-#### Zendriver Python environment setup
+#### invisible_playwright Python environment setup
 
-- Creates a local `.venv` virtual environment for Zendriver authentication
-- Tries `python3` before `python` on Linux/macOS to avoid systems without a `python` alias
-- Installs `zendriver`, `browserforge[all]`, and `pyotp` inside the virtual environment instead of the system Python environment
-- Downloads a portable Chromium-compatible browser into `.cache/onstarjs-browsers`
-- Supports `ONSTARJS_ZENDRIVER_VENV`, `ONSTARJS_PYTHON`, `PYTHON`, `ONSTARJS_BROWSER_CACHE`, or `ONSTARJS_BROWSER_EXECUTABLE` overrides
-- Starts Xvfb automatically on Linux when no `DISPLAY` is available. The host must have the `Xvfb` binary installed; setup warns when it is missing.
+- Creates a local `.venv` virtual environment (Python 3.11+ required)
+- Installs [`invisible_playwright`](https://github.com/feder-cr/invisible_playwright) from GitHub and `pyotp` inside the virtual environment
+- Downloads the patched Firefox binary (~100 MB, SHA256-verified, one-time) via `python -m invisible_playwright fetch`
+- invisible_playwright handles fingerprinting at the C++ level and humanizes mouse/keyboard events automatically — no separate browser download or fingerprint library needed
+- Supports `ONSTARJS_PYTHON_VENV`, `ONSTARJS_PYTHON`, or `PYTHON` overrides
 
-#### Zendriver Setup Usage
+#### Setup Usage
 
 ```bash
-pnpm run setup:zendriver
+pnpm run setup:invisible_playwright
 ```
 
 #### Browser Diagnostic Test
 
-Runs a credential-free Zendriver browser launch/navigation smoke test using the configured Python virtual environment and portable browser manifest.
+Runs a credential-free browser launch/navigation smoke test. Starts a local diagnostic server that simulates the MS auth HTTP redirect flow and verifies the auth code is captured correctly.
 
 ```bash
-pnpm run test:zendriver:browser
+pnpm run test:invisible_playwright:browser
 ```
 
 ### `credential-manager.js`

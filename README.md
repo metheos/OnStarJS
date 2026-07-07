@@ -17,13 +17,15 @@ Published as OnStarJS2 at <https://www.npmjs.com/package/onstarjs2> [![npm](http
 
 ## Prerequisites
 
-GM authentication uses [Zendriver](https://github.com/cdpdriver/zendriver), which is a Python CDP browser automation library. Install the Python prerequisites before the first authentication run:
+GM authentication uses [invisible_playwright](https://github.com/feder-cr/invisible_playwright), a patched Firefox browser with fingerprinting applied at the C++ level and humanized mouse/keyboard events built in. Run the one-time setup before the first authentication:
 
 ```bash
-pnpm run setup:zendriver
+pnpm run setup:invisible_playwright
 ```
 
-Set `ONSTARJS_PYTHON` if the `python` executable on your path is not the interpreter where Zendriver is installed.
+This creates a `.venv` Python environment, installs `invisible_playwright` and `pyotp`, and downloads the patched Firefox binary (~100 MB, SHA256-verified).
+
+Set `ONSTARJS_PYTHON` if you need to point to a specific Python 3.11+ interpreter.
 
 ## Usage
 

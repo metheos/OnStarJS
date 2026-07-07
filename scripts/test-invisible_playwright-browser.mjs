@@ -1,4 +1,17 @@
 #!/usr/bin/env node
+/**
+ * Runs a self-contained diagnostic for the invisible_playwright auth flow.
+ *
+ * Starts a local HTTP server serving a simplified login page that mirrors the
+ * real GM/Microsoft auth UI, then invokes invisiblePlaywrightAuth.py against
+ * it and verifies the auth code is captured correctly.
+ *
+ * Usage:
+ *   pnpm test:invisible_playwright:browser
+ *
+ * Or point at the real auth URL:
+ *   ONSTARJS_BROWSER_DIAGNOSTIC_URL=<real-auth-url> pnpm test:invisible_playwright:browser
+ */
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -9,10 +22,6 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDir, "..");
 const isWindows = process.platform === "win32";
 
-function existingPath(candidates) {
-  return candidates.find((candidate) => candidate && fs.existsSync(candidate));
-}
-
 function getPythonExecutable() {
   const configuredPython = process.env.ONSTARJS_PYTHON ?? process.env.PYTHON;
   if (configuredPython) {
@@ -20,7 +29,7 @@ function getPythonExecutable() {
   }
 
   const venvRoot = path.resolve(
-    process.env.ONSTARJS_ZENDRIVER_VENV ?? path.join(projectRoot, ".venv"),
+    process.env.ONSTARJS_PYTHON_VENV ?? path.join(projectRoot, ".venv"),
   );
   const venvPython = isWindows
     ? path.join(venvRoot, "Scripts", "python.exe")
@@ -34,55 +43,27 @@ function getPythonExecutable() {
 }
 
 function getAuthScriptPath() {
-  const authScriptPath = existingPath([
-    process.env.ONSTARJS_ZENDRIVER_SCRIPT,
-    path.join(projectRoot, "src", "auth", "zendriverAuth.py"),
-    path.join(projectRoot, "dist", "auth", "zendriverAuth.py"),
-  ]);
+  const candidates = [
+    process.env.ONSTARJS_AUTH_SCRIPT,
+    path.join(projectRoot, "src", "auth", "invisiblePlaywrightAuth.py"),
+    path.join(projectRoot, "dist", "auth", "invisiblePlaywrightAuth.py"),
+  ].filter(Boolean);
 
-  if (!authScriptPath) {
+  const found = candidates.find((p) => fs.existsSync(p));
+  if (!found) {
     throw new Error(
-      "Unable to find zendriverAuth.py. Run pnpm build or check ONSTARJS_ZENDRIVER_SCRIPT.",
+      "Unable to find invisiblePlaywrightAuth.py. Run pnpm build or check ONSTARJS_AUTH_SCRIPT.",
     );
   }
-
-  return authScriptPath;
+  return found;
 }
 
-function getBrowserExecutablePath() {
-  if (process.env.ONSTARJS_BROWSER_EXECUTABLE) {
-    return path.resolve(process.env.ONSTARJS_BROWSER_EXECUTABLE);
-  }
-
-  const browserCacheDir = path.resolve(
-    process.env.ONSTARJS_BROWSER_CACHE ??
-      path.join(projectRoot, ".cache", "onstarjs-browsers"),
-  );
-  const manifestPath = existingPath([
-    process.env.ONSTARJS_BROWSER_MANIFEST,
-    path.join(browserCacheDir, "zendriver-browser.json"),
-  ]);
-
-  if (!manifestPath) {
-    throw new Error(
-      "Unable to find Zendriver browser manifest. Run pnpm run setup:zendriver first.",
-    );
-  }
-
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
-  if (!manifest.executablePath) {
-    throw new Error(`Zendriver browser manifest has no executablePath: ${manifestPath}`);
-  }
-
-  return manifest.executablePath;
-}
-
-function createDiagnosticHtml({ expectedEmail, expectedPassword, authCode }) {
+function createDiagnosticHtml({ expectedEmail, expectedPassword }) {
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Zendriver Auth Diagnostic</title>
+    <title>invisible_playwright Auth Diagnostic</title>
   </head>
   <body>
     <main>
@@ -110,12 +91,15 @@ function createDiagnosticHtml({ expectedEmail, expectedPassword, authCode }) {
         />
         <button id="login" aria-label="Log In">Log In</button>
       </section>
+      <!-- Hidden form that POSTs to the diagnostic server, which responds
+           with an HTTP 302 redirect to the custom auth scheme — the same
+           redirect the real MS auth server issues. -->
+      <form id="auth-form" method="POST" action="/complete" style="display:none"></form>
       <pre id="diagnostic-output"></pre>
     </main>
     <script>
       const expectedEmail = ${JSON.stringify(expectedEmail)};
       const expectedPassword = ${JSON.stringify(expectedPassword)};
-      const authCode = ${JSON.stringify(authCode)};
       const output = document.querySelector('#diagnostic-output');
       const emailStep = document.querySelector('#email-step');
       const passwordStep = document.querySelector('#password-step');
@@ -149,9 +133,10 @@ function createDiagnosticHtml({ expectedEmail, expectedPassword, authCode }) {
           });
           return;
         }
-        output.textContent = JSON.stringify({ ok: true });
-        window.location.href = 'msauth.com.gm.mychevrolet://auth?code=' +
-          encodeURIComponent(authCode);
+        // POST to the diagnostic server → HTTP 302 → msauth:// custom scheme.
+        // This mirrors exactly what the real Microsoft auth server does,
+        // exercising the on_response Location-header capture path.
+        document.querySelector('#auth-form').submit();
       });
     </script>
   </body>
@@ -163,6 +148,23 @@ async function startDiagnosticServer(options) {
     if (request.url === "/favicon.ico") {
       response.writeHead(204);
       response.end();
+      return;
+    }
+
+    // The form in the diagnostic page POSTs here.  Respond with an HTTP 302
+    // redirect to the custom auth scheme — exactly what the real MS auth
+    // server does.  The Python on_response handler captures the Location
+    // header and extracts the auth code from it.
+    if (request.method === "POST" && request.url === "/complete") {
+      // Drain the POST body before responding
+      request.resume();
+      request.on("end", () => {
+        response.writeHead(302, {
+          Location: `msauth.com.gm.mychevrolet://auth?code=${encodeURIComponent(options.authCode)}`,
+          "cache-control": "no-store",
+        });
+        response.end();
+      });
       return;
     }
 
@@ -188,18 +190,12 @@ async function startDiagnosticServer(options) {
 async function runDiagnostic() {
   const pythonExecutable = getPythonExecutable();
   const authScriptPath = getAuthScriptPath();
-  const browserExecutablePath = getBrowserExecutablePath();
-  const profilePath = path.resolve(
-    projectRoot,
-    process.env.ONSTARJS_BROWSER_DIAGNOSTIC_PROFILE ??
-      "temp-browser-profile-diagnostic",
-  );
-  fs.rmSync(profilePath, { force: true, recursive: true });
-  const browserArgs = ["--lang=en-US"];
+
   const expectedEmail = "diagnostic@example.com";
   const expectedPassword = "DiagnosticPassword123!";
   const expectedAuthCode = "DIAGNOSTIC_AUTH_CODE";
   const useConfiguredUrl = Boolean(process.env.ONSTARJS_BROWSER_DIAGNOSTIC_URL);
+
   const diagnosticServer = useConfiguredUrl
     ? null
     : await startDiagnosticServer({
@@ -207,23 +203,21 @@ async function runDiagnostic() {
         expectedPassword,
         authCode: expectedAuthCode,
       });
+
   const payload = {
     authorizationUrl:
       process.env.ONSTARJS_BROWSER_DIAGNOSTIC_URL ?? diagnosticServer.url,
-    diagnosticOnly: useConfiguredUrl && !process.env.ONSTARJS_BROWSER_DIAGNOSTIC_AUTH_CODE,
+    diagnosticOnly:
+      useConfiguredUrl && !process.env.ONSTARJS_BROWSER_DIAGNOSTIC_AUTH_CODE,
     simulateNavigationAuthCode:
       process.env.ONSTARJS_BROWSER_DIAGNOSTIC_AUTH_CODE,
     username: expectedEmail,
     password: expectedPassword,
     totpKey: "ABCDEFGHIJKLMNOP",
-    browserExecutablePath,
-    profilePath,
-    browserArgs,
   };
 
-  console.log(`Using Python: ${pythonExecutable}`);
+  console.log(`Using Python:      ${pythonExecutable}`);
   console.log(`Using auth script: ${authScriptPath}`);
-  console.log(`Using browser: ${browserExecutablePath}`);
 
   const result = await new Promise((resolve, reject) => {
     const child = spawn(pythonExecutable, [authScriptPath], {
@@ -248,7 +242,11 @@ async function runDiagnostic() {
         .filter(Boolean);
       const lastLine = lines[lines.length - 1];
       if (!lastLine) {
-        reject(new Error(`Zendriver diagnostic produced no JSON result; exit ${code}`));
+        reject(
+          new Error(
+            `invisible_playwright diagnostic produced no JSON result; exit ${code}`,
+          ),
+        );
         return;
       }
 
@@ -257,7 +255,7 @@ async function runDiagnostic() {
       } catch (error) {
         reject(
           new Error(
-            `Failed to parse Zendriver diagnostic result: ${error.message}. Last line: ${lastLine}`,
+            `Failed to parse invisible_playwright diagnostic result: ${error.message}. Last line: ${lastLine}`,
           ),
         );
       }
@@ -278,17 +276,17 @@ async function runDiagnostic() {
     throw new Error(
       result.detail
         ? `${result.error} (${result.detail})`
-        : result.error || "Zendriver browser diagnostic failed",
+        : result.error || "invisible_playwright browser diagnostic failed",
     );
   }
 
   if (!useConfiguredUrl && result.authCode !== expectedAuthCode) {
     throw new Error(
-      `Zendriver diagnostic did not capture expected auth code. Expected ${expectedAuthCode}, got ${result.authCode}`,
+      `Diagnostic did not capture expected auth code. Expected ${expectedAuthCode}, got ${result.authCode}`,
     );
   }
 
-  console.log("Zendriver browser diagnostic passed");
+  console.log("invisible_playwright browser diagnostic passed");
 }
 
 runDiagnostic().catch((error) => {

@@ -15,8 +15,8 @@
   "types": "dist/index.d.ts",
   "files": [
     "dist",
-    "scripts/setup-zendriver.mjs",
-    "scripts/test-zendriver-browser.mjs"
+    "scripts/setup-invisible_playwright.mjs",
+    "scripts/test-invisible_playwright-browser.mjs"
   ],
   "directories": {
     "test": "test"
@@ -33,10 +33,10 @@
     "test:functional": "jest test/functional",
     "test:keys": "jest test/functional -t 'Unupgraded Command Successful'",
     "test:auth": "jest test/auth/testAuth",
-    "test:zendriver:browser": "node scripts/test-zendriver-browser.mjs",
+    "test:invisible_playwright:browser": "node scripts/test-invisible_playwright-browser.mjs",
     "test:reauth": "jest test/auth/testAuth -t 'should successfully reauthenticate'",
     "prepare": "husky install",
-    "setup:zendriver": "node scripts/setup-zendriver.mjs",
+    "setup:invisible_playwright": "node scripts/setup-invisible_playwright.mjs",
     "setup:env": "node scripts/setup-env.js",
     "setup:env:bash": "chmod +x scripts/setup-env.sh && ./scripts/setup-env.sh",
     "setup:interactive": "node scripts/credential-manager.js",
@@ -77,7 +77,6 @@
   },
   "homepage": "https://github.com/BigThunderSR/OnStarJS#readme",
   "dependencies": {
-    "@puppeteer/browsers": "3.0.5",
     "axios": "^1.18.0",
     "http-cookie-agent": "^7.0.4",
     "jsonwebtoken": "^9.0.3",

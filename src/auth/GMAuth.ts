@@ -11,15 +11,11 @@ import path from "path";
 import jwt from "jsonwebtoken";
 import { spawn } from "child_process";
 
-interface ZendriverAuthResult {
+interface InvisiblePlaywrightAuthResult {
   authCode?: string;
   finalUrl?: string;
   finalTitle?: string;
   accessDenied?: boolean;
-}
-
-interface ZendriverBrowserManifest {
-  executablePath?: string;
 }
 
 // Define an interface for the vehicle structure and the payload containing them
@@ -277,32 +273,34 @@ export class GMAuth {
     }
   }
 
-  private getZendriverAuthScriptPath(): string {
+  private getInvisiblePlaywrightAuthScriptPath(): string {
     const moduleDir = typeof __dirname === "string" ? __dirname : undefined;
     const candidates = [
-      process.env.ONSTARJS_ZENDRIVER_SCRIPT,
-      moduleDir ? path.join(moduleDir, "auth", "zendriverAuth.py") : undefined,
-      path.resolve("src", "auth", "zendriverAuth.py"),
-      path.resolve("dist", "auth", "zendriverAuth.py"),
+      process.env.ONSTARJS_AUTH_SCRIPT,
+      moduleDir
+        ? path.join(moduleDir, "auth", "invisiblePlaywrightAuth.py")
+        : undefined,
+      path.resolve("src", "auth", "invisiblePlaywrightAuth.py"),
+      path.resolve("dist", "auth", "invisiblePlaywrightAuth.py"),
       path.resolve(
         "node_modules",
         "onstarjs2",
         "dist",
         "auth",
-        "zendriverAuth.py",
+        "invisiblePlaywrightAuth.py",
       ),
     ].filter((candidate): candidate is string => Boolean(candidate));
 
     const scriptPath = candidates.find((candidate) => fs.existsSync(candidate));
     if (!scriptPath) {
       throw new Error(
-        `Unable to locate Zendriver auth script. Checked: ${candidates.join(", ")}`,
+        `Unable to locate invisible_playwright auth script. Checked: ${candidates.join(", ")}`,
       );
     }
     return scriptPath;
   }
 
-  private getZendriverPythonExecutable(scriptPath: string): string {
+  private getInvisiblePlaywrightPythonExecutable(scriptPath: string): string {
     const configuredPython = process.env.ONSTARJS_PYTHON ?? process.env.PYTHON;
     if (configuredPython) {
       return configuredPython;
@@ -310,7 +308,7 @@ export class GMAuth {
 
     const scriptDir = path.dirname(scriptPath);
     const venvRoots = [
-      process.env.ONSTARJS_ZENDRIVER_VENV,
+      process.env.ONSTARJS_PYTHON_VENV,
       path.resolve(".venv"),
       path.resolve(scriptDir, "..", "..", ".venv"),
     ].filter((candidate): candidate is string => Boolean(candidate));
@@ -327,148 +325,108 @@ export class GMAuth {
     );
   }
 
-  private getZendriverBrowserExecutable(
-    scriptPath: string,
-  ): string | undefined {
-    const configuredBrowser = process.env.ONSTARJS_BROWSER_EXECUTABLE;
-    if (configuredBrowser) {
-      return configuredBrowser;
-    }
-
-    const scriptDir = path.dirname(scriptPath);
-    const manifestCandidates = [
-      process.env.ONSTARJS_BROWSER_MANIFEST,
-      path.resolve(".cache", "onstarjs-browsers", "zendriver-browser.json"),
-      path.resolve(
-        scriptDir,
-        "..",
-        "..",
-        ".cache",
-        "onstarjs-browsers",
-        "zendriver-browser.json",
-      ),
-    ].filter((candidate): candidate is string => Boolean(candidate));
-
-    for (const manifestPath of manifestCandidates) {
-      if (!fs.existsSync(manifestPath)) {
-        continue;
-      }
-
-      try {
-        const manifest = JSON.parse(
-          fs.readFileSync(manifestPath, "utf-8"),
-        ) as ZendriverBrowserManifest;
-        if (manifest.executablePath && fs.existsSync(manifest.executablePath)) {
-          return manifest.executablePath;
-        }
-      } catch (error) {
-        if (this.debugMode) {
-          console.warn(
-            `Ignoring invalid Zendriver browser manifest: ${manifestPath}`,
-          );
-        }
-      }
-    }
-
-    return undefined;
-  }
-
-  private async runZendriverAuth(
+  private async runInvisiblePlaywrightAuth(
     authorizationUrl: string,
-  ): Promise<ZendriverAuthResult> {
-    const scriptPath = this.getZendriverAuthScriptPath();
-    const pythonExecutable = this.getZendriverPythonExecutable(scriptPath);
-    const browserExecutablePath =
-      this.getZendriverBrowserExecutable(scriptPath);
-    const profilePath = path.resolve("./temp-browser-profile");
-    const browserArgs = ["--lang=en-US"];
+  ): Promise<InvisiblePlaywrightAuthResult> {
+    const scriptPath = this.getInvisiblePlaywrightAuthScriptPath();
+    const pythonExecutable =
+      this.getInvisiblePlaywrightPythonExecutable(scriptPath);
+    const profilePath = path.resolve(
+      this.config.tokenLocation ?? "./",
+      "invisible_playwright_profile",
+    );
     const payload = {
       authorizationUrl,
       username: this.config.username,
       password: this.config.password,
       totpKey: this.config.totpKey,
       profilePath,
-      browserArgs,
-      browserExecutablePath,
     };
 
-    return await new Promise<ZendriverAuthResult>((resolve, reject) => {
-      const child = spawn(pythonExecutable, [scriptPath], {
-        stdio: ["pipe", "pipe", "pipe"],
-        env: { ...process.env },
-      });
-      let stdout = "";
-      let stderr = "";
+    return await new Promise<InvisiblePlaywrightAuthResult>(
+      (resolve, reject) => {
+        const child = spawn(pythonExecutable, [scriptPath], {
+          stdio: ["pipe", "pipe", "pipe"],
+          env: { ...process.env },
+        });
+        let stdout = "";
+        let stderr = "";
 
-      child.stdout.setEncoding("utf8");
-      child.stderr.setEncoding("utf8");
-      child.stdout.on("data", (chunk) => {
-        stdout += chunk;
-      });
-      child.stderr.on("data", (chunk) => {
-        stderr += chunk;
-        process.stderr.write(chunk);
-      });
-      child.on("error", (error) => {
-        reject(
-          new Error(
-            `Failed to start Python for Zendriver authentication (${pythonExecutable}): ${error.message}`,
-          ),
-        );
-      });
-      child.on("close", (code) => {
-        const resultLines = stdout
-          .split(/\r?\n/)
-          .map((line) => line.trim())
-          .filter(Boolean);
-        const lastLine = resultLines[resultLines.length - 1];
-
-        if (!lastLine) {
+        child.stdout.setEncoding("utf8");
+        child.stderr.setEncoding("utf8");
+        child.stdout.on("data", (chunk) => {
+          stdout += chunk;
+        });
+        child.stderr.on("data", (chunk) => {
+          stderr += chunk;
+          process.stderr.write(chunk);
+        });
+        child.on("error", (error) => {
           reject(
             new Error(
-              `Zendriver authentication produced no result (exit ${code}).${stderr ? ` stderr: ${stderr}` : ""}`,
+              `Failed to start Python for invisible_playwright authentication (${pythonExecutable}): ${error.message}`,
             ),
           );
-          return;
-        }
+        });
+        child.on("close", (code) => {
+          const resultLines = stdout
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+          const lastLine = resultLines[resultLines.length - 1];
 
-        try {
-          const parsed = JSON.parse(lastLine);
-          if (!parsed.ok) {
-            const details = [
-              parsed.detail,
-              parsed.phase ? `phase=${parsed.phase}` : undefined,
-              parsed.finalTitle ? `finalTitle=${parsed.finalTitle}` : undefined,
-              parsed.finalUrl ? `finalUrl=${parsed.finalUrl}` : undefined,
-              parsed.traceback ? `traceback=${parsed.traceback}` : undefined,
-            ].filter(Boolean);
+          if (!lastLine) {
             reject(
               new Error(
-                details.length > 0
-                  ? `${parsed.error || "Zendriver authentication failed"} (${details.join("; ")})`
-                  : parsed.error || "Zendriver authentication failed",
+                `invisible_playwright authentication produced no result (exit ${code}).${stderr ? ` stderr: ${stderr}` : ""}`,
               ),
             );
             return;
           }
-          resolve(parsed as ZendriverAuthResult);
-        } catch (error) {
-          reject(
-            new Error(
-              `Failed to parse Zendriver authentication result: ${error instanceof Error ? error.message : String(error)}. Output: ${stdout}`,
-            ),
-          );
-        }
-      });
-      child.stdin.end(JSON.stringify(payload));
-    });
+
+          try {
+            const parsed = JSON.parse(lastLine);
+            if (!parsed.ok) {
+              const details = [
+                parsed.detail,
+                parsed.phase ? `phase=${parsed.phase}` : undefined,
+                parsed.finalTitle
+                  ? `finalTitle=${parsed.finalTitle}`
+                  : undefined,
+                parsed.finalUrl ? `finalUrl=${parsed.finalUrl}` : undefined,
+                parsed.traceback ? `traceback=${parsed.traceback}` : undefined,
+              ].filter(Boolean);
+              reject(
+                new Error(
+                  details.length > 0
+                    ? `${parsed.error || "invisible_playwright authentication failed"} (${details.join("; ")})`
+                    : parsed.error ||
+                        "invisible_playwright authentication failed",
+                ),
+              );
+              return;
+            }
+            resolve(parsed as InvisiblePlaywrightAuthResult);
+          } catch (error) {
+            reject(
+              new Error(
+                `Failed to parse invisible_playwright authentication result: ${error instanceof Error ? error.message : String(error)}. Output: ${stdout}`,
+              ),
+            );
+          }
+        });
+        child.stdin.end(JSON.stringify(payload));
+      },
+    );
   }
 
   private async submitCredentials(authorizationUrl: string): Promise<string> {
-    console.log("🌐 Launching Zendriver authentication for Microsoft login");
+    console.log(
+      "🌐 Launching invisible_playwright authentication for Microsoft login",
+    );
 
     try {
-      const result = await this.runZendriverAuth(authorizationUrl);
+      const result = await this.runInvisiblePlaywrightAuth(authorizationUrl);
 
       if (result.accessDenied) {
         throw new Error(
@@ -478,18 +436,18 @@ export class GMAuth {
 
       if (!result.authCode) {
         throw new Error(
-          `Zendriver authentication completed without capturing an authorization code. Final page title: ${result.finalTitle ?? "unknown"}. Final URL: ${result.finalUrl ?? "unknown"}`,
+          `invisible_playwright authentication completed without capturing an authorization code. Final page title: ${result.finalTitle ?? "unknown"}. Final URL: ${result.finalUrl ?? "unknown"}`,
         );
       }
 
       console.log(
-        "✅ Credentials submitted successfully via Zendriver. Final URL:",
+        "✅ Credentials submitted successfully via invisible_playwright. Final URL:",
         result.finalUrl,
       );
       console.log("📄 Final page title:", result.finalTitle);
       return result.authCode;
     } catch (error) {
-      console.error("Error in Zendriver submitCredentials:", error);
+      console.error("Error in invisible_playwright submitCredentials:", error);
       throw error;
     }
   }
