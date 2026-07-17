@@ -18,9 +18,9 @@ jobs:
         uses: pnpm/action-setup@v6.0.9
 
       - name: Setup node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
-          node-version: 22.x
+          node-version: 24.x
           registry-url: https://registry.npmjs.org/
           cache: "pnpm"
 
@@ -41,9 +41,9 @@ jobs:
         uses: pnpm/action-setup@v6.0.9
 
       - name: Setup node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
-          node-version: 22.x
+          node-version: 24.x
           registry-url: https://registry.npmjs.org/
           cache: "pnpm"
 
@@ -55,6 +55,7 @@ jobs:
 
       - name: Coveralls
         uses: coverallsapp/github-action@master
+        continue-on-error: true
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
