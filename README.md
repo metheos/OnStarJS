@@ -31,32 +31,202 @@ Set `ONSTARJS_PYTHON` if you need to point to a specific Python 3.11+ interprete
 
 Use the Get Account Vehicles request to see which requests your vehicle supports if you don't already know.
 
-## New Requirement as of 2024-11-19
+## Authentication: MFA Setup
 
-Updated to use TOTP to fulfill new authentication process from GM.
+OnStarJS requires Multi-Factor Authentication (MFA) for GM account security. This library supports **email-based MFA only**.
 
-You will need to change your OnStar account's MFA method to "Third-Party Authenticator App"
+**Important Timeline:** By the end of August 2026, GM will discontinue TOTP and will only support email and SMS MFA. This library supports email MFA exclusively (SMS is not supported). If your account is currently configured for TOTP, you should migrate to email MFA before the deadline.
 
-_The "Third-Party Authenticator App" option doesn't seem to show up on mobile, so please try from a desktop browser._
+### Email MFA (Recommended) — Current Method
 
-**You will need to capture your TOTP key from the "Third-Party Authenticator App" setup so that you can provide it in your .env or initialization config.**
+GM is transitioning all accounts to email-based multi-factor authentication.
 
-You may be able to obtain your TOTP key by inspecting/hovering over the link under the QR code **when you are setting it up.**
+**How It Works:**
 
-If you use an authenticator app such as [Stratum](https://stratumauth.com/), [Bitwarden](https://bitwarden.com/), or [Vaultwarden](https://github.com/dani-garcia/vaultwarden) that allows you to view your TOTP key, you can view it at any time.
+1. When you log in, GM sends a 6-digit verification code to your registered email address.
+2. OnStarJS connects to your email via IMAP, retrieves the code, and submits it automatically.
+3. The entire process is transparent to your application.
 
-In the IOS Passwords app you can tap "Copy Setup URL" and obtain the secret from the copied data.
+**Required Setup:**
 
-_If you cannot find the option to configure a "Third-Party Authenticator App" on your GM account page, try contacting OnStar to see if there is another way to enable it._
+Add the following variables to your `.env` file:
 
-If that fails, use:
-[this Windows exe](https://github.com/metheos/node-oauth2-gm/releases) or [this web app](https://github.com/joelvandal/onstar-token-gen?tab=readme-ov-file)
+```env
+# Required
+IMAP_SERVER=<your-email-provider-imap-server>
+IMAP_PASSWORD=<your-email-app-password-or-password>
 
-for email TOTP and then save the resulting token and provide the token location for use with <https://github.com/BigThunderSR/onstar2mqtt> and/or <https://github.com/BigThunderSR/homeassistant-addons-onstar2mqtt>.
+# Optional (defaults shown)
+IMAP_PORT=993
+IMAP_USERNAME=<your-email-address>  # defaults to ONSTAR_USERNAME
+IMAP_SUBJECT_PREFIX="Your GM Verification Code:"
+IMAP_SENDER="GeneralMotors@em.gm.com"
+IMAP_MAILBOX="INBOX"
+```
 
-Additional comments are noted in [this issue comment](https://github.com/samrum/OnStarJS/issues/233#issuecomment-2499264436).
+**Security Notes:**
 
-**IMPORTANT: Valid system time is required for this process to work. Please ensure that your system (Docker host, Home Assistant etc.) time is valid using a mechanism such as NTP or Chrony before attempting to use the token authentication process.**
+- IMAP credentials are read from environment variables only; they are never stored or logged to disk.
+- Connection uses IMAP4_SSL (port 993) with full TLS encryption.
+- OnStarJS searches explicitly by sender and subject prefix to prevent accepting unrelated emails.
+- OnStarJS rejects emails older than 60 seconds.
+- For services requiring app passwords (Gmail, Microsoft, Yahoo, etc.), use an **app-specific password**, not your account password.
+
+**Provider-Specific Setup:**
+
+<details>
+<summary>Gmail / Google Workspace</summary>
+
+1. Enable 2-Step Verification on your Google Account ([visit 2-Step Verification settings](https://myaccount.google.com/two-step-verification/status)).
+2. Create an **App Password** ([visit App Passwords](https://myaccount.google.com/apppasswords)):
+   - Select "Mail" and "Windows Computer" (or your device type).
+   - Google will generate a 16-character password.
+3. Add to `.env`:
+   ```env
+   IMAP_SERVER=imap.gmail.com
+   IMAP_PASSWORD=<16-character-app-password>
+   IMAP_USERNAME=your-email@gmail.com
+   ```
+
+**Important:** Regular account passwords do NOT work with Gmail's IMAP access. You must use an App Password.
+
+</details>
+
+<details>
+<summary>Outlook / Hotmail / Microsoft 365</summary>
+
+1. Enable 2-Step Verification in your [Microsoft account security settings](https://account.microsoft.com/security).
+2. Create an **App Password** ([visit App Passwords](https://account.microsoft.com/security/app-passwords)):
+   - Microsoft will generate a 16-character password.
+3. Enable IMAP in your [Outlook mail settings](https://outlook.live.com/mail/options/mail/accounts) (usually enabled by default).
+4. Add to `.env`:
+   ```env
+   IMAP_SERVER=imap-mail.outlook.com
+   IMAP_PASSWORD=<16-character-app-password>
+   IMAP_USERNAME=your-email@outlook.com
+   ```
+
+**Note:** Outlook may rate-limit frequent IMAP connections; if you see timeouts, wait a few minutes before retrying.
+
+</details>
+
+<details>
+<summary>Yahoo Mail</summary>
+
+1. Enable 2-Step Verification in your [Yahoo Account Security settings](https://login.yahoo.com/account/security).
+2. Create an **App Password** ([visit App Passwords](https://login.yahoo.com/account/security)):
+   - Yahoo will generate a 16-character password.
+3. Ensure IMAP is enabled in [Yahoo Mail settings](https://mail.yahoo.com/) (Settings → Forwarding and POP/IMAP → Enable IMAP).
+4. Add to `.env`:
+   ```env
+   IMAP_SERVER=imap.mail.yahoo.com
+   IMAP_PASSWORD=<16-character-app-password>
+   IMAP_USERNAME=your-email@yahoo.com
+   ```
+
+</details>
+
+<details>
+<summary>Apple iCloud Mail</summary>
+
+1. Enable 2-Step Verification on your [Apple ID settings](https://appleid.apple.com/account/security).
+2. Create an **App-Specific Password** ([visit App Passwords](https://appleid.apple.com/account/security)):
+   - Apple will generate a 16-character password.
+3. Add to `.env`:
+   ```env
+   IMAP_SERVER=imap.mail.me.com
+   IMAP_PASSWORD=<16-character-app-password>
+   IMAP_USERNAME=your-email@icloud.com
+   ```
+
+</details>
+
+<details>
+<summary>FastMail</summary>
+
+1. Enable 2-Step Verification in [FastMail security settings](https://www.fastmail.com/secure/).
+2. Create an **App Password** (Settings → Security → Managed passwords):
+   - FastMail will display your app password.
+3. Add to `.env`:
+   ```env
+   IMAP_SERVER=imap.fastmail.com
+   IMAP_PASSWORD=<app-password>
+   IMAP_USERNAME=your-email@fastmail.com
+   ```
+
+</details>
+
+<details>
+<summary>Custom Email Provider (ProtonMail, Tutanota, etc.)</summary>
+
+For other providers, check their documentation for:
+
+- IMAP server hostname and port
+- Whether app-specific passwords are required
+- Whether IMAP is enabled by default or must be activated
+
+Add to `.env`:
+
+```env
+IMAP_SERVER=<your-provider-imap-server>
+IMAP_PORT=993  # or your provider's IMAP port
+IMAP_PASSWORD=<your-app-password-or-password>
+IMAP_USERNAME=<your-email-address>
+IMAP_MAILBOX=<your-email-mailbox-name>  # often "INBOX", sometimes "Inbox" or other variants
+```
+
+**ProtonMail Note:** ProtonMail does not support standard IMAP. Use the email MFA method with your regular Gmail/Outlook forwarding address instead.
+
+**Tutanota Note:** Tutanota does not support standard IMAP. Consider using a secondary email address for receiving GM codes.
+
+</details>
+
+**Troubleshooting Email MFA:**
+
+- **"IMAP_SERVER is not set"**: Add `IMAP_SERVER` and `IMAP_PASSWORD` to your `.env` file.
+- **"IMAP login failed"**: Verify the app password is correct (not your account password) and that IMAP is enabled for your account.
+- **Timeout waiting for email**: Check that your email provider is receiving the GM code. Verify the sender (`IMAP_SENDER`) and subject prefix (`IMAP_SUBJECT_PREFIX`) match your actual GM emails. Check your spam/junk folder.
+- **System time is off**: Email timestamp validation will reject codes if your system clock is significantly skewed. Sync your system time via NTP.
+
+---
+
+### TOTP (Third-Party Authenticator App) — Deprecated
+
+> ⚠️ **DEPRECATED:** TOTP support will be **removed in a future release**.
+>
+> **Important:** GM will discontinue TOTP and only support email and SMS MFA by the end of August 2026. This library supports email MFA exclusively (SMS is not supported). If your account currently uses TOTP, **you must migrate to email MFA before that deadline**. After August 2026, TOTP will not work with GM's authentication system, and this library's TOTP support will be removed.
+
+**If you currently use TOTP and have not yet migrated to email MFA:**
+
+Your GM account must have "Third-Party Authenticator App" configured as your MFA method. If you haven't already:
+
+1. Log into your GM OnStar account via the web (desktop browser recommended).
+2. Navigate to account security settings and select "Third-Party Authenticator App" for MFA.
+3. Scan the QR code with an authenticator app (Stratum, Bitwarden, Vaultwarden, iOS Passwords app, etc.).
+4. Extract your TOTP secret key and provide it in your configuration:
+
+```javascript
+const onStar = OnStar.create({
+  deviceId: "...",
+  vin: "...",
+  username: "...",
+  password: "...",
+  onStarPin: "...",
+  onStarTOTP: "YOUR_TOTP_SECRET_KEY_HERE", // 16-character string
+});
+```
+
+Or via environment variable:
+
+```env
+ONSTAR_TOTP=YOUR_TOTP_SECRET_KEY_HERE
+```
+
+**Note:** TOTP keys are 16 alphanumeric characters. Valid system time (NTP sync) is required for TOTP to work correctly.
+
+**Migration Path:** To move from TOTP to email MFA, update your GM account to use email-based MFA and then use the email MFA configuration above instead of `onStarTOTP`.
+
+---
 
 ## Sample
 

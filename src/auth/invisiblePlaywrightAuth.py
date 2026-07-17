@@ -296,9 +296,10 @@ async def main():
                                 return "email_mfa"
                             if "strongAuthenticationPhoneNumber" in page_html:
                                 raise RuntimeError(
-                                    "SMS MFA was presented; only TOTP and email MFA "
-                                    "are supported. Disable SMS MFA in your GM account "
-                                    "settings and use an authenticator app or email MFA."
+                                    "SMS MFA was presented; this library only supports email MFA. "
+                                    "Disable SMS MFA in your GM account settings and "
+                                    "configure email-based MFA instead. "
+                                    "TOTP is also deprecated and will be removed by end of August 2026."
                                 )
                         except RuntimeError:
                             raise
