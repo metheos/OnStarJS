@@ -397,13 +397,23 @@ async def main():
                     )
 
             if auth_event.is_set():
-                title = await page.title()
+                # Try to get page metadata, but if the page navigated to a custom
+                # scheme, the execution context may be destroyed and these calls fail.
+                # That's OK — we already have the auth code.
+                try:
+                    title = await page.title()
+                except Exception:
+                    title = "(page context destroyed during redirect)"
+                try:
+                    final_url = page.url
+                except Exception:
+                    final_url = "(page context destroyed during redirect)"
                 print(
                     json.dumps(
                         {
                             "ok": True,
                             "authCode": state["auth_code"],
-                            "finalUrl": page.url,
+                            "finalUrl": final_url,
                             "finalTitle": title,
                             "accessDenied": state["access_denied"],
                         }
