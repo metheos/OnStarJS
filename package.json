@@ -78,13 +78,11 @@
   "homepage": "https://github.com/BigThunderSR/OnStarJS#readme",
   "dependencies": {
     "axios": "^1.18.1",
-    "chromium-bidi": "^17.0.2",
     "http-cookie-agent": "^7.0.4",
     "jsonwebtoken": "^9.0.3",
     "openid-client": "^5.7.1",
     "totp-generator": "^2.0.1",
-    "tough-cookie": "^6.0.2",
-    "xvfb": "^0.4.0"
+    "tough-cookie": "^6.0.2"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^29.0.3",
