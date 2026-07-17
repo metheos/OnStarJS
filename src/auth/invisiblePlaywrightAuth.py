@@ -22,6 +22,11 @@ from pathlib import Path
 
 AUTH_REDIRECT_PREFIX = "msauth.com.gm.mychevrolet://auth"
 
+# imapMfa lives alongside this file; insert its directory so the import works
+# regardless of the working directory the script is invoked from.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from imapMfa import get_mfa_code as _imap_get_mfa_code  # noqa: E402
+
 # Injected into every page before its own scripts run.  Overrides the
 # Location.href setter (and .assign/.replace) so that any attempt to
 # navigate to the custom auth scheme is captured in a page-global variable
@@ -83,6 +88,8 @@ MFA_SUBMIT_SELECTOR = (
     'button[aria-label*="Verify"], '
     "#continue"
 )
+EMAIL_MFA_CODE_SELECTOR = "#verificationCode"
+EMAIL_MFA_SUBMIT_SELECTOR = "#emailVerificationControl-RO_but_verify_code"
 
 
 def log(*parts):
@@ -258,10 +265,12 @@ async def main():
                 return auth_event.is_set()
 
             async def wait_for_auth_or_mfa(timeout=30.0):
-                """Poll every 250 ms for auth redirect OR MFA/OTP field.
-                Returns 'auth_code', 'mfa', 'access_denied', or 'timeout'.
+                """Poll every 250 ms for auth redirect, MFA/OTP field, or email MFA page.
+                Returns 'auth_code', 'mfa', 'email_mfa', 'access_denied', or 'timeout'.
+                Page content is sampled every ~2 s to detect alternate MFA types.
                 """
                 deadline = asyncio.get_event_loop().time() + timeout
+                _tick = 0
                 while asyncio.get_event_loop().time() < deadline:
                     if state["access_denied"]:
                         return "access_denied"
@@ -275,6 +284,27 @@ async def main():
                             return "mfa"
                     except Exception:
                         pass
+                    # Sample page HTML every ~2 s (every 8 ticks) to detect
+                    # MFA types that don't present an otpCode input immediately.
+                    if _tick % 8 == 0:
+                        try:
+                            page_html = await page.content()
+                            if (
+                                "verificationCode" in page_html
+                                or "emailVerificationControl" in page_html
+                            ):
+                                return "email_mfa"
+                            if "strongAuthenticationPhoneNumber" in page_html:
+                                raise RuntimeError(
+                                    "SMS MFA was presented; only TOTP and email MFA "
+                                    "are supported. Disable SMS MFA in your GM account "
+                                    "settings and use an authenticator app or email MFA."
+                                )
+                        except RuntimeError:
+                            raise
+                        except Exception:
+                            pass
+                    _tick += 1
                     await asyncio.sleep(0.25)
                 await poll_js_url()
                 if state["access_denied"]:
@@ -350,6 +380,7 @@ async def main():
 
             phase = "navigating to authorization URL"
             progress("Navigating to authorization URL")
+            progress(f"Auth URL: {payload['authorizationUrl']}")
             try:
                 await page.goto(
                     payload["authorizationUrl"],
@@ -454,7 +485,8 @@ async def main():
                 progress("Access Denied detected during auth flow")
 
             elif post_login_state == "mfa":
-                phase = "handling MFA"
+                # --- TOTP MFA ---
+                phase = "handling TOTP MFA"
                 progress("TOTP MFA challenge detected")
                 if pyotp is None:
                     raise RuntimeError(
@@ -485,32 +517,58 @@ async def main():
                 except Exception:
                     progress("MFA submit button not found; pressing Enter")
                     await otp_field.press("Enter")
-                phase = "waiting for auth redirect after MFA"
-                progress("Waiting for authorization redirect after MFA")
+                phase = "waiting for auth redirect after TOTP MFA"
+                progress("Waiting for authorization redirect after TOTP MFA")
                 mfa_result = await wait_for_auth(timeout=60.0)
                 if not mfa_result:
-                    phase = "access denied after MFA"
+                    phase = "access denied after TOTP MFA"
                     state["access_denied"] = True
-                    progress("Access Denied detected after MFA")
+                    progress("Access Denied detected after TOTP MFA")
+
+            elif post_login_state == "email_mfa":
+                # --- Email MFA via IMAP ---
+                phase = "handling email MFA via IMAP"
+                progress("Email MFA challenge detected")
+                # Brief pause for typical email delivery latency before the
+                # initial inbox check, to avoid an immediate empty search.
+                progress(
+                    "Waiting 20 s for email delivery before checking inbox"
+                )
+                await asyncio.sleep(20)
+                progress("Retrieving verification code from IMAP")
+                email_mfa_code = await _imap_get_mfa_code()
+                progress("Entering email verification code")
+                email_code_field = await page.wait_for_selector(
+                    EMAIL_MFA_CODE_SELECTOR, timeout=30000, state="visible"
+                )
+                await email_code_field.fill(email_mfa_code)
+                try:
+                    email_submit_btn = await page.wait_for_selector(
+                        EMAIL_MFA_SUBMIT_SELECTOR,
+                        timeout=5000,
+                        state="visible",
+                    )
+                    await email_submit_btn.click()
+                except Exception:
+                    progress(
+                        "Email MFA submit button not found; pressing Enter"
+                    )
+                    await email_code_field.press("Enter")
+                phase = "waiting for auth redirect after email MFA"
+                progress("Waiting for authorization redirect after email MFA")
+                mfa_result = await wait_for_auth(timeout=60.0)
+                if not mfa_result:
+                    phase = "access denied after email MFA"
+                    state["access_denied"] = True
+                    progress("Access Denied detected after email MFA")
 
             elif post_login_state == "timeout" and not auth_event.is_set():
-                # Check for unsupported MFA types presented instead of TOTP
-                try:
-                    page_html = await page.content()
-                    if "emailMfa" in page_html:
-                        raise RuntimeError(
-                            "Only TOTP via Third-Party Authenticator is supported; "
-                            "email MFA was presented."
-                        )
-                    if "strongAuthenticationPhoneNumber" in page_html:
-                        raise RuntimeError(
-                            "Only TOTP via Third-Party Authenticator is supported; "
-                            "SMS MFA was presented."
-                        )
-                except RuntimeError:
-                    raise
-                except Exception:
-                    pass
+                raise RuntimeError(
+                    "Authentication timed out: no redirect, MFA challenge, or "
+                    "recognized MFA page appeared within the expected window. "
+                    "The page may have changed unexpectedly or the session "
+                    "may have been blocked."
+                )
 
             # --- Final access denied check ---
 

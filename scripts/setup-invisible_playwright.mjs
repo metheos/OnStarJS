@@ -115,13 +115,14 @@ try {
 
   run(venvPython, ["-m", "pip", "install", "--upgrade", "pip"]);
 
-  console.log("Installing invisible_playwright and pyotp...");
+  console.log("Installing python dependencies...");
   run(venvPython, [
     "-m",
     "pip",
     "install",
     "git+https://github.com/feder-cr/invisible_playwright.git",
     "pyotp",
+    "dotenv"
   ]);
 
   console.log(

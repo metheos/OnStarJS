@@ -28,6 +28,7 @@ new_api_reference/
 
 # Browser profiles and temp data
 temp-browser-profile*/
+invisible_playwright_profile*/
 
 # System files
 .DS_Store
