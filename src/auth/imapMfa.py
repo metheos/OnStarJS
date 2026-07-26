@@ -15,7 +15,8 @@ Configuration is read exclusively from environment variables (typically via a
   Optional (with defaults):
     IMAP_PORT            IMAP-over-SSL port              (default: 993)
     IMAP_USERNAME        IMAP login name                 (default: ONSTAR_USERNAME)
-    IMAP_SUBJECT_PREFIX  Subject line prefix to match    (default: "Your GM Verification Code:")
+        IMAP_SUBJECT_PREFIX  Subject matcher                 (plaintext prefix or /regex/flags)
+                                                                                                        (default: /^Your (?:GM|Chevrolet|GMC|Buick|Cadillac) Verification Code:/i)
     IMAP_SENDER          From address to match           (default: "GeneralMotors@em.gm.com")
     IMAP_MAILBOX         Mailbox/folder path             (default: "INBOX")
 
@@ -28,8 +29,9 @@ Configuration is read exclusively from environment variables (typically via a
 
 Protocol:
   1. Connect to IMAP_SERVER:IMAP_PORT via SSL - bail immediately on failure.
-  2. Search for emails from IMAP_SENDER with IMAP_SUBJECT_PREFIX received in
-     the last 60 seconds.  If found, use the newest one.
+    2. Search for emails from IMAP_SENDER that match IMAP_SUBJECT_PREFIX
+         (plaintext prefix or /regex/flags) received in the last 60 seconds.
+         If found, use the newest matching one.
   3. If no qualifying email exists yet, wait for one:
        • If the server supports IMAP IDLE, use it for real-time notification.
        • Otherwise, re-search every 10 seconds.
@@ -52,6 +54,7 @@ Standalone test:
 
 import asyncio
 import email as _email_module
+from email.header import decode_header
 from email.utils import parsedate_to_datetime
 import imaplib
 import os
@@ -66,7 +69,9 @@ from datetime import datetime, timedelta, timezone
 # ---------------------------------------------------------------------------
 
 DEFAULT_IMAP_PORT = 993
-DEFAULT_SUBJECT_PREFIX = "Your GM Verification Code:"
+DEFAULT_SUBJECT_PREFIX = (
+    r"/^Your (?:GM|Chevrolet|GMC|Buick|Cadillac) Verification Code:/i"
+)
 DEFAULT_SENDER = "GeneralMotors@em.gm.com"
 DEFAULT_MAILBOX = "INBOX"
 
@@ -77,6 +82,14 @@ RECENT_EMAIL_WINDOW_SECONDS = 60  # consider emails from the last 60 s
 # Matches a 6-digit number enclosed in HTML tags, e.g. <td>123456</td>
 # or <span>123456</span>.  Allows optional surrounding whitespace.
 _CODE_RE = re.compile(r"<[^>]+>\s*(\d{6})\s*</[^>]+>")
+_REGEX_SETTING_RE = re.compile(r"^/(.*)/([a-zA-Z]*)$")
+
+_REGEX_FLAG_MAP = {
+    "i": re.IGNORECASE,
+    "m": re.MULTILINE,
+    "s": re.DOTALL,
+    "x": re.VERBOSE,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -90,6 +103,66 @@ def _log(*parts):
 
 def _progress(message: str):
     _log(f"[imapMfa] {message}")
+
+
+def _parse_subject_matcher(
+    value: str,
+) -> tuple[str, str | re.Pattern[str]]:
+    """
+    Parse IMAP_SUBJECT_PREFIX.
+
+    Regex format is /pattern/flags (for example,
+    /^Your (?:GM|Chevrolet) Verification Code:/i).
+    Any other value is treated as a plaintext prefix match.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        raw = DEFAULT_SUBJECT_PREFIX
+
+    m = _REGEX_SETTING_RE.fullmatch(raw)
+    if not m:
+        return "plaintext", raw.casefold()
+
+    pattern, flags_raw = m.groups()
+    flags = 0
+    for flag_char in flags_raw:
+        mapped = _REGEX_FLAG_MAP.get(flag_char.lower())
+        if mapped is None:
+            raise ValueError(
+                f"unsupported regex flag '{flag_char}'. "
+                "Supported flags are: i, m, s, x"
+            )
+        flags |= mapped
+
+    try:
+        return "regex", re.compile(pattern, flags)
+    except re.error as exc:
+        raise ValueError(f"invalid regex {raw!r}: {exc}") from exc
+
+
+def _subject_matches(config: dict, subject: str) -> bool:
+    """Return True when *subject* matches IMAP_SUBJECT_PREFIX settings."""
+    matcher_type = config.get("subject_matcher_type", "plaintext")
+    matcher = config.get("subject_matcher")
+
+    if matcher_type == "regex" and isinstance(matcher, re.Pattern):
+        return bool(matcher.search(subject))
+
+    prefix = str(matcher or "").casefold()
+    return subject.casefold().startswith(prefix)
+
+
+def _decode_subject(raw_subject: str) -> str:
+    """Decode RFC 2047 encoded Subject headers into plain Unicode text."""
+    decoded_parts = []
+    for chunk, encoding in decode_header(raw_subject):
+        if isinstance(chunk, bytes):
+            decoded_parts.append(
+                chunk.decode(encoding or "utf-8", errors="replace")
+            )
+        else:
+            decoded_parts.append(chunk)
+    return "".join(decoded_parts).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +210,14 @@ def get_imap_config() -> dict:
     subject_prefix = os.environ.get(
         "IMAP_SUBJECT_PREFIX", DEFAULT_SUBJECT_PREFIX
     )
+    try:
+        matcher_type, matcher = _parse_subject_matcher(subject_prefix)
+    except ValueError as exc:
+        raise ValueError(
+            "IMAP_SUBJECT_PREFIX is invalid. "
+            f"Expected plaintext or /regex/flags. Details: {exc}"
+        ) from exc
+
     sender = os.environ.get("IMAP_SENDER", DEFAULT_SENDER)
     mailbox = os.environ.get("IMAP_MAILBOX", DEFAULT_MAILBOX)
 
@@ -146,6 +227,8 @@ def get_imap_config() -> dict:
         "username": username,
         "password": password,
         "subject_prefix": subject_prefix,
+        "subject_matcher_type": matcher_type,
+        "subject_matcher": matcher,
         "sender": sender,
         "mailbox": mailbox,
     }
@@ -216,9 +299,16 @@ def _search(conn: imaplib.IMAP4_SSL, config: dict, since_dt: datetime) -> list:
     """
     conn.select(config["mailbox"], readonly=True)
     since_str = since_dt.strftime("%d-%b-%Y")  # IMAP date format
+
+    # Plaintext mode can use IMAP SUBJECT filtering server-side.
+    # Regex mode fetches sender+date candidates, then filters locally.
+    subject_clause = ""
+    if config.get("subject_matcher_type") == "plaintext":
+        subject_clause = f'SUBJECT "{config["subject_prefix"]}" '
+
     criteria = (
         f'(FROM "{config["sender"]}" '
-        f'SUBJECT "{config["subject_prefix"]}" '
+        f"{subject_clause}"
         f"SINCE {since_str})"
     )
     try:
@@ -317,6 +407,76 @@ def _fetch_body(conn: imaplib.IMAP4_SSL, uid: bytes) -> str:
                 plain_body = text
 
     return html_body or plain_body or ""
+
+
+def _fetch_subject(conn: imaplib.IMAP4_SSL, uid: bytes) -> str:
+    """Fetch and decode the Subject header for a message UID."""
+    try:
+        typ, data = conn.uid(
+            "FETCH", uid, "(BODY.PEEK[HEADER.FIELDS (SUBJECT)])"
+        )
+    except imaplib.IMAP4.error as exc:
+        _progress(f"IMAP FETCH SUBJECT error for UID {uid!r}: {exc}")
+        return ""
+
+    if (
+        typ != "OK"
+        or not data
+        or not data[0]
+        or not isinstance(data[0], tuple)
+    ):
+        return ""
+
+    raw_header = data[0][1]
+    if isinstance(raw_header, bytes):
+        msg = _email_module.message_from_bytes(raw_header)
+    else:
+        msg = _email_module.message_from_string(str(raw_header))
+
+    return _decode_subject(msg.get("Subject", ""))
+
+
+def _try_extract_code_from_candidates(
+    conn: imaplib.IMAP4_SSL, config: dict, uids: list
+) -> str | None:
+    """
+    Iterate newest-first candidates, enforcing freshness and subject matching.
+
+    Returns the first valid 6-digit code, or None if no candidate qualifies.
+    """
+    for uid in uids:
+        received = _fetch_internaldate(conn, uid)
+        if received is not None:
+            age_secs = (datetime.now(timezone.utc) - received).total_seconds()
+            _progress(
+                f"Email received at {received.strftime('%Y-%m-%d %H:%M:%S %Z')} "
+                f"({int(age_secs)} s ago)"
+            )
+            if age_secs > RECENT_EMAIL_WINDOW_SECONDS:
+                _progress(
+                    f"Rejecting email: received {int(age_secs)} s ago, "
+                    f"which exceeds the {RECENT_EMAIL_WINDOW_SECONDS} s initial window"
+                )
+                continue
+
+        subject = _fetch_subject(conn, uid)
+        if not _subject_matches(config, subject):
+            _progress(
+                f"Skipping email with non-matching subject: {subject!r}"
+            )
+            continue
+
+        body = _fetch_body(conn, uid)
+        code = _extract_code(body)
+        if code:
+            _progress(f"Verification code extracted successfully: {code}")
+            return code
+
+        _progress(
+            "Warning: subject matched but no 6-digit code in HTML tags; trying next candidate"
+        )
+
+    return None
 
 
 def _extract_code(body: str) -> str | None:
@@ -465,40 +625,32 @@ def get_mfa_code_sync(config: dict | None = None) -> str:
             )
         )
 
+        matcher_mode = config.get("subject_matcher_type", "plaintext")
+        if matcher_mode == "regex":
+            _progress(
+                "Subject matcher mode: regex "
+                f"{config.get('subject_prefix', DEFAULT_SUBJECT_PREFIX)!r}"
+            )
+        else:
+            _progress(
+                "Subject matcher mode: plaintext prefix "
+                f"{config.get('subject_prefix', '')!r}"
+            )
+
         # --- Fast path: email already in inbox ---
         _progress(
             f"Searching {config['mailbox']} for messages from "
-            f"'{config['sender']}' with subject prefix '{config['subject_prefix']}'"
+            f"'{config['sender']}' using configured subject matcher"
         )
         uids = _search(conn, config, since_dt)
         if uids:
             _progress(f"Found {len(uids)} candidate email(s) - using newest")
-            received = _fetch_internaldate(conn, uids[0])
-            if received is not None:
-                age_secs = (
-                    datetime.now(timezone.utc) - received
-                ).total_seconds()
-                _progress(
-                    f"Email received at {received.strftime('%Y-%m-%d %H:%M:%S %Z')} "
-                    f"({int(age_secs)} s ago)"
-                )
-                if age_secs > RECENT_EMAIL_WINDOW_SECONDS:
-                    _progress(
-                        f"Rejecting email: received {int(age_secs)} s ago, "
-                        f"which exceeds the {RECENT_EMAIL_WINDOW_SECONDS} s initial window"
-                    )
-                    uids = []
-            if uids:
-                body = _fetch_body(conn, uids[0])
-                code = _extract_code(body)
-                if code:
-                    _progress(
-                        f"Verification code extracted successfully: {code}"
-                    )
-                    return code
-                _progress(
-                    "Warning: email found but no 6-digit code in HTML tags; waiting for another"
-                )
+            code = _try_extract_code_from_candidates(conn, config, uids)
+            if code:
+                return code
+            _progress(
+                "Warning: candidate emails found but none contained a valid verification code; waiting for another"
+            )
 
         # --- Wait path ---
         _progress(
@@ -536,32 +688,12 @@ def get_mfa_code_sync(config: dict | None = None) -> str:
                 _progress(
                     f"Found {len(uids)} candidate email(s) - using newest"
                 )
-                received = _fetch_internaldate(conn, uids[0])
-                if received is not None:
-                    age_secs = (
-                        datetime.now(timezone.utc) - received
-                    ).total_seconds()
-                    _progress(
-                        f"Email received at {received.strftime('%Y-%m-%d %H:%M:%S %Z')} "
-                        f"({int(age_secs)} s ago)"
-                    )
-                    if age_secs > RECENT_EMAIL_WINDOW_SECONDS:
-                        _progress(
-                            f"Rejecting email: received {int(age_secs)} s ago, "
-                            f"which exceeds the {RECENT_EMAIL_WINDOW_SECONDS} s initial window"
-                        )
-                        uids = []
-                if uids:
-                    body = _fetch_body(conn, uids[0])
-                    code = _extract_code(body)
-                    if code:
-                        _progress(
-                            f"Verification code extracted successfully: {code}"
-                        )
-                        return code
-                    _progress(
-                        "Warning: email found but no 6-digit code in HTML tags; continuing to wait"
-                    )
+                code = _try_extract_code_from_candidates(conn, config, uids)
+                if code:
+                    return code
+                _progress(
+                    "Warning: candidate emails found but none contained a valid verification code; continuing to wait"
+                )
 
         raise RuntimeError(
             f"Timed out after {OVERALL_TIMEOUT_SECONDS // 60} minutes waiting for "

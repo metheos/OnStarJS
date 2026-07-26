@@ -59,10 +59,15 @@ IMAP_PASSWORD=<your-email-app-password-or-password>
 # Optional (defaults shown)
 IMAP_PORT=993
 IMAP_USERNAME=<your-email-address>  # defaults to ONSTAR_USERNAME
-IMAP_SUBJECT_PREFIX="Your GM Verification Code:"
+IMAP_SUBJECT_PREFIX="/^Your (?:GM|Chevrolet|GMC|Buick|Cadillac) Verification Code:/i"
 IMAP_SENDER="GeneralMotors@em.gm.com"
 IMAP_MAILBOX="INBOX"
 ```
+
+`IMAP_SUBJECT_PREFIX` accepts either:
+
+- A plaintext prefix (legacy behavior), for example `Your Chevrolet Verification Code:`
+- A regex in `/pattern/flags` format, for example `"/^Your (?:Chevrolet|Cadillac) Verification Code:/i"`
 
 **Security Notes:**
 
@@ -185,7 +190,7 @@ IMAP_MAILBOX=<your-email-mailbox-name>  # often "INBOX", sometimes "Inbox" or ot
 
 - **"IMAP_SERVER is not set"**: Add `IMAP_SERVER` and `IMAP_PASSWORD` to your `.env` file.
 - **"IMAP login failed"**: Verify the app password is correct (not your account password) and that IMAP is enabled for your account.
-- **Timeout waiting for email**: Check that your email provider is receiving the GM code. Verify the sender (`IMAP_SENDER`) and subject prefix (`IMAP_SUBJECT_PREFIX`) match your actual GM emails. Check your spam/junk folder.
+- **Timeout waiting for email**: Check that your email provider is receiving the GM code. Verify the sender (`IMAP_SENDER`) and subject matcher (`IMAP_SUBJECT_PREFIX`, plaintext prefix or `/regex/flags`) match your actual GM emails. Check your spam/junk folder.
 - **System time is off**: Email timestamp validation will reject codes if your system clock is significantly skewed. Sync your system time via NTP.
 
 ---
