@@ -7,13 +7,10 @@ sudo apt-get update
 echo -e '\n=== Upgrading packages ==='
 sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 
-echo -e '\n=== Installing invisible_playwright (Firefox) system dependencies ==='
+echo -e '\n=== Installing browser automation system dependencies ==='
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   ca-certificates \
   fonts-liberation \
-  python3 \
-  python3-pip \
-  python3-venv \
   xvfb \
   xauth \
   libatk-bridge2.0-0 \
@@ -86,9 +83,6 @@ export PATH="$PNPM_HOME/bin:$PNPM_HOME:$PATH"
 
 echo -e '\n=== Installing pnpm packages ==='
 COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm install
-
-echo -e '\n=== Setting up invisible_playwright ==='
-COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm run setup:invisible_playwright
 
 echo -e '\n=== Setting up environment ==='
 chmod +x scripts/setup-env.sh

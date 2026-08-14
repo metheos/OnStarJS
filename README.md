@@ -17,15 +17,19 @@ Published as OnStarJS2 at <https://www.npmjs.com/package/onstarjs2> [![npm](http
 
 ## Prerequisites
 
-GM authentication uses [invisible_playwright](https://github.com/feder-cr/invisible_playwright), a patched Firefox browser with fingerprinting applied at the C++ level and humanized mouse/keyboard events built in. Run the one-time setup before the first authentication:
+GM authentication uses a Node.js browser automation flow built on Selenium and `undetected-chromedriver-js`. Install project dependencies before first authentication:
 
 ```bash
-pnpm run setup:invisible_playwright
+pnpm install
 ```
 
-This creates a `.venv` Python environment, installs `invisible_playwright` and `pyotp`, and downloads the patched Firefox binary (~100 MB, SHA256-verified).
+Optional browser smoke test:
 
-Set `ONSTARJS_PYTHON` if you need to point to a specific Python 3.11+ interpreter.
+```bash
+pnpm run test:selenium:browser
+```
+
+The authentication stack is now fully Node.js-based (no Python runtime required).
 
 ## Usage
 

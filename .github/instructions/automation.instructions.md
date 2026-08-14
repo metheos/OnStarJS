@@ -1,0 +1,8 @@
+- Treat browser automation as the source of truth for login and MFA flows; prefer full user-journey automation over brittle request replay.
+- Prefer stable selectors, explicit waits, and clear retry behavior; avoid hard-coded timing-only logic when a deterministic condition can be used.
+- Keep browser/profile state isolated per account and avoid cross-account session contamination.
+- Keep credentials in environment variables only; never commit or log secrets.
+- When a browser strategy fails, first improve observability (structured logs, page-state checkpoints, error taxonomy) before adding complexity.
+- For MFA, use secure, standards-based providers and explicit timeout/error handling.
+- Favor maintainable, testable Node.js implementations with typed interfaces over subprocess bridges.
+- Update README and script docs whenever auth automation behavior changes.

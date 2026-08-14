@@ -65,28 +65,20 @@ pnpm run setup:env:bash
 ./scripts/setup-env.sh
 ```
 
-### `setup-invisible_playwright.mjs`
+### `test-selenium-browser.mjs`
 
-#### invisible_playwright Python environment setup
+#### Selenium browser diagnostic smoke test
 
-- Creates a local `.venv` virtual environment (Python 3.11+ required)
-- Installs [`invisible_playwright`](https://github.com/feder-cr/invisible_playwright) from GitHub and `pyotp` inside the virtual environment
-- Downloads the patched Firefox binary (~100 MB, SHA256-verified, one-time) via `python -m invisible_playwright fetch`
-- invisible_playwright handles fingerprinting at the C++ level and humanizes mouse/keyboard events automatically — no separate browser download or fingerprint library needed
-- Supports `ONSTARJS_PYTHON_VENV`, `ONSTARJS_PYTHON`, or `PYTHON` overrides
-
-#### Setup Usage
-
-```bash
-pnpm run setup:invisible_playwright
-```
+- Starts a local mock auth page and exercises the browser auth path.
+- Uses `undetected-chromedriver-js` first, then falls back to plain Selenium Chrome if needed.
+- Verifies the scripted login flow can run end-to-end without Python dependencies.
 
 #### Browser Diagnostic Test
 
 Runs a credential-free browser launch/navigation smoke test. Starts a local diagnostic server that simulates the MS auth HTTP redirect flow and verifies the auth code is captured correctly.
 
 ```bash
-pnpm run test:invisible_playwright:browser
+pnpm run test:selenium:browser
 ```
 
 ### `credential-manager.js`
