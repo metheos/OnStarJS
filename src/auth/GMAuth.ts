@@ -11,6 +11,7 @@ import path from "path";
 import jwt from "jsonwebtoken";
 
 const PKCE_PENDING_SESSION_FILE = "ms_pkce_session.json";
+const PKCE_AUTH_STATUS_FILE = ".auth_pending_status.json";
 const PKCE_CODE_ENV_VAR = "ONSTARJS_PKCE_AUTH_CODE";
 
 // Define an interface for the vehicle structure and the payload containing them
@@ -48,6 +49,14 @@ interface PendingPKCESession {
   code_verifier: string;
   state: string;
   created_at: number;
+}
+
+interface PendingAuthStatus {
+  status: "pending_auth" | "authenticated" | "error";
+  message: string;
+  authorizationUrl?: string;
+  created_at?: number;
+  error?: string;
 }
 
 interface PKCECallbackInput {
@@ -256,6 +265,12 @@ export class GMAuth {
 
   private savePendingPKCESession(session: PendingPKCESession): void {
     fs.writeFileSync(this.pendingPKCESessionPath(), JSON.stringify(session));
+    this.savePendingAuthStatus({
+      status: "pending_auth",
+      message: `Pending authentication. Complete sign-in at the URL below, then provide the callback code.`,
+      authorizationUrl: session.authorizationUrl,
+      created_at: session.created_at,
+    });
   }
 
   private loadPendingPKCESession(): PendingPKCESession | null {
@@ -285,6 +300,39 @@ export class GMAuth {
     const sessionPath = this.pendingPKCESessionPath();
     if (fs.existsSync(sessionPath)) {
       fs.unlinkSync(sessionPath);
+    }
+    this.clearPendingAuthStatus();
+  }
+
+  private pendingAuthStatusPath(): string {
+    return path.join(this.config.tokenLocation ?? "./", PKCE_AUTH_STATUS_FILE);
+  }
+
+  private savePendingAuthStatus(status: PendingAuthStatus): void {
+    try {
+      fs.writeFileSync(
+        this.pendingAuthStatusPath(),
+        JSON.stringify(status, null, 2),
+      );
+    } catch (e) {
+      // Silently fail if unable to write status file (e.g., permission issues)
+      if (this.debugMode) {
+        console.debug("Could not write pending auth status:", e);
+      }
+    }
+  }
+
+  private clearPendingAuthStatus(): void {
+    try {
+      const statusPath = this.pendingAuthStatusPath();
+      if (fs.existsSync(statusPath)) {
+        fs.unlinkSync(statusPath);
+      }
+    } catch (e) {
+      // Silently fail if unable to delete status file
+      if (this.debugMode) {
+        console.debug("Could not clear pending auth status:", e);
+      }
     }
   }
 

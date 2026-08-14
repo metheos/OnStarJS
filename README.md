@@ -50,6 +50,30 @@ Notes:
 - PKCE continuation state is persisted so interrupted auth can be resumed on the next run.
 - The one-time auth code is cleared after successful token exchange.
 
+### Integration Status File
+
+For containerized environments (Home Assistant, Docker, etc.), OnStarJS writes a machine-readable status file at `.auth_pending_status.json` (in `tokenLocation`) whenever a pending PKCE session is created. This allows integrations to detect and surface the authentication URL to users without parsing logs.
+
+Status file example when authentication is pending:
+
+```json
+{
+  "status": "pending_auth",
+  "message": "Pending authentication. Complete sign-in at the URL below, then provide the callback code.",
+  "authorizationUrl": "https://custlogin.gm.com/...",
+  "created_at": 1786735774
+}
+```
+
+Integrations can:
+
+1. Monitor the `tokenLocation` directory for `.auth_pending_status.json`
+2. When detected, parse the file and display the `authorizationUrl` to the user
+3. Provide a way for the user to input the callback code and set `ONSTARJS_PKCE_AUTH_CODE` in the `.env` file
+4. The status file is automatically deleted when authentication succeeds or tokens are cleared
+
+This pattern works offline and requires no HTTP server, making it ideal for Home Assistant addons and similar isolation models.
+
 ---
 
 ## Sample
