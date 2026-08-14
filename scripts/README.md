@@ -65,22 +65,6 @@ pnpm run setup:env:bash
 ./scripts/setup-env.sh
 ```
 
-### `test-selenium-browser.mjs`
-
-#### Selenium browser diagnostic smoke test
-
-- Starts a local mock auth page and exercises the browser auth path.
-- Uses `undetected-chromedriver-js` first, then falls back to plain Selenium Chrome if needed.
-- Verifies the scripted login flow can run end-to-end without Python dependencies.
-
-#### Browser Diagnostic Test
-
-Runs a credential-free browser launch/navigation smoke test. Starts a local diagnostic server that simulates the MS auth HTTP redirect flow and verifies the auth code is captured correctly.
-
-```bash
-pnpm run test:selenium:browser
-```
-
 ### `credential-manager.js`
 
 #### Interactive credential setup

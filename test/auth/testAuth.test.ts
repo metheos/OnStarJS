@@ -1,143 +1,126 @@
 import dotenv from "dotenv";
-import { getGMAPIJWT, GMAuth } from "../../src/auth/GMAuth";
+import { getGMAPIJWT } from "../../src/auth/GMAuth";
 import fs from "fs";
+import os from "os";
 import path from "path";
 
 // Load environment variables
 dotenv.config();
 
-describe("GM Authentication", () => {
-  it("should successfully authenticate and return token details", async () => {
-    // Create config object from environment variables
-    const config = {
-      username: process.env.ONSTAR_USERNAME!,
-      password: process.env.ONSTAR_PASSWORD!,
-      deviceId: process.env.DEVICEID!,
-      totpKey: process.env.ONSTAR_TOTPKEY!,
-      tokenLocation: process.env.TOKEN_LOCATION,
-    };
+type AuthTestConfig = {
+  username: string;
+  password: string;
+  deviceId: string;
+  totpKey: string;
+  tokenLocation: string;
+};
 
-    // Validate required environment variables
-    if (
-      !config.username ||
-      !config.password ||
-      !config.deviceId ||
-      !config.totpKey
-    ) {
-      throw new Error("Missing required environment variables for auth test");
+function createIsolatedTokenDir(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), "onstarjs-auth-test-"));
+}
+
+function createAuthTestConfig(tokenLocation: string): AuthTestConfig {
+  const username = process.env.ONSTAR_USERNAME;
+  const password = process.env.ONSTAR_PASSWORD;
+  const deviceId = process.env.DEVICEID;
+  const totpKey = process.env.ONSTAR_TOTPKEY;
+
+  const missingVars = [
+    ["ONSTAR_USERNAME", username],
+    ["ONSTAR_PASSWORD", password],
+    ["DEVICEID", deviceId],
+    ["ONSTAR_TOTPKEY", totpKey],
+  ].filter(([, value]) => !value);
+
+  if (missingVars.length > 0) {
+    throw new Error(
+      `Missing required environment variables for auth test: ${missingVars
+        .map(([name]) => name)
+        .join(", ")}`,
+    );
+  }
+
+  return {
+    username: username!,
+    password: password!,
+    deviceId: deviceId!,
+    totpKey: totpKey!,
+    tokenLocation,
+  };
+}
+
+describe("GM Authentication (PKCE manual flow)", () => {
+  const originalPkceCodeEnv = process.env.ONSTARJS_PKCE_AUTH_CODE;
+
+  afterEach(() => {
+    if (originalPkceCodeEnv !== undefined) {
+      process.env.ONSTARJS_PKCE_AUTH_CODE = originalPkceCodeEnv;
+      return;
     }
 
-    // Create authenticated client
-    const { token, auth, decodedPayload } = await getGMAPIJWT(config);
+    delete process.env.ONSTARJS_PKCE_AUTH_CODE;
+  });
 
-    // Assertions
-    expect(token).toBeDefined();
-    expect(token.access_token).toBeDefined();
-    expect(token.token_type).toBe("bearer");
-    expect(token.expires_in).toBeGreaterThan(0);
-    expect(token.expires_at).toBeDefined();
-    expect(auth).toBeDefined();
-    expect(Array.isArray(decodedPayload.vehs)).toBe(true);
-    if (decodedPayload.vehs.length === 0) {
-      console.log(
-        "ℹ️ Auth test account returned zero vehicles; accepted for dummy test accounts.",
-      );
-    } else {
-      expect(decodedPayload.vehs[0]).toBeDefined();
-    }
-    console.log(token.access_token);
-  }, 600000); // Increased timeout to 10 minutes for authentication with exponential backoff, access denied retries, browser warmup, and additional waits
-
-  it("should successfully reauthenticate when tokens are expired or invalid", async () => {
-    // Create config object from environment variables
-    const config = {
-      username: process.env.ONSTAR_USERNAME!,
-      password: process.env.ONSTAR_PASSWORD!,
-      deviceId: process.env.DEVICEID!,
-      totpKey: process.env.ONSTAR_TOTPKEY!,
-      tokenLocation: process.env.TOKEN_LOCATION || "./",
-    };
-
-    // Validate required environment variables
-    if (
-      !config.username ||
-      !config.password ||
-      !config.deviceId ||
-      !config.totpKey
-    ) {
-      throw new Error("Missing required environment variables for reauth test");
-    }
-
-    const tokenLocation = config.tokenLocation;
+  it("initiates PKCE and writes pending session when no Microsoft token set exists", async () => {
+    const tokenLocation = createIsolatedTokenDir();
+    const config = createAuthTestConfig(tokenLocation);
+    const pendingSessionPath = path.join(tokenLocation, "ms_pkce_session.json");
     const msTokenPath = path.join(tokenLocation, "microsoft_tokens.json");
     const gmTokenPath = path.join(tokenLocation, "gm_tokens.json");
 
-    // Backup existing tokens if they exist
-    const msTokenBackup = fs.existsSync(msTokenPath)
-      ? fs.readFileSync(msTokenPath, "utf-8")
-      : null;
-    const gmTokenBackup = fs.existsSync(gmTokenPath)
-      ? fs.readFileSync(gmTokenPath, "utf-8")
-      : null;
+    try {
+      delete process.env.ONSTARJS_PKCE_AUTH_CODE;
+
+      await expect(getGMAPIJWT(config)).rejects.toThrow(
+        /Microsoft token set is required and no valid refresh path is available\./,
+      );
+
+      expect(fs.existsSync(pendingSessionPath)).toBe(true);
+      expect(fs.existsSync(msTokenPath)).toBe(false);
+      expect(fs.existsSync(gmTokenPath)).toBe(false);
+
+      const pendingRaw = fs.readFileSync(pendingSessionPath, "utf-8");
+      const pending = JSON.parse(pendingRaw);
+
+      expect(typeof pending.authorizationUrl).toBe("string");
+      expect(pending.authorizationUrl).toContain("oauth2/v2.0/authorize");
+      expect(typeof pending.code_verifier).toBe("string");
+      expect(typeof pending.state).toBe("string");
+      expect(typeof pending.created_at).toBe("number");
+    } finally {
+      fs.rmSync(tokenLocation, { recursive: true, force: true });
+    }
+  }, 600000);
+
+  it("reuses existing pending PKCE session until callback/code is provided", async () => {
+    const tokenLocation = createIsolatedTokenDir();
+    const config = createAuthTestConfig(tokenLocation);
+    const pendingSessionPath = path.join(tokenLocation, "ms_pkce_session.json");
 
     try {
-      // Step 1: First authentication to create valid tokens
-      console.log("🔐 Step 1: Initial authentication...");
-      let { token: token1, auth: auth1 } = await getGMAPIJWT(config);
+      delete process.env.ONSTARJS_PKCE_AUTH_CODE;
 
-      expect(token1).toBeDefined();
-      expect(token1.access_token).toBeDefined();
-      console.log("✅ Initial authentication successful");
-
-      // Step 2: Simulate expired/invalid tokens by deleting them
-      console.log(
-        "🗑️  Step 2: Simulating expired tokens by removing token files...",
+      await expect(getGMAPIJWT(config)).rejects.toThrow(
+        /Microsoft token set is required and no valid refresh path is available\./,
       );
-      if (fs.existsSync(msTokenPath)) {
-        fs.unlinkSync(msTokenPath);
-      }
-      if (fs.existsSync(gmTokenPath)) {
-        fs.unlinkSync(gmTokenPath);
-      }
-      console.log("✅ Token files removed");
 
-      // Step 3: Attempt reauthentication
-      console.log("🔄 Step 3: Testing reauthentication...");
-      let { token: token2, auth: auth2 } = await getGMAPIJWT(config);
+      const firstPendingRaw = fs.readFileSync(pendingSessionPath, "utf-8");
+      const firstPending = JSON.parse(firstPendingRaw);
 
-      // Assertions for reauthentication
-      expect(token2).toBeDefined();
-      expect(token2.access_token).toBeDefined();
-      expect(token2.token_type).toBe("bearer");
-      expect(token2.expires_in).toBeGreaterThan(0);
-      expect(token2.expires_at).toBeDefined();
+      await expect(getGMAPIJWT(config)).rejects.toThrow(
+        /Pending Microsoft PKCE auth session detected\./,
+      );
 
-      // Verify the new token is different from the first one
-      expect(token2.access_token).not.toBe(token1.access_token);
+      const secondPendingRaw = fs.readFileSync(pendingSessionPath, "utf-8");
+      const secondPending = JSON.parse(secondPendingRaw);
 
-      console.log("✅ Reauthentication successful");
-      console.log(`Original token: ${token1.access_token.substring(0, 20)}...`);
-      console.log(`New token: ${token2.access_token.substring(0, 20)}...`);
-
-      // Step 4: Test auth runner reinitialization with a fresh GMAuth instance
-      console.log("🖥️  Step 4: Testing auth runner reinitialization...");
-
-      // Create a new GMAuth instance to simulate a fresh start
-      const auth3 = new GMAuth(config);
-
-      const token3 = await auth3.authenticate();
-
-      expect(token3).toBeDefined();
-      expect(token3.access_token).toBeDefined();
-      console.log("✅ Auth runner reinitialization test successful");
+      expect(secondPending.authorizationUrl).toBe(
+        firstPending.authorizationUrl,
+      );
+      expect(secondPending.code_verifier).toBe(firstPending.code_verifier);
+      expect(secondPending.state).toBe(firstPending.state);
     } finally {
-      // Restore backed up tokens if they existed
-      if (msTokenBackup) {
-        fs.writeFileSync(msTokenPath, msTokenBackup);
-      }
-      if (gmTokenBackup) {
-        fs.writeFileSync(gmTokenPath, gmTokenBackup);
-      }
+      fs.rmSync(tokenLocation, { recursive: true, force: true });
     }
-  }, 900000); // 15 minutes timeout for full reauth cycle with multiple retries, exponential backoff, access denied retries, and browser warmup
+  }, 600000);
 });

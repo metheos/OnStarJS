@@ -1,8 +1,8 @@
-- Treat browser automation as the source of truth for login and MFA flows; prefer full user-journey automation over brittle request replay.
-- Prefer stable selectors, explicit waits, and clear retry behavior; avoid hard-coded timing-only logic when a deterministic condition can be used.
-- Keep browser/profile state isolated per account and avoid cross-account session contamination.
-- Keep credentials in environment variables only; never commit or log secrets.
-- When a browser strategy fails, first improve observability (structured logs, page-state checkpoints, error taxonomy) before adding complexity.
-- For MFA, use secure, standards-based providers and explicit timeout/error handling.
+- Do not use browser automation or IMAP polling for authentication flows in this repository.
+- Treat Microsoft token lifecycle as primary: always prefer existing MS tokens and refresh paths before initiating any new auth session.
+- Never invalidate or rotate Microsoft token files due solely to GM token issues (including missing vehicles or GM token exchange failures).
+- When a new MS token set is genuinely required, start a PKCE session, persist continuation state, and present the auth URL for user-driven completion.
+- Resume PKCE completion immediately on next run when pending session state and env-provided auth code are both available.
+- Use `.env` for one-time PKCE auth code handoff (via user extension/manual extraction), and clear the consumed code after successful token acquisition.
+- Keep credentials and auth codes in environment variables only; never commit or log secrets.
 - Favor maintainable, testable Node.js implementations with typed interfaces over subprocess bridges.
-- Update README and script docs whenever auth automation behavior changes.

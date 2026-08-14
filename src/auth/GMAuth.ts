@@ -9,7 +9,9 @@ import https from "https";
 
 import path from "path";
 import jwt from "jsonwebtoken";
-import { runSeleniumAuth, SeleniumAuthResult } from "./SeleniumAuth";
+
+const PKCE_PENDING_SESSION_FILE = "ms_pkce_session.json";
+const PKCE_CODE_ENV_VAR = "ONSTARJS_PKCE_AUTH_CODE";
 
 // Define an interface for the vehicle structure and the payload containing them
 interface Vehicle {
@@ -39,6 +41,18 @@ interface TokenSet {
   refresh_expires_in?: number;
   refresh_expires_at?: number; // epoch seconds
   refresh_obtained_at?: number; // epoch seconds when we stored the refresh token
+}
+
+interface PendingPKCESession {
+  authorizationUrl: string;
+  code_verifier: string;
+  state: string;
+  created_at: number;
+}
+
+interface PKCECallbackInput {
+  code: string;
+  state?: string;
 }
 
 interface GMAPITokenResponse {
@@ -193,79 +207,143 @@ export class GMAuth {
     }
   }
   async doFullAuthSequence(): Promise<TokenSet> {
-    const maxRetries = 4; // Increased from 2 to 4 (5 total attempts)
-    let lastError: Error | null = null;
+    const pendingSession = this.loadPendingPKCESession();
+    const manualCallbackInput = this.getManualPKCECallbackInputFromEnv();
 
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (pendingSession && manualCallbackInput) {
+      const tokenSet = await this.getMSToken(
+        manualCallbackInput,
+        pendingSession.code_verifier,
+        pendingSession.state,
+      );
+      await this.saveTokens(tokenSet);
+      this.clearPendingPKCESession();
+      this.clearUsedPKCECodeFromEnv();
+      return tokenSet;
+    }
+
+    if (pendingSession) {
+      throw new Error(
+        [
+          `Pending Microsoft PKCE auth session detected.`,
+          `Complete sign-in with this URL:`,
+          pendingSession.authorizationUrl,
+          `Then set ${PKCE_CODE_ENV_VAR} in .env (either full callback URL or raw code) and run again.`,
+        ].join("\n"),
+      );
+    }
+
+    const newSession = await this.startMSAuthorizationFlow();
+    this.savePendingPKCESession(newSession);
+
+    throw new Error(
+      [
+        `Microsoft token set is required and no valid refresh path is available.`,
+        `Start interactive sign-in with this URL:`,
+        newSession.authorizationUrl,
+        `After sign-in, set ${PKCE_CODE_ENV_VAR} in .env (full callback URL preferred; raw code also accepted).`,
+        `Run again to complete PKCE and persist the refreshed Microsoft token set.`,
+      ].join("\n"),
+    );
+  }
+
+  private pendingPKCESessionPath(): string {
+    return path.join(
+      this.config.tokenLocation ?? "./",
+      PKCE_PENDING_SESSION_FILE,
+    );
+  }
+
+  private savePendingPKCESession(session: PendingPKCESession): void {
+    fs.writeFileSync(this.pendingPKCESessionPath(), JSON.stringify(session));
+  }
+
+  private loadPendingPKCESession(): PendingPKCESession | null {
+    const sessionPath = this.pendingPKCESessionPath();
+    if (!fs.existsSync(sessionPath)) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(fs.readFileSync(sessionPath, "utf-8"));
+      if (
+        parsed &&
+        typeof parsed.authorizationUrl === "string" &&
+        typeof parsed.code_verifier === "string" &&
+        typeof parsed.state === "string"
+      ) {
+        return parsed as PendingPKCESession;
+      }
+    } catch {
+      // Ignore malformed pending state and overwrite on next auth start.
+    }
+
+    return null;
+  }
+
+  private clearPendingPKCESession(): void {
+    const sessionPath = this.pendingPKCESessionPath();
+    if (fs.existsSync(sessionPath)) {
+      fs.unlinkSync(sessionPath);
+    }
+  }
+
+  private getManualPKCECallbackInputFromEnv(): PKCECallbackInput | null {
+    const raw = process.env[PKCE_CODE_ENV_VAR];
+    if (!raw) {
+      return null;
+    }
+
+    const trimmed = raw.trim();
+    if (trimmed.length === 0) {
+      return null;
+    }
+
+    // Accept full callback URI from browser extension/user paste.
+    if (trimmed.includes("://") || trimmed.startsWith("msauth.")) {
       try {
-        if (attempt > 0) {
-          console.log(
-            `🔄 Authentication attempt ${attempt + 1}/${maxRetries + 1} (retry ${attempt})`,
-          );
-
-          // More sophisticated backoff with human-like patterns
-          const baseDelayMs =
-            lastError && lastError.message.includes("Access Denied")
-              ? 20000 + Math.random() * 10000 // 20-30 seconds for access denied with randomization
-              : 8000 + Math.random() * 4000; // 8-12 seconds for other errors
-
-          const exponentialDelay = baseDelayMs * Math.pow(1.5, attempt - 1); // Reduced exponential factor
-          const jitter = Math.random() * 0.5 * exponentialDelay; // 50% jitter for unpredictability
-          const delayMs = Math.floor(exponentialDelay + jitter);
-
-          const delaySeconds = (delayMs / 1000).toFixed(1);
-          console.log(
-            `⏳ Will retry authentication in ${delaySeconds} seconds...`,
-          );
-
-          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        const parsed = new URL(trimmed);
+        const code = parsed.searchParams.get("code") ?? "";
+        const state = parsed.searchParams.get("state") ?? undefined;
+        if (code) {
+          return { code, state };
         }
-
-        const { authorizationUrl, code_verifier } =
-          await this.startMSAuthorizationFlow();
-
-        const authCode = await this.submitCredentials(authorizationUrl);
-        if (!authCode) {
-          throw new Error(
-            "🚫 Failed to get authorization code after all attempts. Possible incorrect credentials, MFA issue, or unexpected page flow.",
-          );
-        }
-
-        const tokenSet = await this.getMSToken(authCode, code_verifier);
-        await this.saveTokens(tokenSet);
-
-        if (attempt > 0) {
-          console.log(`✅ Authentication succeeded on attempt ${attempt + 1}`);
-        }
-
-        return tokenSet;
-      } catch (error) {
-        lastError = error as Error;
-        console.error(
-          `❌ Authentication attempt ${attempt + 1} failed:`,
-          error,
-        );
-
-        // If this is not the last attempt, continue to retry
-        if (attempt < maxRetries) {
-          const isAccessDenied = lastError.message.includes("Access Denied");
-          const nextDelaySeconds = isAccessDenied
-            ? `${((12000 * Math.pow(2, attempt)) / 1000).toFixed(1)}-${((12000 * Math.pow(2, attempt) * 1.4) / 1000).toFixed(1)}`
-            : `${((5000 * Math.pow(2, attempt)) / 1000).toFixed(1)}-${((5000 * Math.pow(2, attempt) * 1.4) / 1000).toFixed(1)}`;
-          console.log(
-            `⏳ Will retry authentication in ~${nextDelaySeconds} seconds...`,
-          );
-          continue;
-        }
+      } catch {
+        // Fall through to raw code support.
       }
     }
 
-    // If we get here, all retries failed
-    console.error(`🚫 Authentication failed after ${maxRetries + 1} attempts`);
+    // Support raw code-only handoff.
+    return { code: trimmed };
+  }
 
-    throw (
-      lastError || new Error("Authentication failed after all retry attempts")
-    );
+  private clearUsedPKCECodeFromEnv(): void {
+    if (process.env[PKCE_CODE_ENV_VAR]) {
+      delete process.env[PKCE_CODE_ENV_VAR];
+    }
+
+    const envPath = path.resolve(process.cwd(), ".env");
+    if (!fs.existsSync(envPath)) {
+      return;
+    }
+
+    const source = fs.readFileSync(envPath, "utf-8");
+    const lines = source.split(/\r?\n/);
+    let changed = false;
+    const updated = lines.map((line) => {
+      if (line.startsWith(`${PKCE_CODE_ENV_VAR}=`)) {
+        changed = true;
+        return `${PKCE_CODE_ENV_VAR}=`;
+      }
+      return line;
+    });
+
+    if (changed) {
+      fs.writeFileSync(envPath, updated.join("\n"));
+      console.log(
+        `Cleared ${PKCE_CODE_ENV_VAR} from .env after successful PKCE completion.`,
+      );
+    }
   }
 
   private async saveTokens(tokenSet: TokenSet): Promise<void> {
@@ -278,60 +356,6 @@ export class GMAuth {
       // console.log("Saving GM tokens to ", this.GMTokenPath);
       fs.writeFileSync(tokenFilePath, JSON.stringify(this.currentGMAPIToken));
       // console.log("Saved current GM API token to ", tokenFilePath);
-    }
-  }
-
-  private async runSeleniumBrowserAuth(
-    authorizationUrl: string,
-  ): Promise<SeleniumAuthResult> {
-    const lifecycleEvent = (
-      process.env.npm_lifecycle_event ?? ""
-    ).toLowerCase();
-    const useIsolatedTestProfile =
-      lifecycleEvent === "test:auth" || lifecycleEvent === "test:reauth";
-
-    const profilePath = path.resolve(
-      this.config.tokenLocation ?? "./",
-      useIsolatedTestProfile
-        ? `selenium_profile_test_${Date.now()}`
-        : "selenium_profile",
-    );
-
-    return runSeleniumAuth({
-      authorizationUrl,
-      username: this.config.username,
-      password: this.config.password,
-      profilePath,
-    });
-  }
-
-  private async submitCredentials(authorizationUrl: string): Promise<string> {
-    console.log("🌐 Launching Selenium authentication for Microsoft login");
-
-    try {
-      const result = await this.runSeleniumBrowserAuth(authorizationUrl);
-
-      if (result.accessDenied) {
-        throw new Error(
-          "🚫 Access Denied: Authentication was blocked. This could be due to rate limiting, IP blocking, or security restrictions. Please wait before retrying or check if your IP is blocked.",
-        );
-      }
-
-      if (!result.authCode) {
-        throw new Error(
-          `Selenium authentication completed without capturing an authorization code. Final page title: ${result.finalTitle ?? "unknown"}. Final URL: ${result.finalUrl ?? "unknown"}`,
-        );
-      }
-
-      console.log(
-        "✅ Credentials submitted successfully via Selenium automation. Final URL:",
-        result.finalUrl,
-      );
-      console.log("📄 Final page title:", result.finalTitle);
-      return result.authCode;
-    } catch (error) {
-      console.error("Error in Selenium submitCredentials:", error);
-      throw error;
     }
   }
 
@@ -438,19 +462,9 @@ export class GMAuth {
           return response.data;
         }
 
-        // Delete the tokens and start over
-        console.log(
-          "Returned GM API token was missing vehicle information. Deleting existing tokens for reauth.",
+        throw new Error(
+          "Returned GM API token was missing vehicle information. Keeping existing Microsoft token set intact; refusing to invalidate MS tokens based on GM token payload.",
         );
-        if (fs.existsSync(this.MSTokenPath)) {
-          fs.renameSync(this.MSTokenPath, `${this.MSTokenPath}.old`);
-        }
-        if (fs.existsSync(this.GMTokenPath)) {
-          fs.renameSync(this.GMTokenPath, `${this.GMTokenPath}.old`);
-        }
-        // Clear current token in memory and recursively call authenticate()
-        this.currentGMAPIToken = null;
-        return await this.authenticate();
       }
 
       const expires_at =
@@ -631,6 +645,8 @@ export class GMAuth {
   private async startMSAuthorizationFlow(): Promise<{
     authorizationUrl: string;
     code_verifier: string;
+    state: string;
+    created_at: number;
   }> {
     // console.log("Starting PKCE auth");
     const client = await this.setupOpenIDClient();
@@ -656,20 +672,39 @@ export class GMAuth {
       state,
     });
 
-    return { authorizationUrl, code_verifier };
+    return {
+      authorizationUrl,
+      code_verifier,
+      state,
+      created_at: Date.now(),
+    };
   }
 
   private async getMSToken(
-    code: string,
+    callbackInput: PKCECallbackInput,
     code_verifier: string,
+    expectedState?: string,
   ): Promise<TokenSet> {
     const client = await this.setupOpenIDClient();
 
     try {
+      const callbackParams: { code: string; state?: string } = {
+        code: callbackInput.code,
+        ...(callbackInput.state ? { state: callbackInput.state } : {}),
+      };
+
+      const callbackChecks: { code_verifier: string; state?: string } = {
+        code_verifier,
+        // Some extension flows provide only code (no state). Enforce state check when present.
+        ...(expectedState && callbackInput.state
+          ? { state: expectedState }
+          : {}),
+      };
+
       const openIdTokenSet = await client.callback(
         "msauth.com.gm.myChevrolet://auth",
-        { code },
-        { code_verifier },
+        callbackParams,
+        callbackChecks,
       );
 
       // Validate that we received the required tokens
